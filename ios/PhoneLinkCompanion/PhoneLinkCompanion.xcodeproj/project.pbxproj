@@ -1,0 +1,650 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000001 /* PhoneLinkCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000001 /* PhoneLinkCompanionApp.swift */; };
+		A00000000000000000000002 /* CompanionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000002 /* CompanionSession.swift */; };
+		A00000000000000000000003 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000003 /* RootView.swift */; };
+		A00000000000000000000004 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000004 /* HomeView.swift */; };
+		A00000000000000000000005 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000005 /* PairingView.swift */; };
+		A00000000000000000000006 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000006 /* SettingsView.swift */; };
+		A00000000000000000000007 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000007 /* KeychainStore.swift */; };
+		A00000000000000000000008 /* DeviceIdentityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000008 /* DeviceIdentityStore.swift */; };
+		A00000000000000000000009 /* IdentityFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000009 /* IdentityFingerprint.swift */; };
+		A0000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000A /* Assets.xcassets */; };
+		A0000000000000000000000B /* IdentityFingerprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000D /* IdentityFingerprintTests.swift */; };
+		A0000000000000000000000C /* Base64URL.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000F /* Base64URL.swift */; };
+		A0000000000000000000000D /* StrictJSON.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000010 /* StrictJSON.swift */; };
+		A0000000000000000000000E /* PairingOffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* PairingOffer.swift */; };
+		A0000000000000000000000F /* PairingTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* PairingTranscript.swift */; };
+		A00000000000000000000010 /* ComparisonPhrase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* ComparisonPhrase.swift */; };
+		A00000000000000000000011 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000014 /* QRScannerView.swift */; };
+		A00000000000000000000012 /* PairingProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000015 /* PairingProtocolTests.swift */; };
+		A00000000000000000000013 /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000016 /* PairingClient.swift */; };
+		A00000000000000000000014 /* TrustedWindowsPeerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000017 /* TrustedWindowsPeerStore.swift */; };
+		A00000000000000000000015 /* SessionTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000018 /* SessionTranscript.swift */; };
+		A00000000000000000000016 /* SessionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000019 /* SessionProtocol.swift */; };
+		A00000000000000000000017 /* DeviceSessionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001A /* DeviceSessionClient.swift */; };
+		A00000000000000000000018 /* SessionTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001B /* SessionTranscriptTests.swift */; };
+		A00000000000000000000019 /* ContactSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001C /* ContactSyncService.swift */; };
+		A0000000000000000000001A /* ContactSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001D /* ContactSyncView.swift */; };
+		A0000000000000000000001B /* PhoneLinkServiceBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001E /* PhoneLinkServiceBrowser.swift */; };
+		A0000000000000000000001C /* AttachmentBinaryFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001F /* AttachmentBinaryFrame.swift */; };
+		A0000000000000000000001D /* PhotoImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000020 /* PhotoImportService.swift */; };
+		A0000000000000000000001E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000021 /* PrivacyInfo.xcprivacy */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		G00000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D00000000000000000000001;
+			remoteInfo = PhoneLinkCompanion;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B00000000000000000000001 /* PhoneLinkCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneLinkCompanionApp.swift; sourceTree = "<group>"; };
+		B00000000000000000000002 /* CompanionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSession.swift; sourceTree = "<group>"; };
+		B00000000000000000000003 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B00000000000000000000004 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		B00000000000000000000005 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		B00000000000000000000006 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B00000000000000000000007 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		B00000000000000000000008 /* DeviceIdentityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentityStore.swift; sourceTree = "<group>"; };
+		B00000000000000000000009 /* IdentityFingerprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityFingerprint.swift; sourceTree = "<group>"; };
+		B0000000000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B0000000000000000000000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B0000000000000000000000C /* PhoneLinkCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PhoneLinkCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0000000000000000000000D /* IdentityFingerprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityFingerprintTests.swift; sourceTree = "<group>"; };
+		B0000000000000000000000E /* PhoneLinkCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PhoneLinkCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0000000000000000000000F /* Base64URL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Base64URL.swift; sourceTree = "<group>"; };
+		B00000000000000000000010 /* StrictJSON.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrictJSON.swift; sourceTree = "<group>"; };
+		B00000000000000000000011 /* PairingOffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingOffer.swift; sourceTree = "<group>"; };
+		B00000000000000000000012 /* PairingTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingTranscript.swift; sourceTree = "<group>"; };
+		B00000000000000000000013 /* ComparisonPhrase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonPhrase.swift; sourceTree = "<group>"; };
+		B00000000000000000000014 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		B00000000000000000000015 /* PairingProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingProtocolTests.swift; sourceTree = "<group>"; };
+		B00000000000000000000016 /* PairingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
+		B00000000000000000000017 /* TrustedWindowsPeerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedWindowsPeerStore.swift; sourceTree = "<group>"; };
+		B00000000000000000000018 /* SessionTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTranscript.swift; sourceTree = "<group>"; };
+		B00000000000000000000019 /* SessionProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionProtocol.swift; sourceTree = "<group>"; };
+		B0000000000000000000001A /* DeviceSessionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSessionClient.swift; sourceTree = "<group>"; };
+		B0000000000000000000001B /* SessionTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTranscriptTests.swift; sourceTree = "<group>"; };
+		B0000000000000000000001C /* ContactSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactSyncService.swift; sourceTree = "<group>"; };
+		B0000000000000000000001D /* ContactSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactSyncView.swift; sourceTree = "<group>"; };
+		B0000000000000000000001E /* PhoneLinkServiceBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneLinkServiceBrowser.swift; sourceTree = "<group>"; };
+		B0000000000000000000001F /* AttachmentBinaryFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentBinaryFrame.swift; sourceTree = "<group>"; };
+		B00000000000000000000020 /* PhotoImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoImportService.swift; sourceTree = "<group>"; };
+		B00000000000000000000021 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F00000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F00000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C00000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				C00000000000000000000002 /* PhoneLinkCompanion */,
+				C00000000000000000000009 /* PhoneLinkCompanionTests */,
+				C0000000000000000000000A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C00000000000000000000002 /* PhoneLinkCompanion */ = {
+			isa = PBXGroup;
+			children = (
+				C00000000000000000000003 /* App */,
+				C00000000000000000000004 /* Features */,
+				C00000000000000000000007 /* Infrastructure */,
+				C00000000000000000000008 /* Resources */,
+			);
+			path = PhoneLinkCompanion;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000001 /* PhoneLinkCompanionApp.swift */,
+				B00000000000000000000002 /* CompanionSession.swift */,
+				B00000000000000000000003 /* RootView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000004 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				C00000000000000000000005 /* Home */,
+				C00000000000000000000006 /* Pairing */,
+				C0000000000000000000000B /* Settings */,
+				C0000000000000000000000F /* Contacts */,
+				C00000000000000000000010 /* Photos */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000005 /* Home */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000004 /* HomeView.swift */,
+			);
+			path = Home;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000006 /* Pairing */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000005 /* PairingView.swift */,
+				B00000000000000000000014 /* QRScannerView.swift */,
+			);
+			path = Pairing;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000007 /* Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				C0000000000000000000000D /* Pairing */,
+				C0000000000000000000000C /* Security */,
+				C0000000000000000000000E /* Session */,
+			);
+			path = Infrastructure;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000008 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B0000000000000000000000A /* Assets.xcassets */,
+				B0000000000000000000000B /* Info.plist */,
+				B00000000000000000000021 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000009 /* PhoneLinkCompanionTests */ = {
+			isa = PBXGroup;
+			children = (
+				B0000000000000000000000D /* IdentityFingerprintTests.swift */,
+				B00000000000000000000015 /* PairingProtocolTests.swift */,
+				B0000000000000000000001B /* SessionTranscriptTests.swift */,
+			);
+			path = PhoneLinkCompanionTests;
+			sourceTree = "<group>";
+		};
+		C0000000000000000000000A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B0000000000000000000000C /* PhoneLinkCompanion.app */,
+				B0000000000000000000000E /* PhoneLinkCompanionTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C0000000000000000000000B /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000006 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		C0000000000000000000000C /* Security */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000007 /* KeychainStore.swift */,
+				B00000000000000000000008 /* DeviceIdentityStore.swift */,
+				B00000000000000000000009 /* IdentityFingerprint.swift */,
+				B00000000000000000000017 /* TrustedWindowsPeerStore.swift */,
+			);
+			path = Security;
+			sourceTree = "<group>";
+		};
+		C0000000000000000000000D /* Pairing */ = {
+			isa = PBXGroup;
+			children = (
+				B0000000000000000000000F /* Base64URL.swift */,
+				B00000000000000000000010 /* StrictJSON.swift */,
+				B00000000000000000000011 /* PairingOffer.swift */,
+				B00000000000000000000012 /* PairingTranscript.swift */,
+				B00000000000000000000013 /* ComparisonPhrase.swift */,
+				B00000000000000000000016 /* PairingClient.swift */,
+			);
+			path = Pairing;
+			sourceTree = "<group>";
+		};
+		C0000000000000000000000E /* Session */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000018 /* SessionTranscript.swift */,
+				B00000000000000000000019 /* SessionProtocol.swift */,
+				B0000000000000000000001A /* DeviceSessionClient.swift */,
+				B0000000000000000000001E /* PhoneLinkServiceBrowser.swift */,
+				B0000000000000000000001F /* AttachmentBinaryFrame.swift */,
+			);
+			path = Session;
+			sourceTree = "<group>";
+		};
+		C0000000000000000000000F /* Contacts */ = {
+			isa = PBXGroup;
+			children = (
+				B0000000000000000000001C /* ContactSyncService.swift */,
+				B0000000000000000000001D /* ContactSyncView.swift */,
+			);
+			path = Contacts;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000010 /* Photos */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000020 /* PhotoImportService.swift */,
+			);
+			path = Photos;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D00000000000000000000001 /* PhoneLinkCompanion */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = J00000000000000000000002 /* Build configuration list for PBXNativeTarget "PhoneLinkCompanion" */;
+			buildPhases = (
+				F00000000000000000000001 /* Sources */,
+				F00000000000000000000003 /* Frameworks */,
+				F00000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PhoneLinkCompanion;
+			packageProductDependencies = (
+			);
+			productName = PhoneLinkCompanion;
+			productReference = B0000000000000000000000C /* PhoneLinkCompanion.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D00000000000000000000002 /* PhoneLinkCompanionTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = J00000000000000000000003 /* Build configuration list for PBXNativeTarget "PhoneLinkCompanionTests" */;
+			buildPhases = (
+				F00000000000000000000004 /* Sources */,
+				F00000000000000000000006 /* Frameworks */,
+				F00000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				G00000000000000000000002 /* PBXTargetDependency */,
+			);
+			name = PhoneLinkCompanionTests;
+			packageProductDependencies = (
+			);
+			productName = PhoneLinkCompanionTests;
+			productReference = B0000000000000000000000E /* PhoneLinkCompanionTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					D00000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					D00000000000000000000002 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = D00000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = J00000000000000000000001 /* Build configuration list for PBXProject "PhoneLinkCompanion" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C00000000000000000000001;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C0000000000000000000000A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D00000000000000000000001 /* PhoneLinkCompanion */,
+				D00000000000000000000002 /* PhoneLinkCompanionTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F00000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A0000000000000000000000A /* Assets.xcassets in Resources */,
+				A0000000000000000000001E /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F00000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F00000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000001 /* PhoneLinkCompanionApp.swift in Sources */,
+				A00000000000000000000002 /* CompanionSession.swift in Sources */,
+				A00000000000000000000003 /* RootView.swift in Sources */,
+				A00000000000000000000004 /* HomeView.swift in Sources */,
+				A00000000000000000000005 /* PairingView.swift in Sources */,
+				A00000000000000000000006 /* SettingsView.swift in Sources */,
+				A00000000000000000000007 /* KeychainStore.swift in Sources */,
+				A00000000000000000000008 /* DeviceIdentityStore.swift in Sources */,
+				A00000000000000000000009 /* IdentityFingerprint.swift in Sources */,
+				A0000000000000000000000C /* Base64URL.swift in Sources */,
+				A0000000000000000000000D /* StrictJSON.swift in Sources */,
+				A0000000000000000000000E /* PairingOffer.swift in Sources */,
+				A0000000000000000000000F /* PairingTranscript.swift in Sources */,
+				A00000000000000000000010 /* ComparisonPhrase.swift in Sources */,
+				A00000000000000000000011 /* QRScannerView.swift in Sources */,
+				A00000000000000000000013 /* PairingClient.swift in Sources */,
+				A00000000000000000000014 /* TrustedWindowsPeerStore.swift in Sources */,
+				A00000000000000000000015 /* SessionTranscript.swift in Sources */,
+				A00000000000000000000016 /* SessionProtocol.swift in Sources */,
+				A00000000000000000000017 /* DeviceSessionClient.swift in Sources */,
+				A00000000000000000000019 /* ContactSyncService.swift in Sources */,
+				A0000000000000000000001A /* ContactSyncView.swift in Sources */,
+				A0000000000000000000001B /* PhoneLinkServiceBrowser.swift in Sources */,
+				A0000000000000000000001C /* AttachmentBinaryFrame.swift in Sources */,
+				A0000000000000000000001D /* PhotoImportService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F00000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A0000000000000000000000B /* IdentityFingerprintTests.swift in Sources */,
+				A00000000000000000000012 /* PairingProtocolTests.swift in Sources */,
+				A00000000000000000000018 /* SessionTranscriptTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		G00000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D00000000000000000000001 /* PhoneLinkCompanion */;
+			targetProxy = G00000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		H00000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+		};
+			name = Debug;
+		};
+		H00000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+		};
+			name = Release;
+		};
+		H00000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PhoneLinkCompanion/Resources/Info.plist;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gabri.PhoneLinkCompanion;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+		};
+			name = Debug;
+		};
+		H00000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PhoneLinkCompanion/Resources/Info.plist;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gabri.PhoneLinkCompanion;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+		};
+			name = Release;
+		};
+		H00000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gabri.PhoneLinkCompanionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PhoneLinkCompanion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PhoneLinkCompanion";
+		};
+			name = Debug;
+		};
+		H00000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gabri.PhoneLinkCompanionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PhoneLinkCompanion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PhoneLinkCompanion";
+		};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		J00000000000000000000001 /* Build configuration list for PBXProject "PhoneLinkCompanion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H00000000000000000000001 /* Debug */,
+				H00000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		J00000000000000000000002 /* Build configuration list for PBXNativeTarget "PhoneLinkCompanion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H00000000000000000000003 /* Debug */,
+				H00000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		J00000000000000000000003 /* Build configuration list for PBXNativeTarget "PhoneLinkCompanionTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H00000000000000000000005 /* Debug */,
+				H00000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E00000000000000000000001 /* Project object */;
+}

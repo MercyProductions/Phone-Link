@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="PhoneLink.Windows.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:PhoneLink.Windows.Pages"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer>
+        <StackPanel Padding="32" Spacing="20">
+            <TextBlock FontSize="32" FontWeight="SemiBold" Text="Settings" />
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Privacy and security defaults are conservative until you explicitly enable a feature." />
+            <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12">
+                <StackPanel Spacing="12">
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="Security" />
+                    <CheckBox IsChecked="True" IsEnabled="False" Content="Require encrypted authenticated connections" />
+                    <CheckBox IsChecked="True" IsEnabled="False" Content="Keep ANCS notification content in memory only" />
+                    <CheckBox IsChecked="True" IsEnabled="False" Content="Continue running securely in the system tray when closed" />
+                    <CheckBox
+                        x:Name="HelloLockCheckBox"
+                        Click="HelloLockCheckBox_Click"
+                        Content="Require Windows Hello after 5 minutes of inactivity" />
+                    <InfoBar
+                        x:Name="HelloStatusBar"
+                        IsClosable="True"
+                        IsOpen="False" />
+                </StackPanel>
+            </Border>
+            <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12">
+                <StackPanel Spacing="12">
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="Data retention" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="ANCS notification content is memory-only. Other retention controls become available after encrypted persistence is initialized."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

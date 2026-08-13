@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="PhoneLink.Windows.Pages.AboutPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:PhoneLink.Windows.Pages"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <StackPanel Padding="32" Spacing="18">
+        <Image
+            Width="72"
+            Height="72"
+            HorizontalAlignment="Left"
+            Source="/Assets/Square150x150Logo.png" />
+        <TextBlock FontSize="32" FontWeight="SemiBold" Text="Phone Link" />
+        <TextBlock
+            FontSize="16"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="Secure local iPhone integration using documented public APIs and Bluetooth profiles."
+            TextWrapping="Wrap" />
+        <InfoBar
+            MaxWidth="760"
+            HorizontalAlignment="Left"
+            IsClosable="False"
+            IsOpen="True"
+            Message="This app never asks for Apple Account credentials and does not access Apple's private iMessage database."
+            Severity="Success"
+            Title="Privacy promise" />
+        <TextBlock Text="Architecture version 1.0 • Protocol version 1" />
+    </StackPanel>
+</Page>

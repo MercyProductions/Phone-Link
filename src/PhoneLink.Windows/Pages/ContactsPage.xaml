@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="PhoneLink.Windows.Pages.ContactsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PhoneLink.Windows.Pages"
+    Loaded="Page_Loaded"
+    Unloaded="Page_Unloaded">
+    <Grid Padding="32" RowSpacing="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Spacing="6">
+            <TextBlock FontSize="32" FontWeight="SemiBold" Text="Contacts" />
+            <TextBlock
+                MaxWidth="760"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Contacts authorized in the iPhone companion are synchronized over the authenticated local connection."
+                TextWrapping="Wrap" />
+        </StackPanel>
+
+        <TextBox
+            x:Name="SearchBox"
+            Grid.Row="1"
+            MaxWidth="620"
+            HorizontalAlignment="Left"
+            PlaceholderText="Search contact names"
+            TextChanged="SearchBox_TextChanged" />
+
+        <InfoBar
+            x:Name="ErrorBar"
+            Grid.Row="2"
+            IsClosable="True"
+            IsOpen="False"
+            Severity="Error"
+            Title="Contacts could not be loaded" />
+
+        <Grid Grid.Row="3">
+            <ProgressRing
+                x:Name="LoadingRing"
+                Width="36"
+                Height="36"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center" />
+
+            <Border
+                x:Name="EmptyState"
+                MaxWidth="820"
+                MinHeight="300"
+                HorizontalAlignment="Stretch"
+                Padding="36"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                CornerRadius="12"
+                Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                    <FontIcon FontSize="48" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE77B;" />
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="No synchronized contacts" />
+                    <TextBlock
+                        MaxWidth="420"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Connect the iPhone companion, open Sync, and choose Synchronize contacts."
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <ListView
+                x:Name="ContactsList"
+                ItemsSource="{x:Bind Contacts}"
+                SelectionMode="None"
+                Visibility="Collapsed">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:ContactListItem">
+                        <Grid Padding="10,8" ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Width="40"
+                                Height="40"
+                                Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                CornerRadius="20">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontWeight="SemiBold"
+                                    Text="{x:Bind Initials}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock FontSize="16" FontWeight="SemiBold" Text="{x:Bind DisplayName}" />
+                                <TextBlock
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{x:Bind Detail}"
+                                    TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+    </Grid>
+</Page>

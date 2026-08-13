@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "PhoneLink.Windows (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "PhoneLink.Windows (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

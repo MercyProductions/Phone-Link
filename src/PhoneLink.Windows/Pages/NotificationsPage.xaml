@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="PhoneLink.Windows.Pages.NotificationsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PhoneLink.Windows.Pages"
+    Loaded="Page_Loaded"
+    Unloaded="Page_Unloaded">
+    <ScrollViewer>
+        <StackPanel Padding="32" Spacing="20">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="6">
+                    <TextBlock FontSize="32" FontWeight="SemiBold" Text="Notifications" />
+                    <TextBlock
+                        MaxWidth="760"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="The companion can synchronize its own notifications. Other iPhone notifications require ANCS to be exposed over Bluetooth."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="RefreshButton" VerticalAlignment="Top" Click="RefreshButton_Click" Content="Check ANCS" />
+                    <Button x:Name="StartButton" VerticalAlignment="Top" Click="StartButton_Click" Content="Start notification session" Style="{StaticResource AccentButtonStyle}" />
+                    <Button x:Name="StopButton" VerticalAlignment="Top" Click="StopButton_Click" Content="End session" IsEnabled="False" />
+                </StackPanel>
+            </Grid>
+
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="ANCS data is treated as session-scoped and is cleared when the Bluetooth session ends. Phone Link does not claim background notification access through the iOS companion."
+                Severity="Informational"
+                Title="Privacy boundary" />
+            <InfoBar x:Name="ErrorBar" IsClosable="True" IsOpen="False" Severity="Error" Title="Bluetooth capability check failed" />
+            <ProgressRing x:Name="LoadingRing" Width="32" Height="32" HorizontalAlignment="Left" />
+            <ListView ItemsSource="{x:Bind Capabilities}" SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:AppleBluetoothCapabilityListItem">
+                        <Border Margin="0,0,0,8" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="10">
+                            <StackPanel Spacing="5">
+                                <TextBlock FontSize="16" FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                <TextBlock Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Text="{x:Bind Status}" />
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Detail}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            <TextBlock FontSize="22" FontWeight="SemiBold" Text="Live ANCS session" />
+            <InfoBar x:Name="SessionStatusBar" IsClosable="False" IsOpen="False" />
+            <ListView x:Name="NotificationsList" ItemsSource="{x:Bind Notifications}" SelectionMode="None" Visibility="Collapsed">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:AncsNotificationListItem">
+                        <Border Margin="0,0,0,8" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="10">
+                            <StackPanel Spacing="5">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Category}" />
+                                </Grid>
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Source}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{x:Bind Body}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            <Border x:Name="EmptyState" MinHeight="280" Padding="36" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                    <FontIcon FontSize="48" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xEA8F;" />
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="No notification session" />
+                    <TextBlock MaxWidth="560" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Start a session after Windows reports ANCS as available. Session data is kept only in memory and is cleared on disconnect." TextAlignment="Center" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
