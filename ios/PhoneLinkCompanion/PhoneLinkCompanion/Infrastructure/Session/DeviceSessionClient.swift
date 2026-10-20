@@ -18,6 +18,7 @@ final class DeviceSessionClient {
     }
 
     private let identityStore: DeviceIdentityStore
+    private let discoverEndpoints: @MainActor () async -> [PairingEndpoint]
     private var webSocket: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var pendingWebSocket: URLSessionWebSocketTask?
@@ -29,8 +30,12 @@ final class DeviceSessionClient {
     var onCommandRequest: ((ProtocolEnvelope<CommandRequestPayload>) -> Void)?
     var onConnectionFailure: ((String) -> Void)?
 
-    init(identityStore: DeviceIdentityStore = DeviceIdentityStore()) {
+    init(identityStore: DeviceIdentityStore = DeviceIdentityStore(),
+         discoverEndpoints: @escaping @MainActor () async -> [PairingEndpoint] = {
+             await PhoneLinkServiceBrowser().discoverEndpoints()
+         }) {
         self.identityStore = identityStore
+        self.discoverEndpoints = discoverEndpoints
     }
 
     func connect(to peer: TrustedWindowsPeer) async throws -> ConnectedWindowsSession {
@@ -38,7 +43,7 @@ final class DeviceSessionClient {
         let epoch = connectionEpoch
         var lastError: Error = DeviceSessionError.noReachableEndpoint
 
-        let discovered = await PhoneLinkServiceBrowser().discoverEndpoints()
+        let discovered = await discoverEndpoints()
         try Task.checkCancellation()
         guard connectionEpoch == epoch else { throw CancellationError() }
         var candidates: [PairingEndpoint] = []

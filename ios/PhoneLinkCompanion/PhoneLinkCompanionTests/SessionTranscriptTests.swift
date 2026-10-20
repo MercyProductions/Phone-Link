@@ -36,14 +36,16 @@ struct SessionTranscriptTests {
     }
 
     @Test @MainActor func disconnectInvalidatesAnInFlightDiscoveryAttempt() async throws {
-        let client = DeviceSessionClient()
+        let discovery = SuspendedDiscovery()
+        let client = DeviceSessionClient(discoverEndpoints: { await discovery.endpoints() })
         let peer = TrustedWindowsPeer(
             deviceID: UUID(), identityPublicKey: Data(repeating: 1, count: 32),
             tlsSPKISHA256: Data(repeating: 2, count: 32), endpoints: [], pairedAt: Date()
         )
         let attempt = Task { try await client.connect(to: peer) }
-        await Task.yield()
+        await discovery.waitUntilStarted()
         client.disconnect()
+        discovery.finish()
         do {
             _ = try await attempt.value
             Issue.record("A disconnected connection attempt must not complete.")
@@ -70,6 +72,30 @@ struct SessionTranscriptTests {
             serverSignature: Data((64..<128).map(UInt8.init))
         )
         #expect(clientProofInput.hex == "8a8d05c4cfb4a3e9e73dd0aa0ca486dfd8eb07b8eaa17a345e72bfd763d60474")
+    }
+}
+
+@MainActor
+private final class SuspendedDiscovery {
+    private var started = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var resultWaiter: CheckedContinuation<[PairingEndpoint], Never>?
+
+    func endpoints() async -> [PairingEndpoint] {
+        started = true
+        startWaiter?.resume()
+        startWaiter = nil
+        return await withCheckedContinuation { resultWaiter = $0 }
+    }
+
+    func waitUntilStarted() async {
+        if started { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func finish() {
+        resultWaiter?.resume(returning: [])
+        resultWaiter = nil
     }
 }
 
