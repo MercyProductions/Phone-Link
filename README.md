@@ -4,7 +4,7 @@ A real Windows + iPhone integration project built only on documented Apple, Micr
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX is available at `artifacts/windows/msix/PhoneLink-x64.msix`, but predates the current changes. Native iOS build/test CI now runs on macOS with Xcode 26.3; its results are tracked separately from physical-iPhone and signed-device verification, which remain open.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX is available at `artifacts/windows/msix/PhoneLink-x64.msix`, but predates the current changes. On October 20, all 80 .NET tests passed and the companion compiled with all 8 tests passing in [native Xcode 26.3/iOS 26.2 simulator CI](https://github.com/MercyProductions/Phone-Link/actions/runs/39374852047). Physical-iPhone and signed-device verification remain open.
 
 Implemented:
 
