@@ -111,6 +111,28 @@ final class DeviceSessionClient {
         }
     }
 
+    func contactCheckpoint() async throws -> Int64 {
+        guard connection?.capabilities.contains("contacts.sync.v2") == true else {
+            throw DeviceSessionError.contactProtocolUpgradeRequired
+        }
+        let response: ProtocolEnvelope<SyncCheckpointPayload> = try await sendAndAwaitResponse(
+            kind: "sync.checkpoint.request", payload: EmptyPayload(), expectedKind: "sync.checkpoint"
+        )
+        guard response.payload.originDeviceId == (try identityStore.loadOrCreateDeviceID()),
+              response.payload.highestContiguousSequence >= 0 else {
+            throw DeviceSessionError.invalidAcknowledgement
+        }
+        return response.payload.highestContiguousSequence
+    }
+
+    func reconcileContacts(_ identifiers: [String]) async throws {
+        let _: ProtocolEnvelope<EmptyPayload> = try await sendAndAwaitResponse(
+            kind: "contacts.reconcile",
+            payload: ContactReconciliationPayload(authorizedSourceContactIds: identifiers),
+            expectedKind: "contacts.reconciled"
+        )
+    }
+
     func sendPhoto(
         data: Data,
         displayName: String,
@@ -572,6 +594,7 @@ enum DeviceSessionError: LocalizedError {
     case notConnected
     case invalidAcknowledgement
     case responseTimedOut
+    case contactProtocolUpgradeRequired
 
     var errorDescription: String? {
         switch self {
@@ -585,6 +608,7 @@ enum DeviceSessionError: LocalizedError {
         case .notConnected: "Connect to a trusted Windows PC first."
         case .invalidAcknowledgement: "Windows returned an invalid synchronization acknowledgement."
         case .responseTimedOut: "Windows did not respond in time. Reconnect and try again."
+        case .contactProtocolUpgradeRequired: "Update the Windows app to use permission-safe contact synchronization."
         }
     }
 }

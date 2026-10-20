@@ -330,6 +330,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                         Capabilities =
                         [
                             "contacts.sync",
+                            "contacts.sync.v2",
                             "photos.import",
                             "command.call.start.confirmed",
                         ],

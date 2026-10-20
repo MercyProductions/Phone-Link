@@ -71,6 +71,15 @@ struct SyncAckPayload: Codable, Sendable {
     let highestContiguousSequence: Int64
 }
 
+struct SyncCheckpointPayload: Codable, Sendable {
+    let originDeviceId: UUID
+    let highestContiguousSequence: Int64
+}
+
+struct ContactReconciliationPayload: Codable, Sendable {
+    let authorizedSourceContactIds: [String]
+}
+
 struct AttachmentOfferPayload: Codable, Sendable {
     let attachmentId: UUID
     let displayName: String

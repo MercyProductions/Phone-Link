@@ -87,11 +87,25 @@ public sealed class ContactSyncEnvelopeHandlerTests
             CancellationToken.None);
         Assert.Equal(1, retry!.HighestContiguousSequence);
         Assert.Single(store.Upserts);
+
+        var checkpoint = await handler.GetCheckpointAsync(
+            new ReceivedDeviceEnvelope(deviceId, envelope), CancellationToken.None);
+        Assert.Equal(deviceId.Value, checkpoint.OriginDeviceId);
+        Assert.Equal(1, checkpoint.HighestContiguousSequence);
+        var otherDevice = DeviceId.New();
+        var otherCheckpoint = await handler.GetCheckpointAsync(
+            new ReceivedDeviceEnvelope(otherDevice, envelope), CancellationToken.None);
+        Assert.Equal(otherDevice.Value, otherCheckpoint.OriginDeviceId);
+        Assert.Equal(0, otherCheckpoint.HighestContiguousSequence);
     }
 
     private sealed class CapturingContactStore : IContactStore
     {
         public List<SyncedContact> Upserts { get; } = [];
+
+        public Task ReconcileAuthorizationAsync(DeviceId ownerDeviceId,
+            IReadOnlyList<string> authorizedSourceContactIds, DateTimeOffset observedAt,
+            CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task UpsertAsync(SyncedContact contact, CancellationToken cancellationToken)
         {

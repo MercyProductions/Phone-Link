@@ -10,7 +10,7 @@ struct ContactSyncView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Contacts") {
+                Section {
                     Label(
                         "Share only contacts allowed by your current iOS Contacts permission.",
                         systemImage: "person.crop.circle.badge.checkmark"
@@ -23,6 +23,8 @@ struct ContactSyncView: View {
                         Label("Synchronize contacts", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .disabled(!isConnected || isWorking)
+                } header: {
+                    Text("Contacts")
                 } footer: {
                     Text("Phone Link reads names, phone numbers, and email addresses. Contact notes and unrelated fields are never requested.")
                 }
@@ -31,7 +33,7 @@ struct ContactSyncView: View {
                     statusView
                 }
 
-                Section("Photos") {
+                Section {
                     PhotosPicker(
                         selection: $selectedPhotos,
                         maxSelectionCount: 20,
@@ -42,6 +44,8 @@ struct ContactSyncView: View {
                     .disabled(!isConnected || isPhotoWorking)
 
                     photoStatusView
+                } header: {
+                    Text("Photos")
                 } footer: {
                     Text("The system picker shares only the photos you select. Each photo is verified, encrypted, and stored in Phone Link’s private data folder on Windows.")
                 }

@@ -109,6 +109,34 @@ public sealed class ContactSyncEnvelopeHandler
         };
     }
 
+    public async Task<SyncCheckpointPayload> GetCheckpointAsync(
+        ReceivedDeviceEnvelope received,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(received);
+        return new SyncCheckpointPayload
+        {
+            OriginDeviceId = received.DeviceId.Value,
+            HighestContiguousSequence = await _receiptStore
+                .GetHighestAppliedSequenceAsync(received.DeviceId, cancellationToken).ConfigureAwait(false),
+        };
+    }
+
+    public async Task ReconcileAuthorizationAsync(
+        ReceivedDeviceEnvelope received,
+        CancellationToken cancellationToken)
+    {
+        var payload = received.Envelope.Payload.Deserialize<ContactReconciliationPayload>(JsonOptions)
+            ?? throw new InvalidDataException("Contact authorization payload is required.");
+        if (payload.AuthorizedSourceContactIds is not { Length: <= 20_000 } ||
+            payload.AuthorizedSourceContactIds.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 500))
+        {
+            throw new InvalidDataException("The contact authorization snapshot exceeds protocol limits.");
+        }
+        await _contactStore.ReconcileAuthorizationAsync(received.DeviceId,
+            payload.AuthorizedSourceContactIds, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+    }
+
     private static InboundSyncReceipt CreateReceipt(
         DeviceId originDeviceId,
         SyncEventMessage syncEvent)

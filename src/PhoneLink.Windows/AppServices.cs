@@ -487,6 +487,11 @@ public sealed class AppServices : IAsyncDisposable
         {
             try
             {
+                if (!server.TryGetSessionId(frame.DeviceId, out var activeSessionId) || activeSessionId != frame.SessionId)
+                {
+                    // Discard queued frames from revoked or replaced authenticated sessions.
+                    continue;
+                }
                 if (frame is ReceivedAttachmentChunk chunk)
                 {
                     await attachmentManager.HandleChunkAsync(chunk, cancellationToken).ConfigureAwait(false);
@@ -499,6 +504,21 @@ public sealed class AppServices : IAsyncDisposable
 
                 if (TryCompleteCommand(received))
                 {
+                    continue;
+                }
+
+                if (received.Envelope.Kind == "sync.checkpoint.request")
+                {
+                    await SendResponseAsync(server, received, "sync.checkpoint",
+                        await handler.GetCheckpointAsync(received, cancellationToken).ConfigureAwait(false),
+                        cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+                if (received.Envelope.Kind == "contacts.reconcile")
+                {
+                    await handler.ReconcileAuthorizationAsync(received, cancellationToken).ConfigureAwait(false);
+                    await SendResponseAsync(server, received, "contacts.reconciled", new { },
+                        cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 

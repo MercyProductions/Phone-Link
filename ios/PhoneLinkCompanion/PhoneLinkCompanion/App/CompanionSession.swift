@@ -45,6 +45,7 @@ final class CompanionSession: ObservableObject {
     private var pathMonitorID = UUID()
     private let defaults: UserDefaults
     private var manuallyDisconnected: Bool
+    private var contactSyncInProgress = false
 
     init(
         identityStore: DeviceIdentityStore = DeviceIdentityStore(),
@@ -213,9 +214,31 @@ final class CompanionSession: ObservableObject {
                 defaults.removeObject(forKey: "connection.selected-peer.v1")
             }
             refreshTrustedPeers()
+            try ContactSyncStateStore.defaultStore().remove(peerID: deviceID)
         } catch {
             connectionState = .failed("The trusted PC could not be revoked. \(error.localizedDescription)")
         }
+    }
+
+    func beginContactSync() throws -> ConnectedWindowsSession {
+        guard !contactSyncInProgress else { throw ContactSyncError.alreadySynchronizing }
+        guard let connectedSession else { throw DeviceSessionError.notConnected }
+        contactSyncInProgress = true
+        return connectedSession
+    }
+
+    func endContactSync() { contactSyncInProgress = false }
+
+    func requireConnection(_ expected: ConnectedWindowsSession) throws {
+        guard connectedSession == expected else { throw DeviceSessionError.notConnected }
+    }
+
+    func contactCheckpoint() async throws -> Int64 {
+        try await deviceSessionClient.contactCheckpoint()
+    }
+
+    func reconcileContacts(_ identifiers: [String]) async throws {
+        try await deviceSessionClient.reconcileContacts(identifiers)
     }
 
     func resolveDialRequest(approved: Bool) async {

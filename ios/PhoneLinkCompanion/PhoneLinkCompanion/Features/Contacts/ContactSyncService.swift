@@ -31,9 +31,79 @@ struct ContactSyncBatchPayload: Codable, Sendable {
     let events: [ContactSyncEvent]
 }
 
-private struct PendingContactSync: Codable {
+struct PendingContactSync: Codable {
     let batches: [ContactSyncBatchPayload]
     let resultingIdentifiers: [String]
+}
+
+struct ContactSyncState: Codable {
+    let peerDeviceID: UUID
+    var lastSequence: Int64
+    var pending: PendingContactSync?
+}
+
+struct ContactSyncStateStore {
+    let directory: URL
+
+    static func defaultStore() throws -> ContactSyncStateStore {
+        guard let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw ContactSyncError.outboxUnavailable
+        }
+        return ContactSyncStateStore(directory: root.appendingPathComponent("PhoneLink/ContactSync", isDirectory: true))
+    }
+
+    func load(peerID: UUID) throws -> ContactSyncState {
+        let url = stateURL(peerID)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return ContactSyncState(peerDeviceID: peerID, lastSequence: 0, pending: nil)
+        }
+        let state = try PhoneLinkJSON.decoder.decode(ContactSyncState.self, from: Data(contentsOf: url))
+        guard state.peerDeviceID == peerID, state.lastSequence >= 0 else { throw ContactSyncError.invalidState }
+        return state
+    }
+
+    func save(_ state: ContactSyncState) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try PhoneLinkJSON.encoder.encode(state).write(to: stateURL(state.peerDeviceID), options: [.atomic, .completeFileProtection])
+    }
+
+    func remove(peerID: UUID) throws {
+        let url = stateURL(peerID)
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
+
+    func retireLegacyState() throws {
+        let legacy = directory.deletingLastPathComponent().appendingPathComponent("contacts-outbox-v1.json")
+        if FileManager.default.fileExists(atPath: legacy.path) { try FileManager.default.removeItem(at: legacy) }
+        UserDefaults.standard.removeObject(forKey: "contacts.last-synchronized-identifiers.v1")
+        UserDefaults.standard.removeObject(forKey: "sync.origin-sequence.v1")
+    }
+
+    private func stateURL(_ peerID: UUID) -> URL {
+        directory.appendingPathComponent("\(peerID.uuidString.lowercased()).json")
+    }
+}
+
+extension PendingContactSync {
+    func recovered(after checkpoint: Int64, contacts: [ContactPayload]) -> PendingContactSync? {
+        let authorized = Dictionary(contacts.map { ($0.sourceContactId, $0) }, uniquingKeysWith: { _, last in last })
+        let remaining = batches.flatMap(\.events).filter { $0.originSequence > checkpoint }
+        guard remaining.first?.originSequence == checkpoint + 1 else { return nil }
+        let events = remaining.map { old in
+            let current = authorized[old.entityId]
+            return ContactSyncEvent(
+                eventId: UUID(), originSequence: old.originSequence,
+                occurredAt: PhoneLinkJSON.timestamp(), eventType: current == nil ? "contact.delete" : "contact.upsert",
+                entityId: old.entityId, payload: current ?? ContactPayload(
+                    sourceContactId: old.entityId, displayName: "", givenName: "", familyName: "",
+                    organizationName: "", phoneNumbers: [], emailAddresses: []
+                )
+            )
+        }
+        return PendingContactSync(batches: events.chunked(maximumCount: 100).map {
+            ContactSyncBatchPayload(batchId: UUID(), events: $0)
+        }, resultingIdentifiers: contacts.map(\.sourceContactId).sorted())
+    }
 }
 
 @MainActor
@@ -49,38 +119,43 @@ final class ContactSyncService: ObservableObject {
 
     @Published private(set) var state: State = .idle
 
-    private static let previousIdentifiersKey = "contacts.last-synchronized-identifiers.v1"
-    private static let sequenceKey = "sync.origin-sequence.v1"
-    private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-    }
-
     func synchronize(using session: CompanionSession) async {
         do {
+            let target = try session.beginContactSync()
+            defer { session.endContactSync() }
             state = .requestingPermission
             let accessGranted = try await CNContactStore().requestAccess(for: .contacts)
-            guard accessGranted else { throw ContactSyncError.accessDenied }
 
             state = .reading
-            let contacts = try await Task.detached(priority: .userInitiated) {
-                try Self.fetchContacts()
-            }.value
+            let contacts: [ContactPayload]
+            if accessGranted {
+                contacts = try await Task.detached(priority: .userInitiated) { try Self.fetchContacts() }.value
+            } else {
+                contacts = []
+            }
 
             let currentIdentifiers = Set(contacts.map(\.sourceContactId))
-            var previousIdentifiers = loadPreviousIdentifiers()
-            if let pending = try loadPendingSync() {
-                try await send(pending, using: session)
-                previousIdentifiers = Set(pending.resultingIdentifiers)
-                savePreviousIdentifiers(previousIdentifiers)
-                advanceSequence(for: pending)
-                try clearPendingSync()
+            try session.requireConnection(target)
+            let checkpoint = try await session.contactCheckpoint()
+            try session.requireConnection(target)
+            try await session.reconcileContacts(currentIdentifiers.sorted())
+            try session.requireConnection(target)
+            let store = try ContactSyncStateStore.defaultStore()
+            var saved = try store.load(peerID: target.peerDeviceID)
+            let recovered = saved.pending?.recovered(after: checkpoint, contacts: contacts)
+            saved.lastSequence = checkpoint
+            saved.pending = recovered
+            try store.save(saved)
+            try store.retireLegacyState()
+            if let pending = recovered {
+                try await send(pending, using: session, target: target)
+                saved.lastSequence = pending.batches.last?.events.last?.originSequence ?? checkpoint
+                saved.pending = nil
+                try store.save(saved)
             }
-            var nextSequence = defaults.object(forKey: Self.sequenceKey) as? Int64
-                ?? Int64(defaults.integer(forKey: Self.sequenceKey))
+            var nextSequence = saved.lastSequence
             var events: [ContactSyncEvent] = []
-            events.reserveCapacity(contacts.count + previousIdentifiers.subtracting(currentIdentifiers).count)
+            events.reserveCapacity(contacts.count)
 
             for contact in contacts {
                 nextSequence += 1
@@ -93,29 +168,8 @@ final class ContactSyncService: ObservableObject {
                     payload: contact
                 ))
             }
-            for identifier in previousIdentifiers.subtracting(currentIdentifiers).sorted() {
-                nextSequence += 1
-                events.append(ContactSyncEvent(
-                    eventId: UUID(),
-                    originSequence: nextSequence,
-                    occurredAt: PhoneLinkJSON.timestamp(),
-                    eventType: "contact.delete",
-                    entityId: identifier,
-                    payload: ContactPayload(
-                        sourceContactId: identifier,
-                        displayName: "",
-                        givenName: "",
-                        familyName: "",
-                        organizationName: "",
-                        phoneNumbers: [],
-                        emailAddresses: []
-                    )
-                ))
-            }
-
             if events.isEmpty {
-                savePreviousIdentifiers(currentIdentifiers)
-                state = .complete(0)
+                state = accessGranted ? .complete(0) : .failed("Contact permission was denied. The Windows contact cache was cleared.")
                 return
             }
 
@@ -125,12 +179,12 @@ final class ContactSyncService: ObservableObject {
                 batches: batches,
                 resultingIdentifiers: currentIdentifiers.sorted()
             )
-            try savePendingSync(pending)
-            defaults.set(nextSequence, forKey: Self.sequenceKey)
-            try await send(pending, using: session)
-
-            savePreviousIdentifiers(currentIdentifiers)
-            try clearPendingSync()
+            saved.pending = pending
+            try store.save(saved)
+            try await send(pending, using: session, target: target)
+            saved.lastSequence = nextSequence
+            saved.pending = nil
+            try store.save(saved)
             state = .complete(contacts.count)
         } catch {
             state = .failed(error.localizedDescription)
@@ -203,20 +257,13 @@ final class ContactSyncService: ObservableObject {
         return normalized
     }
 
-    private func loadPreviousIdentifiers() -> Set<String> {
-        guard let values = defaults.stringArray(forKey: Self.previousIdentifiersKey) else { return [] }
-        return Set(values)
-    }
-
-    private func savePreviousIdentifiers(_ identifiers: Set<String>) {
-        defaults.set(identifiers.sorted(), forKey: Self.previousIdentifiersKey)
-    }
-
     private func send(
         _ pending: PendingContactSync,
-        using session: CompanionSession
+        using session: CompanionSession,
+        target: ConnectedWindowsSession
     ) async throws {
         for (index, batch) in pending.batches.enumerated() {
+            try session.requireConnection(target)
             guard let finalSequence = batch.events.last?.originSequence else { continue }
             state = .sending(completed: index, total: pending.batches.count)
             try await session.sendAndAwaitSyncAck(
@@ -224,54 +271,8 @@ final class ContactSyncService: ObservableObject {
                 payload: batch,
                 originSequence: finalSequence
             )
+            try session.requireConnection(target)
         }
-    }
-
-    private func advanceSequence(for pending: PendingContactSync) {
-        guard let sequence = pending.batches.last?.events.last?.originSequence else { return }
-        let current = defaults.object(forKey: Self.sequenceKey) as? Int64
-            ?? Int64(defaults.integer(forKey: Self.sequenceKey))
-        defaults.set(max(current, sequence), forKey: Self.sequenceKey)
-    }
-
-    private func loadPendingSync() throws -> PendingContactSync? {
-        let url = try outboxURL()
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return try PhoneLinkJSON.decoder.decode(
-            PendingContactSync.self,
-            from: Data(contentsOf: url)
-        )
-    }
-
-    private func savePendingSync(_ pending: PendingContactSync) throws {
-        let url = try outboxURL()
-        let data = try PhoneLinkJSON.encoder.encode(pending)
-        try data.write(to: url, options: [.atomic])
-        try FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.complete],
-            ofItemAtPath: url.path
-        )
-    }
-
-    private func clearPendingSync() throws {
-        let url = try outboxURL()
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        try FileManager.default.removeItem(at: url)
-    }
-
-    private func outboxURL() throws -> URL {
-        guard let root = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
-            throw ContactSyncError.outboxUnavailable
-        }
-        let directory = root.appendingPathComponent("PhoneLink", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        return directory.appendingPathComponent("contacts-outbox-v1.json", isDirectory: false)
     }
 }
 
@@ -287,6 +288,8 @@ private extension Array {
 enum ContactSyncError: LocalizedError {
     case accessDenied
     case outboxUnavailable
+    case alreadySynchronizing
+    case invalidState
 
     var errorDescription: String? {
         switch self {
@@ -294,6 +297,10 @@ enum ContactSyncError: LocalizedError {
             "Contact access is required. You can grant limited or full access in iPhone Settings."
         case .outboxUnavailable:
             "The protected contact synchronization outbox is unavailable."
+        case .alreadySynchronizing:
+            "Contact synchronization is already running."
+        case .invalidState:
+            "The contact synchronization state belongs to another PC or is invalid."
         }
     }
 }

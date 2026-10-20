@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using PhoneLink.Application.Features.Contacts;
 using PhoneLink.Application.Ports;
@@ -99,6 +100,38 @@ public sealed class SqliteContactStore : IContactStore
         command.Parameters.AddWithValue("$sourceContactId", sourceContactId);
         command.Parameters.AddWithValue("$deletedAt", FormatTimestamp(deletedAt));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task ReconcileAuthorizationAsync(
+        DeviceId ownerDeviceId,
+        IReadOnlyList<string> authorizedSourceContactIds,
+        DateTimeOffset observedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authorizedSourceContactIds);
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = """
+            DELETE FROM contact_methods WHERE contact_id IN (
+                SELECT contact_id FROM contacts
+                WHERE owner_device_id = $owner AND source_kind = 'companion-contacts'
+                AND source_contact_id NOT IN (SELECT value FROM json_each($authorized))
+            );
+            UPDATE contacts SET is_deleted = 1, display_name = '', given_name = '',
+                family_name = '', organization_name = '', updated_at_utc = $observedAt
+            WHERE owner_device_id = $owner AND source_kind = 'companion-contacts'
+                AND source_contact_id NOT IN (SELECT value FROM json_each($authorized));
+            UPDATE sync_events SET payload_json = '{}'
+            WHERE origin_device_id = $owner AND event_type IN ('contact.upsert', 'contact.delete')
+                AND entity_id NOT IN (SELECT value FROM json_each($authorized));
+            """;
+        command.Parameters.AddWithValue("$owner", ownerDeviceId.ToString());
+        command.Parameters.AddWithValue("$authorized", JsonSerializer.Serialize(authorizedSourceContactIds));
+        command.Parameters.AddWithValue("$observedAt", FormatTimestamp(observedAt));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<SyncedContact>> ListAsync(

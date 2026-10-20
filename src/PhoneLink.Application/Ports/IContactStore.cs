@@ -7,6 +7,12 @@ public interface IContactStore
 {
     Task UpsertAsync(SyncedContact contact, CancellationToken cancellationToken);
 
+    Task ReconcileAuthorizationAsync(
+        DeviceId ownerDeviceId,
+        IReadOnlyList<string> authorizedSourceContactIds,
+        DateTimeOffset observedAt,
+        CancellationToken cancellationToken);
+
     Task DeleteAsync(
         DeviceId ownerDeviceId,
         string sourceContactId,

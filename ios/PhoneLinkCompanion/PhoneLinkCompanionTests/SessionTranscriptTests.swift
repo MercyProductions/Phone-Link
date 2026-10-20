@@ -3,6 +3,38 @@ import Testing
 @testable import PhoneLinkCompanion
 
 struct SessionTranscriptTests {
+    @Test func contactOutboxesAreIsolatedByPeer() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ContactSyncStateStore(directory: directory)
+        let first = UUID()
+        let second = UUID()
+        try store.save(ContactSyncState(peerDeviceID: first, lastSequence: 90, pending: nil))
+        #expect(try store.load(peerID: first).lastSequence == 90)
+        #expect(try store.load(peerID: second).lastSequence == 0)
+        try store.save(ContactSyncState(peerDeviceID: second, lastSequence: 3, pending: nil))
+        try store.remove(peerID: first)
+        #expect(try store.load(peerID: second).lastSequence == 3)
+    }
+
+    @Test func pendingRecoveryDoesNotReplayRevokedContactFields() throws {
+        let contact = ContactPayload(sourceContactId: "revoked", displayName: "Private Contact",
+            givenName: "Private", familyName: "Contact", organizationName: "", phoneNumbers: [], emailAddresses: [])
+        let applied = ContactSyncEvent(eventId: UUID(), originSequence: 1, occurredAt: PhoneLinkJSON.timestamp(),
+            eventType: "contact.upsert", entityId: "revoked", payload: contact)
+        let unsent = ContactSyncEvent(eventId: UUID(), originSequence: 2, occurredAt: PhoneLinkJSON.timestamp(),
+            eventType: "contact.upsert", entityId: "revoked", payload: contact)
+        let pending = PendingContactSync(batches: [ContactSyncBatchPayload(batchId: UUID(), events: [applied, unsent])],
+            resultingIdentifiers: ["revoked"])
+        let recovered = try #require(pending.recovered(after: 1, contacts: []))
+        let event = try #require(recovered.batches.first?.events.first)
+        #expect(event.originSequence == 2)
+        #expect(event.eventId != unsent.eventId)
+        #expect(event.eventType == "contact.delete")
+        #expect(event.payload.displayName.isEmpty)
+        #expect(!String(decoding: try PhoneLinkJSON.encoder.encode(recovered), as: UTF8.self).contains("Private Contact"))
+    }
+
     @Test @MainActor func disconnectInvalidatesAnInFlightDiscoveryAttempt() async throws {
         let client = DeviceSessionClient()
         let peer = TrustedWindowsPeer(
