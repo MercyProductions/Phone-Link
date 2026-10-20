@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var session: CompanionSession
+    @State private var pairingLink: PairingLink?
 
     var body: some View {
         TabView {
@@ -21,6 +22,21 @@ struct RootView: View {
                 }
         }
         .tint(.indigo)
+        .onOpenURL { url in
+            // An external link only opens the review screen; it cannot approve trust.
+            guard pairingLink == nil else { return }
+            pairingLink = PairingLink(url: url)
+        }
+        .sheet(item: $pairingLink) { link in
+            NavigationStack {
+                PairingView(pairingURL: link.url)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { pairingLink = nil }
+                        }
+                    }
+            }
+        }
         .alert(item: pendingDialBinding) { request in
             Alert(
                 title: Text("Call from this iPhone?"),
@@ -41,6 +57,11 @@ struct RootView: View {
             set: { _ in }
         )
     }
+}
+
+private struct PairingLink: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 #Preview {

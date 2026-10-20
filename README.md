@@ -61,6 +61,12 @@ The installer prompts before trusting the local public certificate and before in
 
 ## Build the iPhone companion
 
+### Pairing QR prerequisite
+
+The Windows QR is a one-time `phonelink://pair?data=…` pairing offer, **not an iPhone app-download link**. It requires this repository's custom Phone Link companion, not Microsoft's app. The repository currently supplies an Xcode project, not an App Store/TestFlight installation link. Install the companion on your iPhone using the Mac/Xcode steps below first (current deployment target: iOS 26).
+
+In the installed companion choose **Pair with Windows → Scan QR code**, scan a fresh Windows code, choose **Connect securely**, and compare/approve the six words on both devices. Keep both on the same local network. If Apple Camera reports “No usable data found,” use the in-companion scanner; installing the Windows package alone cannot enable iPhone pairing. Updated companion builds also register the `phonelink` URL scheme and route external links to the same validated review screen, without automatically connecting or trusting a PC. Apple Camera recognition on physical hardware still requires testing. See Apple's [custom URL scheme documentation](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app).
+
 On a Mac with the production Xcode release containing the iOS 26 SDK:
 
 ```bash

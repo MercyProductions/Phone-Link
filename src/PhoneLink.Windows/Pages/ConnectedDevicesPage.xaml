@@ -85,9 +85,13 @@
                         <Image x:Name="QrImage" Width="320" Height="320" Stretch="Uniform" />
                     </Border>
                     <StackPanel Grid.Column="1" MaxWidth="520" VerticalAlignment="Center" Spacing="12">
-                        <TextBlock FontSize="24" FontWeight="SemiBold" Text="Scan with your iPhone" />
+                        <TextBlock FontSize="24" FontWeight="SemiBold" Text="Scan inside the iPhone companion" />
                         <TextBlock
-                            Text="Open the Phone Link companion, choose Pair with Windows, and scan this one-time code."
+                            Text="Install this project's Phone Link companion on your iPhone first. Open it, choose Pair with Windows, then Scan QR code. Keep both devices on the same Wi-Fi network."
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="If Apple Camera says ‘No usable data found’, use the scanner inside the companion. This code is not an app-download link and does not pair through Microsoft Phone Link."
                             TextWrapping="Wrap" />
                         <TextBlock
                             x:Name="ExpiryText"

@@ -2,6 +2,7 @@ import SwiftUI
 import VisionKit
 
 struct PairingView: View {
+    var pairingURL: URL? = nil
     @EnvironmentObject private var companionSession: CompanionSession
     @State private var isShowingScanner = false
     @State private var scannedOffer: PairingOfferArtifact?
@@ -47,6 +48,9 @@ struct PairingView: View {
         }
         .navigationTitle("Pair a PC")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: pairingURL) {
+            if let pairingURL { handleScan(.success(pairingURL.absoluteString)) }
+        }
         .fullScreenCover(isPresented: $isShowingScanner) {
             NavigationStack {
                 QRScannerView { result in

@@ -48,6 +48,23 @@ final class PairingProtocolTests: XCTestCase {
         let duplicate = Data(#"{"version":1,"version":1}"#.utf8)
         XCTAssertThrowsError(try StrictJSON.validateNoDuplicateObjectKeys(duplicate))
     }
+
+    func testApplicationRegistersPairingURLScheme() {
+        let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        XCTAssertTrue(schemes.contains("phonelink"))
+    }
+
+    func testPairingURLRoundTripPreservesSignedOfferBytes() throws {
+        let payload = "phonelink://pair?data=" + Base64URL.encode(rawOfferJSON)
+        let url = try XCTUnwrap(URL(string: payload))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let now = try XCTUnwrap(formatter.date(from: "2026-08-12T19:05:31.427Z"))
+        let decoded = try PairingOfferCodec.decode(url.absoluteString, now: now)
+        XCTAssertEqual(decoded.rawJSON, rawOfferJSON)
+        XCTAssertEqual(decoded.qrPayload, payload)
+    }
 }
 
 private extension Data {
