@@ -55,7 +55,7 @@ final class PairingClient {
 
                 do {
                     try await task.send(.data(JSONEncoder.phoneLink.encode(hello)))
-                    let proofData = try await receiveData(task)
+                    let proofData = try await Self.receiveData(task)
                     try StrictJSON.validateNoDuplicateObjectKeys(proofData)
                     let serverProof = try JSONDecoder.phoneLink.decode(PairingServerProof.self, from: proofData)
                     guard serverProof.kind == "pairing.serverProof",
