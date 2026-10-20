@@ -11,10 +11,14 @@ public sealed class WindowsDnsSdAdvertiser : IAsyncDisposable
     private readonly RegisterCompleteCallback _callback;
     private readonly TaskCompletionSource _registered = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _deregistered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly object _disposeGate = new();
     private IntPtr _serviceInstance;
     private IntPtr _request;
-    private bool _isDeregistering;
-    private bool _disposed;
+    private IntPtr _cancel;
+    private GCHandle _lifetimeRoot;
+    private Task? _disposeTask;
+    private bool _registrationSubmitted;
+    private volatile bool _isDeregistering;
 
     private WindowsDnsSdAdvertiser()
     {
@@ -31,6 +35,7 @@ public sealed class WindowsDnsSdAdvertiser : IAsyncDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(port));
         }
+        cancellationToken.ThrowIfCancellationRequested();
 
         var advertiser = new WindowsDnsSdAdvertiser();
         try
@@ -48,39 +53,82 @@ public sealed class WindowsDnsSdAdvertiser : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_disposed)
+        lock (_disposeGate)
         {
-            return;
+            _disposeTask ??= FinishDisposalAsync();
+            return new ValueTask(WaitForDisposalAsync(_disposeTask));
         }
-        _disposed = true;
+    }
 
-        if (_request != IntPtr.Zero && _registered.Task.IsCompletedSuccessfully)
+    private static async Task WaitForDisposalAsync(Task cleanup)
+    {
+        try
         {
-            _isDeregistering = true;
-            var status = DnsServiceDeRegister(_request, IntPtr.Zero);
-            if (status == DnsRequestPending)
+            await cleanup.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // Native cancellation/teardown can complete late. Its GC root and request
+            // must remain alive; FinishDisposalAsync releases them after the callback.
+        }
+    }
+
+    private async Task FinishDisposalAsync()
+    {
+        try
+        {
+            if (_registrationSubmitted)
             {
+                if (!_registered.Task.IsCompleted)
+                {
+                    // DNS_SERVICE_CANCEL must stay allocated through cancellation.
+                    _ = DnsServiceRegisterCancel(_cancel);
+                }
                 try
                 {
-                    await _deregistered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                    await _registered.Task.ConfigureAwait(false);
                 }
-                catch (TimeoutException)
+                catch (Win32Exception)
                 {
+                    return;
+                }
+
+                _isDeregistering = true;
+                var status = DnsServiceDeRegister(_request, IntPtr.Zero);
+                if (status == DnsRequestPending)
+                {
+                    await _deregistered.Task.ConfigureAwait(false);
+                }
+                else if (status != 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"DNS-SD deregistration failed with status {status}.");
                 }
             }
         }
-
-        if (_serviceInstance != IntPtr.Zero)
+        catch (Win32Exception exception)
         {
-            DnsServiceFreeInstance(_serviceInstance);
-            _serviceInstance = IntPtr.Zero;
+            System.Diagnostics.Debug.WriteLine($"DNS-SD cleanup failed: {exception.NativeErrorCode}.");
         }
-        if (_request != IntPtr.Zero)
+        finally
         {
-            Marshal.FreeHGlobal(_request);
-            _request = IntPtr.Zero;
+            if (_serviceInstance != IntPtr.Zero)
+            {
+                DnsServiceFreeInstance(_serviceInstance);
+                _serviceInstance = IntPtr.Zero;
+            }
+            if (_request != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_request);
+                _request = IntPtr.Zero;
+            }
+            if (_cancel != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_cancel);
+                _cancel = IntPtr.Zero;
+            }
+            if (_lifetimeRoot.IsAllocated) { _lifetimeRoot.Free(); }
         }
     }
 
@@ -115,11 +163,16 @@ public sealed class WindowsDnsSdAdvertiser : IAsyncDisposable
         };
         _request = Marshal.AllocHGlobal(Marshal.SizeOf<DnsServiceRegisterRequest>());
         Marshal.StructureToPtr(request, _request, fDeleteOld: false);
-        var status = DnsServiceRegister(_request, IntPtr.Zero);
+        _cancel = Marshal.AllocHGlobal(IntPtr.Size);
+        Marshal.WriteIntPtr(_cancel, IntPtr.Zero);
+        // The native function pointer does not itself keep a managed delegate alive.
+        _lifetimeRoot = GCHandle.Alloc(this);
+        var status = DnsServiceRegister(_request, _cancel);
         if (status != DnsRequestPending)
         {
             throw new Win32Exception(checked((int)status), "DNS-SD service registration failed.");
         }
+        _registrationSubmitted = true;
     }
 
     private void OnRegistrationCompleted(uint status, IntPtr queryContext, IntPtr instance)
@@ -184,6 +237,9 @@ public sealed class WindowsDnsSdAdvertiser : IAsyncDisposable
 
     [DllImport("dnsapi.dll")]
     private static extern uint DnsServiceDeRegister(IntPtr request, IntPtr cancel);
+
+    [DllImport("dnsapi.dll")]
+    private static extern uint DnsServiceRegisterCancel(IntPtr cancel);
 
     [DllImport("dnsapi.dll")]
     private static extern void DnsServiceFreeInstance(IntPtr instance);

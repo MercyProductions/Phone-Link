@@ -8,6 +8,7 @@ using PhoneLink.Domain.Devices;
 using Windows.Graphics;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI;
+using Microsoft.UI.Xaml.Input;
 
 namespace PhoneLink.Windows;
 
@@ -23,6 +24,10 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon("Assets/AppIcon.ico");
         AppWindow.Resize(new SizeInt32(1240, 820));
         AppWindow.Closing += AppWindow_Closing;
+        RootGrid.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => App.RecordUserActivity()), true);
+        RootGrid.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler((_, _) => App.RecordUserActivity()), true);
+        RootGrid.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler((_, _) => App.RecordUserActivity()), true);
+        RootGrid.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, _) => App.RecordUserActivity()), true);
 
         NavFrame.Navigate(typeof(MessagesPage));
         Closed += MainWindow_Closed;
@@ -121,6 +126,7 @@ public sealed partial class MainWindow : Window
         }
 
         args.Cancel = true;
+        App.LockForPrivacy();
         sender.Hide();
     }
 

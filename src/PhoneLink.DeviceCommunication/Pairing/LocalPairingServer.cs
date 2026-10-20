@@ -1,8 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Security.Authentication;
@@ -16,6 +14,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using PhoneLink.Application.Ports;
+using PhoneLink.DeviceCommunication.Discovery;
 using PhoneLink.DeviceCommunication.Sessions;
 using PhoneLink.Domain.Devices;
 using PhoneLink.Protocol;
@@ -694,16 +693,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
     }
 
     private static IPAddress[] GetPrivateNetworkAddresses() =>
-        NetworkInterface.GetAllNetworkInterfaces()
-            .Where(network => network.OperationalStatus == OperationalStatus.Up)
-            .SelectMany(network => network.GetIPProperties().UnicastAddresses)
-            .Select(address => address.Address)
-            .Where(address => !IPAddress.IsLoopback(address))
-            .Where(address => PairingOfferValidator.IsLocalEndpoint(address.ToString()))
-            .OrderBy(address => address.AddressFamily == AddressFamily.InterNetwork ? 0 : 1)
-            .Distinct()
-            .Take(8)
-            .ToArray();
+        LocalNetworkCatalog.SelectPairingAddresses(LocalNetworkCatalog.Capture());
 
     private static void RequireLength(byte[] value, int expected, string parameterName)
     {

@@ -4,7 +4,6 @@ using PhoneLink.Application.Ports;
 using Windows.Security.Credentials;
 using Windows.Security.Cryptography;
 using Windows.Security.Cryptography.DataProtection;
-using Windows.Storage;
 
 namespace PhoneLink.Security.Storage;
 
@@ -20,7 +19,7 @@ public sealed class WindowsCredentialSecretStore : ISecretStore, IDisposable
     private bool _disposed;
 
     public WindowsCredentialSecretStore()
-        : this(Path.Combine(ApplicationData.Current.LocalFolder.Path, "ProtectedSecrets"))
+        : this(Path.Combine(LocalAppStorage.DirectoryPath, "ProtectedSecrets"))
     {
     }
 

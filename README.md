@@ -10,6 +10,8 @@ Implemented:
 
 - one-time QR pairing with TLS SPKI pinning, Ed25519 device identities, HMAC client proof, server proof, and six-word human comparison;
 - mutually authenticated WSS sessions and Bonjour/DNS-SD reconnect discovery;
+- a live PC network-interface inventory, bounded private IPv4/IPv6 pairing endpoints, and current trusted-device connection status;
+- Windows DNS-SD discovery for Phone Link, AirPlay, and network-audio advertisements, displayed as unverified service observations;
 - local-user DPAPI secret protection, encrypted SQLite, per-file AES-GCM photo encryption, and iOS Keychain identities;
 - authorized Contacts sync with a protected iPhone outbox and idempotent Windows receipts;
 - user-selected Photos import with chunk/final hashes and encrypted at-rest storage;
@@ -18,7 +20,7 @@ Implemented:
 - live MAP/PBAP capability checks without assuming that Windows exposes those profiles;
 - user-confirmed click-to-call: Windows requests a number, then iPhone requires a tap before opening `tel:`;
 - immediate trusted-device revocation and live-session termination;
-- close-to-tray operation with an explicit Exit command and an opt-in five-minute Windows Hello inactivity lock;
+- close-to-tray operation with an explicit Exit command and opt-in Windows Hello protection at startup, after five minutes without interaction, on tray hiding, and on Windows session lock/suspend;
 - modern WinUI pages for Messages, Contacts, Photos, Calls, Notifications, Devices, Settings, and About;
 - a reproducible signed development MSIX build.
 
@@ -31,6 +33,8 @@ Important limits:
 - Windows Hello must already be available for the optional app lock; Phone Link does not create a fallback PIN or replace Windows sign-in security.
 
 See the detailed [feature feasibility matrix](docs/phase-1-feature-feasibility.md), [architecture](docs/phase-2-architecture.md), [protocol](docs/protocol-v1.md), [database schema](docs/database-schema.md), and [threat model](docs/security-threat-model.md).
+
+The [expanded-vision roadmap](docs/expanded-vision-roadmap.md) tracks the October requirements, current gaps, and verification evidence. The existing installer predates the current discovery changes. Direct executable launches now use `%LOCALAPPDATA%/MercyProductions/PhoneLink` for protected local data; installed packages retain their package-local storage. Scoped link-local IPv6 addresses are displayed as interface metadata but excluded from QR offers because Windows interface scope IDs cannot be reused on iPhone.
 
 ## Build and test Windows
 

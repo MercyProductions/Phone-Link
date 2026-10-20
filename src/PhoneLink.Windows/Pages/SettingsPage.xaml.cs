@@ -28,18 +28,31 @@ public sealed partial class SettingsPage : Page
 
         HelloLockCheckBox.IsEnabled = false;
         var requested = HelloLockCheckBox.IsChecked == true;
-        var changed = await App.SetHelloLockEnabledAsync(requested);
-        HelloLockCheckBox.IsChecked = App.HelloLockEnabled;
-        HelloLockCheckBox.IsEnabled = true;
-        HelloStatusBar.Severity = changed ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
-        HelloStatusBar.Title = changed
-            ? requested ? "Windows Hello lock enabled" : "Windows Hello lock disabled"
-            : "Windows Hello was not enabled";
-        HelloStatusBar.Message = changed
-            ? requested
-                ? "Phone Link will cover private content after five inactive minutes and require verification."
-                : "The inactivity lock is off."
-            : "Set up Windows Hello in Windows Settings, then try again.";
-        HelloStatusBar.IsOpen = true;
+        try
+        {
+            var changed = await App.SetHelloLockEnabledAsync(requested);
+            HelloStatusBar.Severity = changed ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+            HelloStatusBar.Title = changed
+                ? requested ? "Windows Hello lock enabled" : "Windows Hello lock disabled"
+                : "Windows Hello setting was not changed";
+            HelloStatusBar.Message = changed
+                ? requested
+                    ? "Phone Link locks at startup, after five minutes without interaction, and when Windows locks or suspends."
+                    : "The inactivity lock is off."
+                : "Windows Hello verification must succeed before this protection can be enabled.";
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Windows Hello setting failed: {exception.HResult:X8}");
+            HelloStatusBar.Severity = InfoBarSeverity.Error;
+            HelloStatusBar.Title = "Windows Hello setting was not changed";
+            HelloStatusBar.Message = "Windows could not verify or save this setting. You can try again.";
+        }
+        finally
+        {
+            HelloLockCheckBox.IsChecked = App.HelloLockEnabled;
+            HelloLockCheckBox.IsEnabled = true;
+            HelloStatusBar.IsOpen = true;
+        }
     }
 }

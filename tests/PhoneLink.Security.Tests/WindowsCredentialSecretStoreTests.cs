@@ -12,6 +12,25 @@ public sealed class WindowsCredentialSecretStoreTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task DefaultStoreRoundTripsWithoutPackagedApplicationData()
+    {
+        using var store = new WindowsCredentialSecretStore();
+        var name = new SecretName($"test/unpackaged/{Guid.NewGuid():N}");
+        var plaintext = Encoding.UTF8.GetBytes("local-test-secret");
+        try
+        {
+            await store.StoreAsync(name, plaintext, CancellationToken.None);
+            using var retrieved = await store.RetrieveAsync(name, CancellationToken.None);
+            Assert.NotNull(retrieved);
+            Assert.Equal(plaintext, retrieved.Bytes.ToArray());
+        }
+        finally
+        {
+            await store.DeleteAsync(name, CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task ProtectsSecretToLocalUserAndRoundTrips()
     {
         var name = new SecretName("test/database-key");

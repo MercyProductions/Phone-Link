@@ -18,7 +18,7 @@ using PhoneLink.Integrations.AppleBluetooth.Capabilities;
 using PhoneLink.Integrations.AppleBluetooth.Ancs;
 using System.Text.Json;
 using System.Collections.Concurrent;
-using Windows.Storage;
+using System.Net.NetworkInformation;
 
 namespace PhoneLink.Windows;
 
@@ -42,9 +42,12 @@ public sealed class AppServices : IAsyncDisposable
     private Task? _syncProcessorTask;
     private WindowsDnsSdAdvertiser? _dnsSdAdvertiser;
     private Task? _discoveryStartTask;
+    private bool _discoveryRunnerActive;
+    private bool _discoveryUpdateRequested;
+    private bool _discoveryRestartRequested;
     private AncsNotificationSession? _ancsSession;
     private Guid _windowsDeviceId;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     private AppServices()
     {
@@ -70,7 +73,7 @@ public sealed class AppServices : IAsyncDisposable
 
             var protectedSecrets = new WindowsCredentialSecretStore();
             _secretStore = protectedSecrets;
-            var localFolder = ApplicationData.Current.LocalFolder.Path;
+            var localFolder = LocalAppStorage.DirectoryPath;
             var storageOptions = new SqliteStorageOptions(
                 Path.Combine(localFolder, "Data", "phone-link.db"),
                 Path.Combine(localFolder, "Data", "Attachments"));
@@ -108,6 +111,7 @@ public sealed class AppServices : IAsyncDisposable
                     _attachmentManager,
                     _backgroundCancellation.Token);
                 server.PairingCompleted += PairingServer_PairingCompleted;
+                NetworkChange.NetworkAddressChanged += Network_AddressChanged;
                 if ((await _deviceStore.ListAsync(cancellationToken).ConfigureAwait(false))
                     .Any(device => device.TrustState == DeviceTrustState.Trusted))
                 {
@@ -151,6 +155,7 @@ public sealed class AppServices : IAsyncDisposable
             .RevokeAsync(id, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
         await server.DisconnectAsync(id, cancellationToken).ConfigureAwait(false);
+        QueueDiscoveryStart(server, restart: true);
         foreach (var pending in _pendingCommands.Values.Where(item => item.DeviceId == id))
         {
             pending.Completion.TrySetException(
@@ -308,6 +313,7 @@ public sealed class AppServices : IAsyncDisposable
         }
 
         _disposed = true;
+        NetworkChange.NetworkAddressChanged -= Network_AddressChanged;
         if (_pairingServer is not null)
         {
             _pairingServer.PairingCompleted -= PairingServer_PairingCompleted;
@@ -374,14 +380,23 @@ public sealed class AppServices : IAsyncDisposable
         _ancsLock.Dispose();
     }
 
-    private async Task StartDiscoverySafelyAsync(LocalPairingServer server)
+    private async Task StartDiscoverySafelyAsync(LocalPairingServer server, bool restart)
     {
         try
         {
             await _discoveryLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (_dnsSdAdvertiser is null && !_disposed)
+                if (_disposed) { return; }
+                var trusted = (await _deviceStore!.ListAsync(CancellationToken.None).ConfigureAwait(false))
+                    .Any(device => device.TrustState == DeviceTrustState.Trusted);
+                var hasLocalAddress = LocalNetworkCatalog.SelectPairingAddresses(LocalNetworkCatalog.Capture()).Length > 0;
+                if (_dnsSdAdvertiser is not null && (restart || !trusted || !hasLocalAddress))
+                {
+                    await _dnsSdAdvertiser.DisposeAsync().ConfigureAwait(false);
+                    _dnsSdAdvertiser = null;
+                }
+                if (_dnsSdAdvertiser is null && trusted && hasLocalAddress && !_disposed)
                 {
                     _dnsSdAdvertiser = await WindowsDnsSdAdvertiser.StartAsync(
                         $"Phone Link on {Environment.MachineName}",
@@ -412,24 +427,53 @@ public sealed class AppServices : IAsyncDisposable
         object? sender,
         AncsNotificationChangedEventArgs args)
     {
-        if (args.Kind == AncsEventKind.Added && args.Notification is not null)
+        if (sender is AncsNotificationSession session && args.Kind == AncsEventKind.Added && args.Notification is not null)
         {
-            App.ShowAncsNotification(args.Notification);
+            App.ShowAncsNotification(args.Notification, session);
         }
     }
 
     private static void AncsSession_SessionEnded(object? sender, EventArgs args) =>
         _ = App.ClearAncsNotificationsAsync();
 
-    private void QueueDiscoveryStart(LocalPairingServer server)
+    private void Network_AddressChanged(object? sender, EventArgs args)
+    {
+        if (_pairingServer is LocalPairingServer server)
+        {
+            QueueDiscoveryStart(server, restart: true);
+        }
+    }
+
+    private void QueueDiscoveryStart(LocalPairingServer server, bool restart = false)
     {
         lock (_discoveryTaskGate)
         {
-            if (_disposed || _discoveryStartTask is { IsCompleted: false })
+            if (_disposed) { return; }
+            _discoveryUpdateRequested = true;
+            _discoveryRestartRequested |= restart;
+            if (_discoveryRunnerActive) { return; }
+            _discoveryRunnerActive = true;
+            _discoveryStartTask = ProcessDiscoveryUpdatesAsync(server);
+        }
+    }
+
+    private async Task ProcessDiscoveryUpdatesAsync(LocalPairingServer server)
+    {
+        while (true)
+        {
+            bool restart;
+            lock (_discoveryTaskGate)
             {
-                return;
+                if (_disposed || !_discoveryUpdateRequested)
+                {
+                    _discoveryRunnerActive = false;
+                    return;
+                }
+                restart = _discoveryRestartRequested;
+                _discoveryRestartRequested = false;
+                _discoveryUpdateRequested = false;
             }
-            _discoveryStartTask = StartDiscoverySafelyAsync(server);
+            await StartDiscoverySafelyAsync(server, restart).ConfigureAwait(false);
         }
     }
 
