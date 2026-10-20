@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Network
 
 @MainActor
 final class CompanionSession: ObservableObject {
@@ -20,18 +21,41 @@ final class CompanionSession: ObservableObject {
     @Published private(set) var trustedPeers: [TrustedWindowsPeer] = []
     @Published private(set) var connectionState: ConnectionState = .disconnected
     @Published private(set) var pendingDialRequest: PendingDialRequest?
+    @Published private(set) var reconnectStatus: String?
+
+    var connectedSession: ConnectedWindowsSession? {
+        if case .connected(let connection) = connectionState { return connection }
+        return nil
+    }
+    var preferredPeer: TrustedWindowsPeer? {
+        trustedPeers.first(where: { $0.deviceID == selectedPeerID }) ?? trustedPeers.first
+    }
 
     private let identityStore: DeviceIdentityStore
     private let trustedPeerStore: TrustedWindowsPeerStore
     private let deviceSessionClient: DeviceSessionClient
     private var hasStarted = false
+    private var isForeground = false
+    private var networkAvailable = true
+    private var selectedPeerID: UUID?
+    private var connectionAttemptID = UUID()
+    private var reconnectAttempt = 0
+    private var reconnectTask: Task<Void, Never>?
+    private var pathMonitor: NWPathMonitor?
+    private var pathMonitorID = UUID()
+    private let defaults: UserDefaults
+    private var manuallyDisconnected: Bool
 
     init(
         identityStore: DeviceIdentityStore = DeviceIdentityStore(),
-        trustedPeerStore: TrustedWindowsPeerStore = TrustedWindowsPeerStore()
+        trustedPeerStore: TrustedWindowsPeerStore = TrustedWindowsPeerStore(),
+        defaults: UserDefaults = .standard
     ) {
         self.identityStore = identityStore
         self.trustedPeerStore = trustedPeerStore
+        self.defaults = defaults
+        self.manuallyDisconnected = defaults.bool(forKey: "connection.manually-disconnected.v1")
+        self.selectedPeerID = defaults.string(forKey: "connection.selected-peer.v1").flatMap(UUID.init(uuidString:))
         self.deviceSessionClient = DeviceSessionClient(identityStore: identityStore)
         self.deviceSessionClient.onCommandRequest = { [weak self] request in
             self?.handleCommandRequest(request)
@@ -39,6 +63,7 @@ final class CompanionSession: ObservableObject {
         self.deviceSessionClient.onConnectionFailure = { [weak self] message in
             self?.pendingDialRequest = nil
             self?.connectionState = .failed(message)
+            self?.scheduleReconnect()
         }
     }
 
@@ -56,9 +81,7 @@ final class CompanionSession: ObservableObject {
                 )
             )
             refreshTrustedPeers()
-            if let peer = trustedPeers.first {
-                Task { await connect(to: peer) }
-            }
+            scheduleReconnect(immediate: true)
         } catch {
             startupState = .failed("The device identity could not be protected in Keychain. \(error.localizedDescription)")
         }
@@ -68,24 +91,131 @@ final class CompanionSession: ObservableObject {
         do {
             trustedPeers = try trustedPeerStore.loadAll()
                 .sorted { $0.pairedAt > $1.pairedAt }
+            if let selectedPeerID, !trustedPeers.contains(where: { $0.deviceID == selectedPeerID }) {
+                disconnect()
+                self.selectedPeerID = nil
+            }
+            if selectedPeerID == nil { selectedPeerID = trustedPeers.first?.deviceID }
+            scheduleReconnect(immediate: true)
         } catch {
+            trustedPeers = []
+            stopConnection()
             connectionState = .failed("Trusted PC records could not be read. \(error.localizedDescription)")
         }
     }
 
     func connect(to peer: TrustedWindowsPeer) async {
+        guard trustedPeers.contains(where: { $0.deviceID == peer.deviceID }) else { return }
+        manuallyDisconnected = false
+        defaults.set(false, forKey: "connection.manually-disconnected.v1")
+        selectedPeerID = peer.deviceID
+        defaults.set(peer.deviceID.uuidString, forKey: "connection.selected-peer.v1")
+        reconnectAttempt = 0
+        await performConnection(to: peer)
+    }
+
+    private func performConnection(to peer: TrustedWindowsPeer) async {
+        guard isForeground, networkAvailable, !manuallyDisconnected, trustedPeers.contains(peer) else { return }
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        connectionAttemptID = UUID()
+        let attemptID = connectionAttemptID
+        reconnectStatus = nil
         connectionState = .connecting(peer.deviceID)
         do {
-            connectionState = .connected(try await deviceSessionClient.connect(to: peer))
+            let connected = try await deviceSessionClient.connect(to: peer)
+            guard attemptID == connectionAttemptID, isForeground, !manuallyDisconnected,
+                  trustedPeers.contains(where: { $0.deviceID == peer.deviceID }) else { return }
+            reconnectAttempt = 0
+            connectionState = .connected(connected)
         } catch {
+            guard attemptID == connectionAttemptID, !Task.isCancelled else { return }
             connectionState = .failed(error.localizedDescription)
+            scheduleReconnect()
         }
     }
 
     func disconnect() {
+        manuallyDisconnected = true
+        defaults.set(true, forKey: "connection.manually-disconnected.v1")
+        stopConnection()
+        reconnectStatus = "Automatic reconnection is paused until you choose Connect."
+    }
+
+    private func stopConnection() {
+        connectionAttemptID = UUID()
+        reconnectTask?.cancel()
+        reconnectTask = nil
         deviceSessionClient.disconnect()
         pendingDialRequest = nil
         connectionState = .disconnected
+    }
+
+    func setForegroundActive(_ active: Bool) {
+        guard isForeground != active else { return }
+        isForeground = active
+        if active {
+            let monitor = NWPathMonitor()
+            pathMonitorID = UUID()
+            let monitorID = pathMonitorID
+            pathMonitor = monitor
+            monitor.pathUpdateHandler = { [weak self] path in
+                let available = path.status == .satisfied
+                Task { @MainActor in self?.networkChanged(available: available, monitorID: monitorID) }
+            }
+            monitor.start(queue: .main)
+            refreshTrustedPeers()
+            scheduleReconnect(immediate: true)
+        } else {
+            pathMonitor?.cancel()
+            pathMonitor = nil
+            pathMonitorID = UUID()
+            stopConnection()
+            reconnectStatus = "Reconnection resumes when Phone Link returns to the foreground."
+        }
+    }
+
+    private func networkChanged(available: Bool, monitorID: UUID) {
+        guard isForeground, pathMonitorID == monitorID else { return }
+        let wasAvailable = networkAvailable
+        networkAvailable = available
+        if !available {
+            stopConnection()
+            reconnectStatus = "Waiting for a local network."
+        } else if !wasAvailable || connectedSession == nil {
+            scheduleReconnect(immediate: true)
+        }
+    }
+
+    private func scheduleReconnect(immediate: Bool = false) {
+        guard hasStarted, isForeground, networkAvailable, !manuallyDisconnected,
+              connectedSession == nil, reconnectTask == nil,
+              let peer = trustedPeers.first(where: { $0.deviceID == selectedPeerID }) else { return }
+        if case .connecting = connectionState { return }
+        let delay = immediate ? 0 : min(60, 1 << min(reconnectAttempt, 6))
+        reconnectAttempt += 1
+        reconnectStatus = delay == 0 ? "Reconnecting…" : "Reconnecting in \(delay) seconds…"
+        reconnectTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) }
+            catch { return }
+            guard let self, !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            await self.performConnection(to: peer)
+        }
+    }
+
+    func revokePeer(_ deviceID: UUID) {
+        do {
+            try trustedPeerStore.delete(deviceID)
+            if selectedPeerID == deviceID || connectedSession?.peerDeviceID == deviceID {
+                disconnect()
+                selectedPeerID = nil
+                defaults.removeObject(forKey: "connection.selected-peer.v1")
+            }
+            refreshTrustedPeers()
+        } catch {
+            connectionState = .failed("The trusted PC could not be revoked. \(error.localizedDescription)")
+        }
     }
 
     func resolveDialRequest(approved: Bool) async {

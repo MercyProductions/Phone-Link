@@ -3,6 +3,23 @@ import Testing
 @testable import PhoneLinkCompanion
 
 struct SessionTranscriptTests {
+    @Test @MainActor func disconnectInvalidatesAnInFlightDiscoveryAttempt() async throws {
+        let client = DeviceSessionClient()
+        let peer = TrustedWindowsPeer(
+            deviceID: UUID(), identityPublicKey: Data(repeating: 1, count: 32),
+            tlsSPKISHA256: Data(repeating: 2, count: 32), endpoints: [], pairedAt: Date()
+        )
+        let attempt = Task { try await client.connect(to: peer) }
+        await Task.yield()
+        client.disconnect()
+        do {
+            _ = try await attempt.value
+            Issue.record("A disconnected connection attempt must not complete.")
+        } catch is CancellationError {
+            #expect(client.connection == nil)
+        }
+    }
+
     @Test func matchesSharedDotNetVector() throws {
         let serverProofInput = SessionTranscript.serverProofInput(
             connectionID: try #require(UUID(uuidString: "11111111-2222-3333-4444-555555555555")),

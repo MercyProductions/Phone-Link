@@ -27,8 +27,12 @@ struct HomeView: View {
 
                     ConnectionCard(
                         state: session.connectionState,
-                        reconnect: reconnect
+                        reconnect: reconnect,
+                        disconnect: session.disconnect
                     )
+                    if let reconnectStatus = session.reconnectStatus {
+                        Text(reconnectStatus).font(.footnote).foregroundStyle(.secondary)
+                    }
 
                     NavigationLink {
                         PairingView()
@@ -66,7 +70,7 @@ struct HomeView: View {
     }
 
     private func reconnect() {
-        guard let peer = session.trustedPeers.first else { return }
+        guard let peer = session.preferredPeer else { return }
         Task { await session.connect(to: peer) }
     }
 }
@@ -74,6 +78,7 @@ struct HomeView: View {
 private struct ConnectionCard: View {
     let state: CompanionSession.ConnectionState
     let reconnect: () -> Void
+    let disconnect: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -90,6 +95,7 @@ private struct ConnectionCard: View {
                 Label("Securely connected", systemImage: "lock.shield.fill")
                     .foregroundStyle(.green)
                 Spacer()
+                Button("Disconnect", action: disconnect)
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)

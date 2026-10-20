@@ -14,11 +14,15 @@ final class DeviceSessionClient {
     private struct ResponseWaiter {
         let expectedKind: String
         let continuation: CheckedContinuation<Data, any Error>
+        let timeoutTask: Task<Void, Never>
     }
 
     private let identityStore: DeviceIdentityStore
     private var webSocket: URLSessionWebSocketTask?
     private var urlSession: URLSession?
+    private var pendingWebSocket: URLSessionWebSocketTask?
+    private var pendingURLSession: URLSession?
+    private var connectionEpoch = UUID()
     private var receiveTask: Task<Void, Never>?
     private var responseWaiters: [UUID: ResponseWaiter] = [:]
     private(set) var connection: ConnectedWindowsSession?
@@ -31,21 +35,27 @@ final class DeviceSessionClient {
 
     func connect(to peer: TrustedWindowsPeer) async throws -> ConnectedWindowsSession {
         disconnect()
+        let epoch = connectionEpoch
         var lastError: Error = DeviceSessionError.noReachableEndpoint
 
         let discovered = await PhoneLinkServiceBrowser().discoverEndpoints()
+        try Task.checkCancellation()
+        guard connectionEpoch == epoch else { throw CancellationError() }
         var candidates: [PairingEndpoint] = []
         for endpoint in discovered + peer.endpoints where !candidates.contains(endpoint) {
             candidates.append(endpoint)
         }
 
         for endpoint in candidates {
+            try Task.checkCancellation()
+            guard connectionEpoch == epoch else { throw CancellationError() }
             do {
-                let connected = try await connect(to: endpoint, peer: peer)
+                let connected = try await connect(to: endpoint, peer: peer, epoch: epoch)
                 connection = connected
                 startReceiveLoop()
                 return connected
             } catch {
+                guard connectionEpoch == epoch, !Task.isCancelled else { throw CancellationError() }
                 lastError = error
             }
         }
@@ -186,6 +196,11 @@ final class DeviceSessionClient {
     }
 
     func disconnect() {
+        connectionEpoch = UUID()
+        pendingWebSocket?.cancel(with: .goingAway, reason: nil)
+        pendingURLSession?.invalidateAndCancel()
+        pendingWebSocket = nil
+        pendingURLSession = nil
         receiveTask?.cancel()
         receiveTask = nil
         failAllWaiters(with: DeviceSessionError.notConnected)
@@ -198,7 +213,8 @@ final class DeviceSessionClient {
 
     private func connect(
         to endpoint: PairingEndpoint,
-        peer: TrustedWindowsPeer
+        peer: TrustedWindowsPeer,
+        epoch: UUID
     ) async throws -> ConnectedWindowsSession {
         let identity = try identityStore.loadOrCreate()
         let clientDeviceID = try identityStore.loadOrCreateDeviceID()
@@ -211,9 +227,11 @@ final class DeviceSessionClient {
         let delegate = SessionPinnedTLSDelegate(expectedSPKIHash: peer.tlsSPKISHA256)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
-        configuration.waitsForConnectivity = true
+        configuration.waitsForConnectivity = false
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         let task = session.webSocketTask(with: try webSocketURL(endpoint))
+        pendingWebSocket = task
+        pendingURLSession = session
         task.resume()
 
         do {
@@ -228,7 +246,7 @@ final class DeviceSessionClient {
             )
             try await task.send(.data(PhoneLinkJSON.encoder.encode(hello)))
 
-            let challengeData = try await receiveData(task)
+            let challengeData = try await receiveAuthenticationData(task)
             try StrictJSON.validateNoDuplicateObjectKeys(challengeData)
             let challenge = try PhoneLinkJSON.decoder.decode(
                 SessionServerChallenge.self,
@@ -277,7 +295,7 @@ final class DeviceSessionClient {
             )
             try await task.send(.data(PhoneLinkJSON.encoder.encode(proof)))
 
-            let readyData = try await receiveData(task)
+            let readyData = try await receiveAuthenticationData(task)
             try StrictJSON.validateNoDuplicateObjectKeys(readyData)
             let ready = try PhoneLinkJSON.decoder.decode(SessionReady.self, from: readyData)
             guard ready.kind == "session.ready",
@@ -287,6 +305,10 @@ final class DeviceSessionClient {
                 throw DeviceSessionError.invalidReadyMessage
             }
 
+            try Task.checkCancellation()
+            guard connectionEpoch == epoch else { throw CancellationError() }
+            pendingWebSocket = nil
+            pendingURLSession = nil
             webSocket = task
             urlSession = session
             return ConnectedWindowsSession(
@@ -298,6 +320,10 @@ final class DeviceSessionClient {
         } catch {
             task.cancel(with: .goingAway, reason: nil)
             session.invalidateAndCancel()
+            if pendingWebSocket === task {
+                pendingWebSocket = nil
+                pendingURLSession = nil
+            }
             throw error
         }
     }
@@ -328,9 +354,15 @@ final class DeviceSessionClient {
         )
         let requestData = try PhoneLinkJSON.encoder.encode(envelope)
         let responseData: Data = try await withCheckedThrowingContinuation { continuation in
+            let timeout = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .seconds(30)) }
+                catch { return }
+                self?.failWaiter(messageID, with: DeviceSessionError.responseTimedOut)
+            }
             responseWaiters[messageID] = ResponseWaiter(
                 expectedKind: expectedKind,
-                continuation: continuation
+                continuation: continuation,
+                timeoutTask: timeout
             )
             Task { @MainActor [weak self] in
                 guard let self else {
@@ -386,6 +418,7 @@ final class DeviceSessionClient {
 
                 if let correlationID = header.correlationId,
                    let waiter = responseWaiters.removeValue(forKey: correlationID) {
+                    waiter.timeoutTask.cancel()
                     guard header.kind == waiter.expectedKind else {
                         waiter.continuation.resume(
                             throwing: DeviceSessionError.invalidAcknowledgement
@@ -430,13 +463,16 @@ final class DeviceSessionClient {
     }
 
     private func failWaiter(_ messageID: UUID, with error: any Error) {
-        responseWaiters.removeValue(forKey: messageID)?.continuation.resume(throwing: error)
+        guard let waiter = responseWaiters.removeValue(forKey: messageID) else { return }
+        waiter.timeoutTask.cancel()
+        waiter.continuation.resume(throwing: error)
     }
 
     private func failAllWaiters(with error: any Error) {
-        let waiters = responseWaiters.values
+        let waiters = Array(responseWaiters.values)
         responseWaiters.removeAll()
         for waiter in waiters {
+            waiter.timeoutTask.cancel()
             waiter.continuation.resume(throwing: error)
         }
     }
@@ -469,6 +505,20 @@ final class DeviceSessionClient {
             }
             return data
         @unknown default: throw DeviceSessionError.invalidServerMessage
+        }
+    }
+
+    private func receiveAuthenticationData(_ task: URLSessionWebSocketTask) async throws -> Data {
+        try await withThrowingTaskGroup(of: Data.self) { group in
+            group.addTask { try await self.receiveData(task) }
+            group.addTask {
+                try await Task.sleep(for: .seconds(20))
+                task.cancel(with: .goingAway, reason: nil)
+                throw DeviceSessionError.responseTimedOut
+            }
+            defer { group.cancelAll() }
+            guard let data = try await group.next() else { throw DeviceSessionError.responseTimedOut }
+            return data
         }
     }
 
@@ -521,6 +571,7 @@ enum DeviceSessionError: LocalizedError {
     case randomUnavailable
     case notConnected
     case invalidAcknowledgement
+    case responseTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -533,6 +584,7 @@ enum DeviceSessionError: LocalizedError {
         case .randomUnavailable: "The iPhone cryptographic random generator is unavailable."
         case .notConnected: "Connect to a trusted Windows PC first."
         case .invalidAcknowledgement: "Windows returned an invalid synchronization acknowledgement."
+        case .responseTimedOut: "Windows did not respond in time. Reconnect and try again."
         }
     }
 }
