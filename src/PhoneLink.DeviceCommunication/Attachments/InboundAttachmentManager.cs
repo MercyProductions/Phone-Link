@@ -26,6 +26,8 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
     private readonly ISecretStore _secretStore;
     private readonly IAttachmentStore _attachmentStore;
     private readonly ConcurrentDictionary<Guid, TransferState> _transfers = new();
+    private readonly SemaphoreSlim _operations = new(1, 1);
+    private bool _disposed;
 
     public InboundAttachmentManager(
         string attachmentDirectory,
@@ -43,6 +45,18 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         ReceivedDeviceEnvelope received,
         CancellationToken cancellationToken)
     {
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return await HandleEnvelopeCoreAsync(received, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _operations.Release(); }
+    }
+
+    private async Task<AttachmentControlResponse?> HandleEnvelopeCoreAsync(
+        ReceivedDeviceEnvelope received, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(received);
         return received.Envelope.Kind switch
         {
@@ -55,6 +69,27 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
     public async Task HandleChunkAsync(
         ReceivedAttachmentChunk received,
         CancellationToken cancellationToken)
+    {
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            await HandleChunkCoreAsync(received, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Never retry encryption with the same key/index after a failed write.
+            if (_transfers.TryGetValue(received.Chunk.AttachmentId, out var state) &&
+                state.OwnerDeviceId == received.DeviceId && state.SessionId == received.SessionId &&
+                _transfers.TryRemove(received.Chunk.AttachmentId, out _))
+                await state.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+        finally { _operations.Release(); }
+    }
+
+    private async Task HandleChunkCoreAsync(
+        ReceivedAttachmentChunk received, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(received);
         var payload = received.Chunk.Payload;
@@ -78,7 +113,8 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
                     throw new InvalidDataException("The attachment chunk is out of order or has an invalid size.");
                 }
 
-                await state.Stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+                await ChunkEncryptedAttachment.WriteChunkAsync(state.Stream, state.Header, state.Key,
+                    state.ExpectedHash, state.NextChunkIndex, payload, cancellationToken).ConfigureAwait(false);
                 state.Hash.AppendData(payload);
                 state.BytesReceived += payload.Length;
                 state.NextChunkIndex++;
@@ -117,7 +153,30 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             throw new InvalidOperationException("The attachment storage path escaped its private directory.");
         }
 
-        var encrypted = await File.ReadAllBytesAsync(encryptedPath, cancellationToken).ConfigureAwait(false);
+        await using var source = new FileStream(encryptedPath, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var magic = new byte[4];
+        await source.ReadExactlyAsync(magic, cancellationToken).ConfigureAwait(false);
+        source.Position = 0;
+        if (magic.AsSpan().SequenceEqual("PLA2"u8))
+        {
+            using var chunkKey = await _secretStore
+                .RetrieveAsync(new SecretName(attachment.ProtectedKeyReference), cancellationToken).ConfigureAwait(false)
+                ?? throw new CryptographicException("The protected attachment key is unavailable.");
+            // Verify the entire file before exposing even a partial plaintext result.
+            await ChunkEncryptedAttachment.CopyDecryptedAsync(source, Stream.Null, chunkKey.Bytes,
+                attachment.EncryptionNonce, attachment.ContentSha256, attachment.ByteCount, cancellationToken).ConfigureAwait(false);
+            source.Position = 0;
+            await ChunkEncryptedAttachment.CopyDecryptedAsync(source, destination, chunkKey.Bytes,
+                attachment.EncryptionNonce, attachment.ContentSha256, attachment.ByteCount, cancellationToken).ConfigureAwait(false);
+            await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        // Existing PLA1 imports remain readable, but never allocate from untrusted file length.
+        if (attachment.ByteCount is <= 0 or > MaximumAttachmentBytes || source.Length != 32 + attachment.ByteCount)
+            throw new CryptographicException("The legacy attachment size is invalid.");
+        var encrypted = new byte[checked((int)source.Length)];
+        await source.ReadExactlyAsync(encrypted, cancellationToken).ConfigureAwait(false);
         byte[]? plaintext = null;
         try
         {
@@ -168,11 +227,31 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var transfer in _transfers.Values)
+        await _operations.WaitAsync().ConfigureAwait(false);
+        try
         {
-            await transfer.DisposeAsync().ConfigureAwait(false);
+            if (_disposed) return;
+            _disposed = true;
+            foreach (var transfer in _transfers.Values)
+                await transfer.DisposeAsync().ConfigureAwait(false);
+            _transfers.Clear();
         }
-        _transfers.Clear();
+        finally { _operations.Release(); }
+    }
+
+    public async Task PruneSessionsAsync(Func<PhoneLink.Domain.Devices.DeviceId, Guid, bool> isActive)
+    {
+        ArgumentNullException.ThrowIfNull(isActive);
+        await _operations.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_disposed) return;
+            foreach (var pair in _transfers)
+                if (!isActive(pair.Value.OwnerDeviceId, pair.Value.SessionId) &&
+                    _transfers.TryRemove(pair.Key, out var state))
+                    await state.DisposeAsync().ConfigureAwait(false);
+        }
+        finally { _operations.Release(); }
     }
 
     private async Task<AttachmentControlResponse> HandleOfferAsync(
@@ -183,10 +262,13 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             ?? throw new InvalidDataException("An attachment offer cannot be null.");
         ValidateOffer(offer);
 
-        if (_transfers.ContainsKey(offer.AttachmentId))
+        if (_transfers.ContainsKey(offer.AttachmentId) ||
+            File.Exists(Path.Combine(_attachmentDirectory, $"{offer.AttachmentId:N}.pla")))
         {
             return Rejected(offer.AttachmentId, "attachment.duplicate");
         }
+        if (_transfers.Count >= 4 || _transfers.Values.Count(state => state.OwnerDeviceId == received.DeviceId) >= 2)
+            return Rejected(offer.AttachmentId, "attachment.too-many-transfers");
         var root = Path.GetPathRoot(_attachmentDirectory)
             ?? throw new InvalidOperationException("The attachment directory has no storage root.");
         var freeSpace = new DriveInfo(root).AvailableFreeSpace;
@@ -208,13 +290,27 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             FileShare.None,
             offer.ChunkSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var key = RandomNumberGenerator.GetBytes(32);
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        nonce.AsSpan(8, 4).Clear();
+        var header = ChunkEncryptedAttachment.CreateHeader(offer.ChunkSize, offer.ByteCount, nonce);
         var state = new TransferState(
             received.DeviceId,
             received.Envelope.SessionId,
             offer,
             expectedHash,
             temporaryPath,
-            stream);
+            stream, key, nonce, header, _secretStore);
+        try
+        {
+            await _secretStore.StoreAsync(state.KeyName, key, cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await state.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
         if (!_transfers.TryAdd(offer.AttachmentId, state))
         {
             await state.DisposeAsync().ConfigureAwait(false);
@@ -237,14 +333,16 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
     {
         var complete = received.Envelope.Payload.Deserialize<AttachmentCompletePayload>(JsonOptions)
             ?? throw new InvalidDataException("An attachment completion message cannot be null.");
-        if (!_transfers.TryRemove(complete.AttachmentId, out var state) ||
+        if (!_transfers.TryGetValue(complete.AttachmentId, out var state) ||
             state.OwnerDeviceId != received.DeviceId ||
             state.SessionId != received.Envelope.SessionId)
         {
             throw new InvalidDataException("The attachment transfer is unknown or belongs to another session.");
         }
+        if (!_transfers.TryRemove(new KeyValuePair<Guid, TransferState>(complete.AttachmentId, state)))
+            throw new InvalidDataException("The attachment transfer has already finished.");
 
-        await state.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await state.Gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             await state.Stream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -263,7 +361,7 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
                     });
             }
 
-            await EncryptAndCatalogAsync(state, cancellationToken).ConfigureAwait(false);
+            await CatalogEncryptedAsync(state, cancellationToken).ConfigureAwait(false);
             return new AttachmentControlResponse(
                 "attachment.complete",
                 new AttachmentCompletePayload
@@ -279,47 +377,17 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         }
     }
 
-    private async Task EncryptAndCatalogAsync(
+    private async Task CatalogEncryptedAsync(
         TransferState state,
         CancellationToken cancellationToken)
     {
-        var plaintext = await File.ReadAllBytesAsync(state.TemporaryPath, cancellationToken).ConfigureAwait(false);
-        var key = RandomNumberGenerator.GetBytes(32);
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var tag = new byte[16];
-        var ciphertext = new byte[plaintext.Length];
         var storageName = $"{state.Offer.AttachmentId:N}.pla";
         var destination = Path.Combine(_attachmentDirectory, storageName);
-        var temporaryEncrypted = $"{destination}.tmp";
-        var keyName = new SecretName($"attachment/{state.Offer.AttachmentId:D}/file-key-v1");
+        File.Move(state.TemporaryPath, destination, overwrite: false);
         try
         {
-            using (var aes = new AesGcm(key, tag.Length))
-            {
-                aes.Encrypt(nonce, plaintext, ciphertext, tag, state.ExpectedHash);
-            }
-
-            await using (var stream = new FileStream(
-                temporaryEncrypted,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                64 * 1024,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
-            {
-                await stream.WriteAsync("PLA1"u8.ToArray(), cancellationToken).ConfigureAwait(false);
-                await stream.WriteAsync(nonce, cancellationToken).ConfigureAwait(false);
-                await stream.WriteAsync(tag, cancellationToken).ConfigureAwait(false);
-                await stream.WriteAsync(ciphertext, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            await _secretStore.StoreAsync(keyName, key, cancellationToken).ConfigureAwait(false);
-            File.Move(temporaryEncrypted, destination, overwrite: false);
             var now = DateTimeOffset.UtcNow;
-            try
-            {
-                await _attachmentStore.SaveVerifiedAsync(
+            await _attachmentStore.SaveVerifiedAsync(
                     new ImportedAttachment(
                         state.Offer.AttachmentId,
                         state.OwnerDeviceId,
@@ -328,29 +396,17 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
                         state.Offer.MediaType,
                         state.Offer.ByteCount,
                         state.ExpectedHash.ToArray(),
-                        keyName.Value,
-                        nonce.ToArray(),
+                        state.KeyName.Value,
+                        state.Nonce.ToArray(),
                         now,
                         now),
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                File.Delete(destination);
-                await _secretStore.DeleteAsync(keyName, CancellationToken.None).ConfigureAwait(false);
-                throw;
-            }
+                cancellationToken).ConfigureAwait(false);
+            state.Cataloged = true;
         }
-        finally
+        catch
         {
-            CryptographicOperations.ZeroMemory(plaintext);
-            CryptographicOperations.ZeroMemory(key);
-            CryptographicOperations.ZeroMemory(tag);
-            CryptographicOperations.ZeroMemory(ciphertext);
-            if (File.Exists(temporaryEncrypted))
-            {
-                File.Delete(temporaryEncrypted);
-            }
+            File.Delete(destination);
+            throw;
         }
     }
 
@@ -388,7 +444,7 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             AttachmentOfferPayload offer,
             byte[] expectedHash,
             string temporaryPath,
-            FileStream stream)
+            FileStream stream, byte[] key, byte[] nonce, byte[] header, ISecretStore secretStore)
         {
             OwnerDeviceId = ownerDeviceId;
             SessionId = sessionId;
@@ -396,6 +452,10 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             ExpectedHash = expectedHash;
             TemporaryPath = temporaryPath;
             Stream = stream;
+            Key = key;
+            Nonce = nonce;
+            Header = header;
+            SecretStore = secretStore;
         }
 
         public PhoneLink.Domain.Devices.DeviceId OwnerDeviceId { get; }
@@ -404,6 +464,12 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         public byte[] ExpectedHash { get; }
         public string TemporaryPath { get; }
         public FileStream Stream { get; }
+        public byte[] Key { get; }
+        public byte[] Nonce { get; }
+        public byte[] Header { get; }
+        public ISecretStore SecretStore { get; }
+        public bool Cataloged { get; set; }
+        public SecretName KeyName { get; } = new($"attachment/file-key-v2/{Guid.NewGuid():D}");
         public IncrementalHash Hash { get; } = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public long BytesReceived { get; set; }
@@ -420,6 +486,9 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             Hash.Dispose();
             Gate.Dispose();
             CryptographicOperations.ZeroMemory(ExpectedHash);
+            CryptographicOperations.ZeroMemory(Key);
+            if (!Cataloged)
+                await SecretStore.DeleteAsync(KeyName, CancellationToken.None).ConfigureAwait(false);
             if (File.Exists(TemporaryPath))
             {
                 File.Delete(TemporaryPath);

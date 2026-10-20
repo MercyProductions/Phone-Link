@@ -260,15 +260,18 @@ Contact notes are not collected. Addresses, birthdays, relationships, and social
 
 ## Synchronization algorithm
 
-1. The iPhone writes a file-protected outbox snapshot before sending contact batches.
-2. A retry reuses the original event IDs, origin sequences, and batch IDs.
-3. Windows validates monotonically increasing events against the highest applied sequence in encrypted SQLite.
-4. An exact event-ID/sequence/SHA-256 retry is acknowledged without reapplying the projection.
-5. Reusing an ID or sequence with different content is rejected; a gap is rejected with the expected next sequence.
-6. Windows applies the idempotent contact projection, records the immutable receipt, and returns `sync.ack` with the highest contiguous sequence.
-7. iPhone advances its local identifier checkpoint and removes its protected outbox only after every batch is acknowledged.
+1. Contact sync requires the negotiated `contacts.sync.v2` capability. Transport/envelope version remains 1. The iPhone binds the operation to one Windows peer and one authenticated session; a connection change aborts that operation.
+2. Read the currently authorized Contacts subset, then send `sync.checkpoint.request` with `{}`. Windows returns `sync.checkpoint` containing `originDeviceId` and `highestContiguousSequence` for the authenticated iPhone, never an origin chosen by the request body.
+3. Send `contacts.reconcile` with `authorizedSourceContactIds`. Windows atomically scrubs names, methods, and historical receipt payloads for contacts outside that subset, scoped to this iPhone. It retains receipt IDs/sequences/hashes for replay detection. An empty subset clears this iPhone's contact replica. The response is correlated `contacts.reconciled` with `{}`.
+4. The authorization snapshot permits at most 20,000 nonempty identifiers of at most 500 characters, subject also to the 1 MiB encoded-envelope limit. Oversized snapshots must not be truncated: that would erase valid cached contacts. Larger contact libraries need a paginated reconciliation protocol before support is claimed.
+5. The iPhone persists an atomic file-protected state/outbox per Windows peer under Application Support. Installation-wide legacy outboxes are retired only after the peer's authoritative checkpoint and a new protected state file have been saved; legacy private fields are never replayed to another PC.
+6. Recovery skips sequences already applied by Windows. Pending, unapplied events are regenerated with new event/batch IDs and current authorized fields (or redacted deletes), retaining their next contiguous sequence positions. This avoids replaying a permission-revoked name/number from a stale outbox. Applied receipts are never rewritten or assigned different content.
+7. Windows validates monotonically increasing events against the highest applied sequence in encrypted SQLite. An exact event-ID/sequence/SHA-256 retry is acknowledged without reapplying the projection. Reusing an applied ID/sequence with different content or introducing a gap is rejected.
+8. Windows applies the idempotent contact projection, records the receipt, and returns `sync.ack`. iPhone removes pending state only after every batch is acknowledged. A response timeout or disconnect leaves protected pending state for checkpoint-based recovery.
 
 The schema retains `sync.offer`, `sync.request`, and `sync.nack` for the next recovery extension. Protocol v1 currently implements the direct contiguous batch/ack path.
+
+Permission reconciliation happens on the next explicit foreground synchronization, not instantly when permission changes while the companion is suspended. iPhone Settings revocation cannot remotely erase an offline PC. The companion's Revoke action deletes the peer's Keychain trust before attempting local outbox cleanup; Disconnect persistently pauses automatic reconnect.
 
 For a two-device trust relationship, this is equivalent to a compact per-origin vector checkpoint without requiring a conflict-prone global clock.
 

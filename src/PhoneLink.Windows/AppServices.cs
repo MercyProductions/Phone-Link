@@ -111,6 +111,8 @@ public sealed class AppServices : IAsyncDisposable
                     _attachmentManager,
                     _backgroundCancellation.Token);
                 server.PairingCompleted += PairingServer_PairingCompleted;
+                server.SessionConnected += PairingServer_SessionChanged;
+                server.SessionDisconnected += PairingServer_SessionChanged;
                 NetworkChange.NetworkAddressChanged += Network_AddressChanged;
                 if ((await _deviceStore.ListAsync(cancellationToken).ConfigureAwait(false))
                     .Any(device => device.TrustState == DeviceTrustState.Trusted))
@@ -358,6 +360,8 @@ public sealed class AppServices : IAsyncDisposable
         }
         if (_pairingServer is not null)
         {
+            _pairingServer.SessionConnected -= PairingServer_SessionChanged;
+            _pairingServer.SessionDisconnected -= PairingServer_SessionChanged;
             await _pairingServer.DisposeAsync().ConfigureAwait(false);
             _pairingServer = null;
         }
@@ -474,6 +478,20 @@ public sealed class AppServices : IAsyncDisposable
                 _discoveryUpdateRequested = false;
             }
             await StartDiscoverySafelyAsync(server, restart).ConfigureAwait(false);
+        }
+    }
+
+    private async void PairingServer_SessionChanged(object? sender, DeviceSessionChangedEventArgs args)
+    {
+        if (sender is not LocalPairingServer server || _attachmentManager is not { } manager) return;
+        try
+        {
+            await manager.PruneSessionsAsync((deviceId, sessionId) =>
+                server.TryGetSessionId(deviceId, out var active) && active == sessionId).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Incomplete attachment cleanup failed: {exception.GetType().Name}");
         }
     }
 

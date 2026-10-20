@@ -4,7 +4,7 @@ A real Windows + iPhone integration project built only on documented Apple, Micr
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX is available at `artifacts/windows/msix/PhoneLink-x64.msix`. The SwiftUI companion is structurally complete, but its required Xcode compile, signing, and physical-iPhone tests must still be run on macOS.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX is available at `artifacts/windows/msix/PhoneLink-x64.msix`, but predates the current changes. Native iOS build/test CI now runs on macOS with Xcode 26.3; its results are tracked separately from physical-iPhone and signed-device verification, which remain open.
 
 Implemented:
 
@@ -13,8 +13,8 @@ Implemented:
 - a live PC network-interface inventory, bounded private IPv4/IPv6 pairing endpoints, and current trusted-device connection status;
 - Windows DNS-SD discovery for Phone Link, AirPlay, and network-audio advertisements, displayed as unverified service observations;
 - local-user DPAPI secret protection, encrypted SQLite, per-file AES-GCM photo encryption, and iOS Keychain identities;
-- authorized Contacts sync with a protected iPhone outbox and idempotent Windows receipts;
-- user-selected Photos import with chunk/final hashes and encrypted at-rest storage;
+- authorized Contacts sync with per-PC protected outboxes, authoritative recovery checkpoints, permission-subset reconciliation, and idempotent Windows receipts;
+- user-selected Photos import with chunk/final hashes, encrypted staging, bounded-memory PLA2 storage/export, and legacy import compatibility;
 - live Apple Notification Center Service capability detection and an in-memory ANCS GATT session when Windows exposes it;
 - native Windows app notifications for new, non-silent ANCS events, cleared when the session ends or the app locks;
 - live MAP/PBAP capability checks without assuming that Windows exposes those profiles;
@@ -30,6 +30,8 @@ Important limits:
 - MAP, PBAP, and ANCS work only when the paired iPhone and Windows Bluetooth stack expose those public accessory services.
 - A third-party companion cannot silently control carrier calls. The implemented portable path requires foreground user confirmation on iPhone.
 - ANCS identifiers and content are valid only for the current Bluetooth session and are never persisted.
+- Automatic companion reconnect runs only in the foreground, observes network availability, and respects Disconnect. No unrestricted iOS background execution is claimed.
+- Photo imports remain limited to 25 MiB each. Generic files, large videos, and durable resume are not implemented yet; see [attachment storage](docs/attachment-storage.md).
 - Windows Hello must already be available for the optional app lock; Phone Link does not create a fallback PIN or replace Windows sign-in security.
 
 See the detailed [feature feasibility matrix](docs/phase-1-feature-feasibility.md), [architecture](docs/phase-2-architecture.md), [protocol](docs/protocol-v1.md), [database schema](docs/database-schema.md), and [threat model](docs/security-threat-model.md).

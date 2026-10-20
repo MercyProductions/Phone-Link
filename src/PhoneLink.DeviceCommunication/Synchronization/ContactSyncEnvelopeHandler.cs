@@ -41,6 +41,9 @@ public sealed class ContactSyncEnvelopeHandler
         {
             return null;
         }
+        if (!received.Envelope.RequiresAck || received.Envelope.CorrelationId is not null ||
+            received.Envelope.OriginDeviceId != received.DeviceId.Value)
+            throw new InvalidDataException("The sync batch must be an authenticated request.");
 
         var batch = received.Envelope.Payload.Deserialize<SyncBatchPayload>(JsonOptions)
             ?? throw new InvalidDataException("A sync batch payload cannot be null.");
@@ -48,6 +51,8 @@ public sealed class ContactSyncEnvelopeHandler
         {
             throw new InvalidDataException("The sync batch metadata is invalid.");
         }
+        if (received.Envelope.OriginSequence != batch.Events[^1].OriginSequence)
+            throw new InvalidDataException("The batch envelope sequence must equal its final event sequence.");
 
         var highestSequence = await _receiptStore
             .GetHighestAppliedSequenceAsync(received.DeviceId, cancellationToken)
@@ -96,11 +101,6 @@ public sealed class ContactSyncEnvelopeHandler
             highestSequence = syncEvent.OriginSequence;
         }
 
-        if (received.Envelope.OriginSequence != batch.Events[^1].OriginSequence)
-        {
-            throw new InvalidDataException("The batch envelope sequence must equal its final event sequence.");
-        }
-
         return new SyncAckPayload
         {
             BatchId = batch.BatchId,
@@ -113,7 +113,9 @@ public sealed class ContactSyncEnvelopeHandler
         ReceivedDeviceEnvelope received,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(received);
+        ValidateControlRequest(received, "sync.checkpoint.request");
+        if (received.Envelope.Payload.EnumerateObject().Any())
+            throw new InvalidDataException("The checkpoint request payload must be empty.");
         return new SyncCheckpointPayload
         {
             OriginDeviceId = received.DeviceId.Value,
@@ -126,6 +128,7 @@ public sealed class ContactSyncEnvelopeHandler
         ReceivedDeviceEnvelope received,
         CancellationToken cancellationToken)
     {
+        ValidateControlRequest(received, "contacts.reconcile");
         var payload = received.Envelope.Payload.Deserialize<ContactReconciliationPayload>(JsonOptions)
             ?? throw new InvalidDataException("Contact authorization payload is required.");
         if (payload.AuthorizedSourceContactIds is not { Length: <= 20_000 } ||
@@ -135,6 +138,16 @@ public sealed class ContactSyncEnvelopeHandler
         }
         await _contactStore.ReconcileAuthorizationAsync(received.DeviceId,
             payload.AuthorizedSourceContactIds, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ValidateControlRequest(ReceivedDeviceEnvelope received, string kind)
+    {
+        ArgumentNullException.ThrowIfNull(received);
+        var envelope = received.Envelope;
+        if (envelope.Kind != kind || !envelope.RequiresAck || envelope.CorrelationId is not null ||
+            envelope.OriginSequence != 0 || envelope.OriginDeviceId != received.DeviceId.Value ||
+            envelope.Payload.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("The contact control envelope is not an authenticated request.");
     }
 
     private static InboundSyncReceipt CreateReceipt(

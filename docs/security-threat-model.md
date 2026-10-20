@@ -4,6 +4,8 @@ Version: **1.0**
 Date: **2026-08-12**  
 Applies to: Windows app, iPhone companion, local protocol v1, optional Apple Bluetooth adapters
 
+Implementation checkpoint, October 20: this document includes design objectives, not a statement that every listed control has shipped. New contact sync uses per-PC protected state, authenticated checkpoint requests and subset reconciliation; narrowing permission scrubs the owning iPhone's fields and receipt payloads on the next successful foreground sync, not while the PC is offline. Revocation deletes companion trust before local outbox cleanup. New photo imports use immediate chunk-authenticated encrypted staging and two-pass bounded-memory export; old PLA1 imports remain readable. See [protocol](protocol-v1.md) and [attachment storage](attachment-storage.md) for implemented limits and failure behavior. General command-result persistence, quarantining/rate-limit policy, atomic projection-plus-receipt transactions, authenticated key rotation, and durable transfer resume remain separate unfinished controls; schema fields or this threat table do not prove implementation.
+
 ## Security objectives
 
 1. Only explicitly paired devices can exchange private data.

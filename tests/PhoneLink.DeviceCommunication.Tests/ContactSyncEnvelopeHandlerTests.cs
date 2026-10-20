@@ -71,6 +71,10 @@ public sealed class ContactSyncEnvelopeHandlerTests
             Payload = JsonSerializer.SerializeToElement(batch, WebJson),
         };
 
+        await Assert.ThrowsAsync<InvalidDataException>(() => handler.HandleAsync(
+            new ReceivedDeviceEnvelope(deviceId, envelope with { OriginSequence = 2 }), CancellationToken.None));
+        Assert.Empty(store.Upserts);
+
         var acknowledgement = await handler.HandleAsync(
             new ReceivedDeviceEnvelope(deviceId, envelope),
             CancellationToken.None);
@@ -89,23 +93,98 @@ public sealed class ContactSyncEnvelopeHandlerTests
         Assert.Single(store.Upserts);
 
         var checkpoint = await handler.GetCheckpointAsync(
-            new ReceivedDeviceEnvelope(deviceId, envelope), CancellationToken.None);
+            Control(deviceId, "sync.checkpoint.request", new { }), CancellationToken.None);
         Assert.Equal(deviceId.Value, checkpoint.OriginDeviceId);
         Assert.Equal(1, checkpoint.HighestContiguousSequence);
         var otherDevice = DeviceId.New();
         var otherCheckpoint = await handler.GetCheckpointAsync(
-            new ReceivedDeviceEnvelope(otherDevice, envelope), CancellationToken.None);
+            Control(otherDevice, "sync.checkpoint.request", new { }), CancellationToken.None);
         Assert.Equal(otherDevice.Value, otherCheckpoint.OriginDeviceId);
         Assert.Equal(0, otherCheckpoint.HighestContiguousSequence);
     }
 
+    [Fact]
+    public async Task ReconcilesOnlyTheAuthenticatedOwnersAuthorizedSubset()
+    {
+        var store = new CapturingContactStore();
+        var handler = new ContactSyncEnvelopeHandler(store, new InMemoryReceiptStore());
+        var owner = DeviceId.New();
+        await handler.ReconcileAuthorizationAsync(Control(owner, "contacts.reconcile",
+            new ContactReconciliationPayload { AuthorizedSourceContactIds = ["allowed-1", "allowed-2"] }),
+            CancellationToken.None);
+        var result = Assert.Single(store.Reconciliations);
+        Assert.Equal(owner, result.Owner);
+        Assert.Equal(["allowed-1", "allowed-2"], result.Identifiers);
+    }
+
+    [Theory]
+    [InlineData("no-ack")]
+    [InlineData("correlated")]
+    [InlineData("durable-sequence")]
+    [InlineData("spoofed-origin")]
+    [InlineData("wrong-kind")]
+    [InlineData("nonempty-payload")]
+    public async Task RejectsMalformedCheckpointControls(string mutation)
+    {
+        var owner = DeviceId.New();
+        var request = Control(owner, "sync.checkpoint.request", new { });
+        var envelope = request.Envelope;
+        envelope = mutation switch
+        {
+            "no-ack" => envelope with { RequiresAck = false },
+            "correlated" => envelope with { CorrelationId = Guid.NewGuid() },
+            "durable-sequence" => envelope with { OriginSequence = 1 },
+            "spoofed-origin" => envelope with { OriginDeviceId = Guid.NewGuid() },
+            "wrong-kind" => envelope with { Kind = "contacts.reconcile" },
+            _ => envelope with { Payload = JsonSerializer.SerializeToElement(new { originDeviceId = Guid.NewGuid() }, WebJson) },
+        };
+        var handler = new ContactSyncEnvelopeHandler(new CapturingContactStore(), new InMemoryReceiptStore());
+        await Assert.ThrowsAsync<InvalidDataException>(() => handler.GetCheckpointAsync(
+            new ReceivedDeviceEnvelope(owner, envelope), CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("empty-id")]
+    [InlineData("long-id")]
+    [InlineData("too-many")]
+    public async Task RejectsInvalidAuthorizationSnapshotsBeforeChangingContacts(string mutation)
+    {
+        var owner = DeviceId.New();
+        var identifiers = mutation switch
+        {
+            "empty-id" => new[] { " " },
+            "long-id" => new[] { new string('a', 501) },
+            "too-many" => Enumerable.Repeat("a", 20_001).ToArray(),
+            _ => null,
+        };
+        var store = new CapturingContactStore();
+        var handler = new ContactSyncEnvelopeHandler(store, new InMemoryReceiptStore());
+        await Assert.ThrowsAsync<InvalidDataException>(() => handler.ReconcileAuthorizationAsync(
+            Control(owner, "contacts.reconcile", new { authorizedSourceContactIds = identifiers }), CancellationToken.None));
+        Assert.Empty(store.Reconciliations);
+    }
+
+    private static ReceivedDeviceEnvelope Control<T>(DeviceId owner, string kind, T payload) => new(owner,
+        new ProtocolEnvelope
+        {
+            ProtocolVersion = 1, MessageId = Guid.NewGuid(), SessionId = Guid.NewGuid(), OriginDeviceId = owner.Value,
+            OriginSequence = 0, SentAt = DateTimeOffset.UtcNow, Kind = kind, RequiresAck = true,
+            Payload = JsonSerializer.SerializeToElement(payload, WebJson),
+        });
+
     private sealed class CapturingContactStore : IContactStore
     {
         public List<SyncedContact> Upserts { get; } = [];
+        public List<(DeviceId Owner, string[] Identifiers)> Reconciliations { get; } = [];
 
         public Task ReconcileAuthorizationAsync(DeviceId ownerDeviceId,
             IReadOnlyList<string> authorizedSourceContactIds, DateTimeOffset observedAt,
-            CancellationToken cancellationToken) => Task.CompletedTask;
+            CancellationToken cancellationToken)
+        {
+            Reconciliations.Add((ownerDeviceId, authorizedSourceContactIds.ToArray()));
+            return Task.CompletedTask;
+        }
 
         public Task UpsertAsync(SyncedContact contact, CancellationToken cancellationToken)
         {
