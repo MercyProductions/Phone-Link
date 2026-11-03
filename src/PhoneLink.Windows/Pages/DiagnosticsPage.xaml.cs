@@ -17,6 +17,9 @@ public sealed partial class DiagnosticsPage : Page
     private ConnectionDiagnosticReport? _report;
     private readonly ConnectionDiagnosticHistory _connectionHistory = new();
     private ConnectionDiagnosticComparison? _comparison;
+    private CancellationTokenSource? _motionCancellation;
+    private ImportedMotionReport? _motionReport;
+    private long _motionEpoch;
     private CancellationTokenSource? _crashCancellation;
     private IphoneCrashAnalysis? _crashAnalysis;
     private bool _loaded;
@@ -36,6 +39,7 @@ public sealed partial class DiagnosticsPage : Page
 
     private void Page_Unloaded(object sender, RoutedEventArgs args)
     {
+        ClearMotionForPrivacy();
         ClearConnectionHistory();
         StopPresence();
         ClearCompanionHealthForPrivacy();
@@ -56,6 +60,7 @@ public sealed partial class DiagnosticsPage : Page
     public void SetPrivacyLocked(bool locked)
     {
         if (!locked) return; // Monitoring requires a fresh explicit start after unlocking.
+        ClearMotionForPrivacy();
         ClearConnectionHistory();
         StopPresence();
         _scanCancellation?.Cancel();
@@ -78,6 +83,66 @@ public sealed partial class DiagnosticsPage : Page
         _report = null;
         CopyButton.IsEnabled = false;
         Findings.Clear();
+    }
+
+    private void ClearMotionForPrivacy()
+    {
+        _motionEpoch++;
+        _motionCancellation?.Cancel();
+        _motionReport = null;
+        MotionReportText.Text = "No imported motion summary displayed. Imported files are not authenticated live phone data.";
+        MotionCopyButton.IsEnabled = false;
+    }
+
+    private async void MotionImportButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || App.IsLocked || _motionCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource();
+        _motionCancellation = cancellation;
+        var epoch = ++_motionEpoch;
+        MotionImportButton.IsEnabled = MotionCopyButton.IsEnabled = false;
+        _motionReport = null;
+        MotionReportText.Text = "Select a companion motion-summary JSON file. The source will remain unverified.";
+        try
+        {
+            var picker = new FileOpenPicker(App.MainWindow.AppWindow.Id);
+            picker.FileTypeFilter.Add(".json");
+            var file = await picker.PickSingleFileAsync();
+            if (file is null || !_loaded || App.IsLocked || cancellation.IsCancellationRequested || epoch != _motionEpoch) return;
+            cancellation.CancelAfter(TimeSpan.FromSeconds(20));
+            await using var stream = new FileStream(file.Path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            if (stream.Length > ImportedMotionReportParser.MaximumBytes) throw new InvalidDataException("Summary is oversized.");
+            var report = await ImportedMotionReportParser.ParseAsync(stream, cancellation.Token);
+            if (!_loaded || App.IsLocked || cancellation.IsCancellationRequested || epoch != _motionEpoch) return;
+            _motionReport = report;
+            MotionReportText.Text = report.ToDisplayText();
+            MotionCopyButton.IsEnabled = true;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (_loaded && !App.IsLocked && epoch == _motionEpoch)
+                MotionReportText.Text = "Import not completed. Choose a schema-1 companion motion summary up to 8 KiB. Unsupported, ambiguous or inconsistent data was not accepted. No repair or source-file change occurred.";
+        }
+        finally
+        {
+            _motionCancellation = null;
+            if (_loaded) MotionImportButton.IsEnabled = true;
+        }
+    }
+
+    private void MotionCopyButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || App.IsLocked || _motionReport is null) return;
+        try
+        {
+            var data = new DataPackage();
+            data.SetText(_motionReport.ToDisplayText());
+            Clipboard.SetContent(data);
+            ShowStatus("Imported summary copied", "Only displayed fixed labels and numeric summaries were copied, with the unverified-origin warning. The source file and its arbitrary metadata were not copied.", InfoBarSeverity.Success);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        { ShowStatus("Clipboard unavailable", "The imported summary remains on this page.", InfoBarSeverity.Warning); }
     }
 
     private async void PresenceButton_Click(object sender, RoutedEventArgs args)
