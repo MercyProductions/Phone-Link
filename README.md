@@ -26,11 +26,11 @@ Implemented:
 - close-to-tray operation with an explicit Exit command and opt-in Windows Hello protection at startup, after five minutes without interaction, on tray hiding, and on Windows session lock/suspend;
 - modern WinUI pages for Messages, Contacts, Photos, Calls, Notifications, Devices, Settings, and About;
 - a live iPhone Troubleshooter for Apple USB presence, Windows problem flags, Apple Devices installation, local pairing paths, and authenticated companion sessions, with a minimal shareable report;
-- local analysis of user-selected type-309 JSON crash reports, with allowlisted signatures and a separately copied redacted summary; see [scope and verification](docs/crash-report-analysis.md);
+- local analysis of user-selected type-309 JSON crash reports, with allowlisted signatures and a separately copied redacted summary; real UI import/display/copy verified with the synthetic fixture, not yet with owner reports; see [scope and verification](docs/crash-report-analysis.md);
 - explicit experimental USB transport and read-only iPhone-information probes, without an iOS companion prerequisite for those probes;
 - per-field phone-query outcomes and bounded automatic/manual recovery of a missing app discovery advertisement, with before/after checks;
 - managed loopback-only USB forwarding with target rechecks, Stop controls, byte statistics, and a read-only round-trip verifier;
-- bounded static Mach-O symbol/offset inspection with architecture/UUID/hash identity, a Windows table, JSON export, and portable CLI;
+- bounded static Mach-O symbol/offset inspection with architecture/UUID/hash identity, a Windows table, JSON export, and portable CLI; native ARM64 fixture import/table/export verified end-to-end in Windows;
 - a reproducible signed development MSIX build.
 
 Important limits:

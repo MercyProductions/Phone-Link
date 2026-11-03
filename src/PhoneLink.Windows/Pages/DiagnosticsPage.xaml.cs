@@ -7,8 +7,7 @@ using PhoneLink.Domain.Devices;
 using PhoneLink.Security.Storage;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Management.Deployment;
-using Windows.Storage.Pickers;
-using WinRT.Interop;
+using Microsoft.Windows.Storage.Pickers;
 
 namespace PhoneLink.Windows.Pages;
 
@@ -53,18 +52,17 @@ public sealed partial class DiagnosticsPage : Page
         CrashAnalysisText.Text = string.Empty;
         try
         {
-            var picker = new FileOpenPicker();
+            var picker = new FileOpenPicker(App.MainWindow.AppWindow.Id);
             picker.FileTypeFilter.Add(".ips");
             picker.FileTypeFilter.Add(".json");
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
             var file = await picker.PickSingleFileAsync();
             if (file is null || cancellation.IsCancellationRequested || !_loaded || App.IsLocked) return;
             cancellation.CancelAfter(TimeSpan.FromSeconds(20));
             CrashAnalysisText.Text = "Analyzing locally…";
-            using var random = await file.OpenReadAsync();
-            if (random.Size > IphoneCrashReportAnalyzer.MaximumBytes)
+            await using var stream = new FileStream(file.Path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            if (stream.Length > IphoneCrashReportAnalyzer.MaximumBytes)
                 throw new InvalidDataException("Report exceeds the 4 MiB analysis limit.");
-            using var stream = random.AsStreamForRead();
             var analysis = await Task.Run(() => IphoneCrashReportAnalyzer.AnalyzeAsync(stream, cancellation.Token), cancellation.Token);
             if (!_loaded || cancellation.IsCancellationRequested || App.IsLocked) return;
             _crashAnalysis = analysis;

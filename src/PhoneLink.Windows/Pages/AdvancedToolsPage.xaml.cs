@@ -7,8 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 using PhoneLink.Application.Features.BinaryInspection;
 using PhoneLink.DeviceCommunication.Diagnostics;
 using PhoneLink.DeviceCommunication.Tunnels;
-using Windows.Storage.Pickers;
-using WinRT.Interop;
+using Windows.Storage;
 
 namespace PhoneLink.Windows.Pages;
 
@@ -139,20 +138,19 @@ public sealed partial class AdvancedToolsPage : Page
 
     private async void InspectButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
-        var picker = new FileOpenPicker();
+        var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(App.MainWindow.AppWindow.Id);
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
         var file = await picker.PickSingleFileAsync();
-        if (file is null || token.IsCancellationRequested || App.IsLocked) return;
+        if (file is null || token.IsCancellationRequested || !_loaded || App.IsLocked) return;
         _inspection = null;
         ImageSelector.Items.Clear();
         Rows.Clear();
         ImageSummary.Text = "Inspecting selected image…";
         EntrySummary.Text = "No entries available until inspection succeeds.";
-        using var random = await file.OpenReadAsync();
-        using var stream = random.AsStream();
+        await using var stream = new FileStream(file.Path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var result = await MachOInspector.InspectAsync(stream, token);
-        if (token.IsCancellationRequested || !_loaded) return;
+        if (token.IsCancellationRequested || !_loaded || App.IsLocked) return;
         _inspection = result;
         ImageSummary.Text = $"{result.ByteLength:N0} bytes · SHA-256 {result.Sha256}\nStatic analysis only. Runtime addresses are unavailable; no ASLR slide is assumed.";
         foreach (var image in result.Images) ImageSelector.Items.Add($"{image.Architecture} · {image.Uuid ?? "no UUID"}");
@@ -175,11 +173,18 @@ public sealed partial class AdvancedToolsPage : Page
     {
         var report = _inspection;
         if (report is null) return;
-        var picker = new FileSavePicker { SuggestedFileName = "PhoneLink-offsets" };
+        var picker = new Microsoft.Windows.Storage.Pickers.FileSavePicker(App.MainWindow.AppWindow.Id)
+            { SuggestedFileName = "PhoneLink-offsets", DefaultFileExtension = ".json", ShowOverwritePrompt = true };
         picker.FileTypeChoices.Add("JSON offset report", [".json"]);
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
-        var file = await picker.PickSaveFileAsync();
-        if (file is null || token.IsCancellationRequested || App.IsLocked) return;
+        var selected = await picker.PickSaveFileAsync();
+        if (selected is null || token.IsCancellationRequested || !_loaded || App.IsLocked) return;
+        var folder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(selected.Path)!);
+        token.ThrowIfCancellationRequested();
+        // The desktop picker returns a path, not a StorageFile. Open/create without
+        // truncating existing content, then retain transactional replacement below.
+        var file = await folder.CreateFileAsync(Path.GetFileName(selected.Path), CreationCollisionOption.OpenIfExists);
+        token.ThrowIfCancellationRequested();
+        if (!_loaded || App.IsLocked) return;
         using var transaction = await file.OpenTransactedWriteAsync();
         transaction.Stream.Size = 0;
         using (var stream = transaction.Stream.AsStreamForWrite())
@@ -187,6 +192,7 @@ public sealed partial class AdvancedToolsPage : Page
             await JsonSerializer.SerializeAsync(stream, report, ReportJsonOptions, token);
             await stream.FlushAsync(token);
             token.ThrowIfCancellationRequested();
+            if (!_loaded || App.IsLocked) return;
             await transaction.CommitAsync();
         }
         if (_loaded) ShowStatus("Static offset report saved. No image or phone data was modified.", InfoBarSeverity.Success);
