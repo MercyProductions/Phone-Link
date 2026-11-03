@@ -44,10 +44,9 @@ enum RuntimeImageProbe {
     // Inspect only the permanently resident companion code containing our own marker.
     // Do not iterate dyld's mutable image list or dereference unloadable third-party images.
     static func capture() throws -> RuntimeImageSnapshot {
-        let marker: @convention(c) () -> Int32 = phoneLinkRuntimeProbeMarker
-        let address = unsafeBitCast(marker, to: UnsafeRawPointer.self)
-        var info = Dl_info()
-        guard dladdr(address, &info) != 0, let header = info.dli_fbase else { throw RuntimeImageError.unsupported }
+        let anchor = try ownImageAnchor()
+        let header = anchor.header
+        let address = anchor.marker
         let initial = Data(bytes: header, count: 32)
         guard read32(initial, 0) == 0xfeedfacf else { throw RuntimeImageError.unsupported }
         let count = read32(initial, 16)
@@ -57,6 +56,23 @@ enum RuntimeImageProbe {
         return try parse(commands, headerAddress: UInt64(UInt(bitPattern: header)),
                          markerAddress: UInt64(UInt(bitPattern: address)))
     }
+
+    // Keep C-convention conversion in this module. Repeating it in a test bundle can
+    // create a different thunk/image even when the source-level function is the same.
+    private static func ownImageAnchor() throws -> (header: UnsafeMutableRawPointer, marker: UnsafeRawPointer, path: UnsafePointer<CChar>?) {
+        let marker: @convention(c) () -> Int32 = phoneLinkRuntimeProbeMarker
+        let address = unsafeBitCast(marker, to: UnsafeRawPointer.self)
+        var info = Dl_info()
+        guard dladdr(address, &info) != 0, let header = info.dli_fbase else { throw RuntimeImageError.unsupported }
+        return (header, address, info.dli_fname)
+    }
+
+    #if targetEnvironment(simulator)
+    static func ownImageURLForFixture() throws -> URL {
+        guard let path = try ownImageAnchor().path else { throw RuntimeImageError.unsupported }
+        return URL(fileURLWithPath: String(cString: path))
+    }
+    #endif
 
     static func parse(_ data: Data, headerAddress: UInt64, markerAddress: UInt64) throws -> RuntimeImageSnapshot {
         guard data.count >= 32, read32(data, 0) == 0xfeedfacf,
