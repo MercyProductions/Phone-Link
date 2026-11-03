@@ -31,6 +31,9 @@
                 HorizontalAlignment="Left" ToolTipService.ToolTip="Use with one owned iPhone connected by USB. Reads model, OS and available battery observations; no settings or firmware changes." />
             <Button x:Name="RecoveryButton" Content="Repair missing app discovery" Click="RecoveryButton_Click" HorizontalAlignment="Left"
                 ToolTipService.ToolTip="Checks before and after restoring only Phone Link's missing Bonjour advertisement. Does not reset pairing, disconnect healthy sessions, change drivers, or repair phone hardware." />
+            <TextBlock Text="Connection comparison and troubleshooting rules" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock x:Name="ComparisonText" Text="No comparison retained. Run connection checks twice to compare aggregate observations." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <Button x:Name="ComparisonJsonButton" Content="Copy comparison JSON" Click="ComparisonJsonButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
             <TextBlock Text="Crash-report analysis" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="Select a report you exported from iPhone Analytics Data. Only type-309 JSON crash reports up to 4 MiB are supported. Analysis stays local and does not establish a hardware fault. Other report types, including panic and Jetsam reports, are not yet supported. The original is never uploaded or changed."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

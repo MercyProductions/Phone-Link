@@ -105,7 +105,7 @@ public static class ConnectionDiagnosticEvaluator
             "Keep the companion and PC on a trusted local network. Do not disable your firewall; check the app's allowed access instead.", ConnectionGuide));
         findings.Add(new("companion", "Phone Link companion session",
             snapshot.ConnectedCompanions > 0 ? DiagnosticOutcome.Passed :
-                snapshot.TrustedCompanions is null ? DiagnosticOutcome.Unknown : DiagnosticOutcome.Attention,
+                snapshot.TrustedCompanions is null || snapshot.ConnectedCompanions is null ? DiagnosticOutcome.Unknown : DiagnosticOutcome.Attention,
             snapshot.TrustedCompanions is { } peers && snapshot.ConnectedCompanions is { } connected
                 ? $"{peers} trusted companion(s); {connected} currently authenticated session(s). USB detection alone cannot establish this encrypted app connection."
                 : "Companion trust/session information is unavailable.",

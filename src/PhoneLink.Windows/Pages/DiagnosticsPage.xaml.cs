@@ -15,6 +15,8 @@ public sealed partial class DiagnosticsPage : Page
 {
     private CancellationTokenSource? _scanCancellation;
     private ConnectionDiagnosticReport? _report;
+    private readonly ConnectionDiagnosticHistory _connectionHistory = new();
+    private ConnectionDiagnosticComparison? _comparison;
     private CancellationTokenSource? _crashCancellation;
     private IphoneCrashAnalysis? _crashAnalysis;
     private bool _loaded;
@@ -34,6 +36,7 @@ public sealed partial class DiagnosticsPage : Page
 
     private void Page_Unloaded(object sender, RoutedEventArgs args)
     {
+        ClearConnectionHistory();
         StopPresence();
         ClearCompanionHealthForPrivacy();
         _loaded = false;
@@ -53,6 +56,7 @@ public sealed partial class DiagnosticsPage : Page
     public void SetPrivacyLocked(bool locked)
     {
         if (!locked) return; // Monitoring requires a fresh explicit start after unlocking.
+        ClearConnectionHistory();
         StopPresence();
         _scanCancellation?.Cancel();
         _crashCancellation?.Cancel();
@@ -63,6 +67,17 @@ public sealed partial class DiagnosticsPage : Page
         CrashAnalysisText.Text = PhoneInfoText.Text = RecoveryText.Text = string.Empty;
         SnapshotText.Text = "No connection snapshot displayed.";
         CopyButton.IsEnabled = CrashCopyButton.IsEnabled = false;
+    }
+
+    private void ClearConnectionHistory()
+    {
+        _connectionHistory.Clear();
+        _comparison = null;
+        ComparisonText.Text = "No comparison retained. Run connection checks twice to compare aggregate observations.";
+        ComparisonJsonButton.IsEnabled = false;
+        _report = null;
+        CopyButton.IsEnabled = false;
+        Findings.Clear();
     }
 
     private async void PresenceButton_Click(object sender, RoutedEventArgs args)
@@ -192,6 +207,9 @@ public sealed partial class DiagnosticsPage : Page
         ScanProgress.IsActive = true;
         StatusBar.IsOpen = false;
         _report = null;
+        _comparison = null;
+        ComparisonJsonButton.IsEnabled = false;
+        ComparisonText.Text = "Scan running. Previous completed aggregate observations remain in page memory; a failed scan will not count as improvement.";
         ClearCompanionHealthForPrivacy();
         Findings.Clear();
         try
@@ -227,8 +245,11 @@ public sealed partial class DiagnosticsPage : Page
                 snapshot = snapshot with { UnavailableProbes = [.. snapshot.UnavailableProbes, "companion-query-unavailable"] };
             }
             cancellation.Token.ThrowIfCancellationRequested();
-            if (!_loaded) return;
+            if (!_loaded || App.IsLocked) return;
             _report = ConnectionDiagnosticEvaluator.Evaluate(snapshot);
+            _comparison = _connectionHistory.Observe(snapshot);
+            ComparisonText.Text = _comparison.ToShareableText();
+            ComparisonJsonButton.IsEnabled = true;
             foreach (var finding in _report.Findings) Findings.Add(finding);
             SnapshotText.Text = $"Snapshot: {snapshot.CapturedAt.LocalDateTime:g}. {snapshot.UnavailableProbes.Count} unavailable probe(s). No phone changes made.";
             if (AppServices.Current.LastDiscoveryRecovery is { } recovery)
@@ -237,11 +258,19 @@ public sealed partial class DiagnosticsPage : Page
         }
         catch (OperationCanceledException)
         {
-            if (_loaded) ShowStatus("Scan stopped", "The scan was cancelled or timed out. Run it again after checking the connection.", InfoBarSeverity.Warning);
+            if (_loaded && !App.IsLocked)
+            {
+                ComparisonText.Text = "Scan cancelled or timed out. No new comparison was recorded; prior observations do not establish current state.";
+                ShowStatus("Scan stopped", "The scan was cancelled or timed out. Run it again after checking the connection.", InfoBarSeverity.Warning);
+            }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            if (_loaded) ShowStatus("Scan unavailable", "Windows could not complete this scan. No repair was attempted.", InfoBarSeverity.Error);
+            if (_loaded && !App.IsLocked)
+            {
+                ComparisonText.Text = "Scan unavailable. No new comparison was recorded; prior observations do not establish current state.";
+                ShowStatus("Scan unavailable", "Windows could not complete this scan. No repair was attempted.", InfoBarSeverity.Error);
+            }
         }
         finally
         {
@@ -392,7 +421,7 @@ public sealed partial class DiagnosticsPage : Page
         try
         {
             var data = new DataPackage();
-            data.SetText(_report.ToShareableText());
+            data.SetText(_report.ToShareableText() + (_comparison is null ? string.Empty : "\n\n" + _comparison.ToShareableText()));
             Clipboard.SetContent(data);
             ShowStatus("Report copied", "The clipboard report contains findings, counts, and next steps—not device identifiers or phone content.", InfoBarSeverity.Success);
         }
@@ -400,6 +429,20 @@ public sealed partial class DiagnosticsPage : Page
         {
             ShowStatus("Clipboard unavailable", "Windows did not accept the report. Your findings remain on this page.", InfoBarSeverity.Warning);
         }
+    }
+
+    private void ComparisonJsonButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || App.IsLocked || _comparison is null) return;
+        try
+        {
+            var data = new DataPackage();
+            data.SetText(_comparison.ToShareableJson());
+            Clipboard.SetContent(data);
+            ShowStatus("Comparison JSON copied", "Only fixed rule text, outcomes, counts and timestamps were copied. Review before sharing. Phone content, identifiers and raw probe errors are excluded.", InfoBarSeverity.Success);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        { ShowStatus("Clipboard unavailable", "The comparison remains on this page.", InfoBarSeverity.Warning); }
     }
 
     private async void AppleDevicesButton_Click(object sender, RoutedEventArgs args)

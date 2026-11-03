@@ -137,7 +137,21 @@ Verification: `dotnet test PhoneLink.slnx --no-restore -v quiet` passed all 450 
 
 The assessment JSON remains a historical source snapshot, not silently rewritten as if F03 had already been fixed there. First physical connection still requires owner-controlled signed installation/pairing; the phone remains disconnected and the staged unsigned third-party installer has not been executed. The larger master directive and active goal remain incomplete. The directive text still ends mid-sentence in section 15; its missing remainder is not inferred.
 
-## Primary research
+## November 3 rules-driven connection comparison
+
+Previous goal turn was progress: `2ddc2df` implemented and pushed explicit authenticated dial targeting with 450 passing tests. This continuation extends the real Troubleshooter rather than treating the pending physical installation as permission to change phone settings.
+
+Added `ConnectionDiagnosticHistory`: five allowlisted Windows connection checks, previous/current outcome transitions, attention counts and consecutive indications over at most 20 completed scans. Unknown breaks consecutive evidence and cannot be called improvement. Failed/cancelled page scans do not append an observation. Duplicate/out-of-order timestamps are rejected rather than inflating repetition; a deployment-identity change or loss of identity knowledge restarts history. Counts describe an aggregate PC view, not a stable physical phone/node identity, root cause, hardware diagnosis or proof that repair caused improvement.
+
+Fixed rules correlate USB presence without a companion session, no local trust, no eligible local network, trusted-but-offline companion state, and repeated Windows driver problem indications. Each emits observed evidence and bounded next steps; none executes phone commands, resets trust, modifies drivers, disables security, or installs software. Existing bounded app-discovery maintenance remains the automatic repair path. A partial companion query (known trust but unknown connected count) now correctly reports Unknown rather than Attention.
+
+Windows displays comparisons and includes them in the existing shareable text report. New versioned JSON clipboard export contains only allowlisted outcomes, counts, timestamps and fixed policy text; raw snapshots, exception strings, package-version strings, identifiers, addresses and phone content are neither retained by this history nor serialized. Lock and page unload clear in-app comparison state. User-copied clipboard exports remain in Windows clipboard/history under OS policy; this feature does not promise their automatic erasure or persist its own history to disk.
+
+Verification: `dotnet build PhoneLink.slnx --no-restore -v quiet` succeeded with zero warnings/errors after fixing the serializer-options analyzer finding. `dotnet test PhoneLink.slnx --no-build --no-restore -v quiet` passed 465 tests, including 15 new comparison/rules/retention/scope/unknown/replay/redaction cases. Computer-use skill runtime check of the current Debug build verified first scan retained=1, second retained=2 with repeated Attention while driver status remained Unknown, JSON clipboard schema=1 with five issues/no raw snapshot, and navigation away/back restarting at retained=1/previous=none. No experimental phone probe, repair, installer, native permission, registration or dial action was triggered. In-flight lock/cancel UI races and changed real-device conditions remain runtime gaps; synthetic tests cover outcome changes, not physical repair effectiveness.
+
+The physical companion remains unsigned/uninstalled and the owner reports the phone disconnected. Accessory parity, actual ANCS/AMS/calling/audio behavior, signed physical pairing, effective phone repair and authenticated SSH remain unverified. No goal-completion claim is made. The master directive's missing section-15 remainder and installation/security decisions remain owner inputs.
+
+## Primary research references
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.
 - [Apple Mach-O format header](https://github.com/apple-oss-distributions/xnu/blob/main/EXTERNAL_HEADERS/mach-o/loader.h): image/load-command structures for an offline inspector.
