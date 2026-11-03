@@ -3,6 +3,53 @@ import Testing
 @testable import PhoneLinkCompanion
 
 struct SessionTranscriptTests {
+    @Test func touchCoverageCountsOnlyReceivedCellsAndBoundsEdges() {
+        var coverage = TouchCoverage()
+        let size = CGSize(width: 60, height: 80)
+        coverage.record(CGPoint(x: 0, y: 0), in: size)
+        coverage.record(CGPoint(x: 1, y: 1), in: size)
+        #expect(coverage.cells == [0])
+        coverage.record(CGPoint(x: 60, y: 80), in: size)
+        #expect(coverage.cells == [0, 47]) // No interpolation across unobserved cells.
+        for row in 0..<8 {
+            for column in 0..<6 {
+                coverage.record(CGPoint(x: column * 10 + 5, y: row * 10 + 5), in: size)
+            }
+        }
+        #expect(coverage.cells.count == 48)
+        coverage = TouchCoverage()
+        #expect(coverage.cells.isEmpty)
+    }
+
+    @Test func invalidTouchGeometryDoesNotInventCoverage() {
+        var coverage = TouchCoverage()
+        let size = CGSize(width: 60, height: 80)
+        for point in [CGPoint(x: -1, y: 0), CGPoint(x: 61, y: 1), CGPoint(x: 1, y: 81),
+                      CGPoint(x: CGFloat.nan, y: 0), CGPoint(x: 0, y: CGFloat.infinity)] {
+            coverage.record(point, in: size)
+        }
+        for invalid in [CGSize.zero, CGSize(width: -1, height: 1), CGSize(width: CGFloat.infinity, height: 1)] {
+            coverage.record(.zero, in: invalid)
+        }
+        #expect(coverage.cells.isEmpty)
+    }
+
+    @Test func generatedToneIsBoundedFadedPCMWithoutRecording() throws {
+        let data = CheckTone.wav()
+        #expect(String(decoding: data.prefix(4), as: UTF8.self) == "RIFF")
+        #expect(String(decoding: data[8..<16], as: UTF8.self) == "WAVEfmt ")
+        func u16(_ offset: Int) -> UInt16 { UInt16(data[offset]) | UInt16(data[offset + 1]) << 8 }
+        func u32(_ offset: Int) -> UInt32 { UInt32(u16(offset)) | UInt32(u16(offset + 2)) << 16 }
+        #expect(u32(4) == UInt32(data.count - 8))
+        #expect(u16(20) == 1 && u16(22) == 1 && u16(34) == 16)
+        #expect(u32(24) == 22_050 && u32(40) == 17_640)
+        #expect(data.count == 17_684)
+        let samples = stride(from: 44, to: data.count, by: 2).map { Int(Int16(bitPattern: u16($0))) }
+        #expect(samples.first == 0 && samples.last == 0)
+        #expect(try #require(samples.map { abs($0) }.max()) <= 4_916)
+        #expect(samples.contains { $0 > 0 } && samples.contains { $0 < 0 })
+    }
+
     @Test func healthChargeValidationDoesNotTurnUnknownIntoZero() {
         for value in [Float(-1), Float(1.1), Float.nan, Float.infinity] {
             #expect(CompanionHealthSnapshot.percentage(value) == nil)

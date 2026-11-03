@@ -137,6 +137,11 @@ struct HealthView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Interactive checks") {
+                    NavigationLink("Touch, display, sound and haptics") { GuidedChecksView() }
+                    Text("Run checks yourself on this iPhone. Observations stay local and do not certify hardware health.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("Read-only phone checks") {
                     Text("Capture a one-time snapshot. No permission prompt, repair, reset or firmware change is performed. No background monitoring.")
                     Button("Capture snapshot") { Task { await capture() } }.disabled(busy)
