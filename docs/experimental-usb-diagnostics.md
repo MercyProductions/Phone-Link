@@ -17,12 +17,21 @@ XML parsing ignores DTD declarations without resolving external resources, rejec
 
 ## Explicit command-line probes
 
+An additional separate probe now reads only `DeveloperModeStatus` in `com.apple.security.mac.amfi`. It is not part of the normal seven-field information scan. Run `--developer-mode-status` explicitly, or **USB & binary tools → Read Developer Mode status**. A six-second overall deadline and the existing 64 KiB framing bound apply. The domain/key pair is exact and allowlisted; no SetValue, enable/arm/reveal/confirm operation, reboot, image mount, pairing-record request, StartSession or service launch is issued. Strict plist booleans yield a reported enabled/disabled value; denial, missing or unexpected values remain unknown. Device errors use the same fixed-name filtering as the other information reads.
+
+November 3 physical follow-up: inventory still reported one USB device, SSH port 22 was still rejected with transport code 3, and both the new CLI probe and live Windows UI reported Developer Mode as unknown / `DeviceReportedError` / `GetProhibited`. This is not evidence that the mode is disabled or that the phone has a fault. [The independently checked reference](https://github.com/libimobiledevice/libimobiledevice/blob/fa0f79190142bc309307967c058f89c1b36eb6b8/tools/idevicedevmodectl.c) uses an authenticated lockdownd handshake before reading this field; our intentional no-session path cannot prove whether authorized access would succeed. No source/vendor code was copied, and no credentials or trust records were used.
+
+Developer Mode is only one development prerequisite, not SSH, root access, signing authorization, debugger entitlement, decrypted image access or permission to inspect arbitrary processes/kernel memory. [Apple's Developer Mode instructions](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) describe a separate user-controlled security decision and restart; this application does not perform it. The owner was asked only to inspect the current setting without changing it. USB GetProhibited is also separate from the unresolved Bluetooth characteristic AccessDenied result; no common cause is established.
+
+Verification: eight added parser/request tests cover the exact read shape, disallowed keys/domains, real true/false values, invalid flag encodings and denied/error redaction. Full solution: 354 tests passed; build zero warnings/errors. The computer-use skill verified the new control and actual protected-response rendering. Authenticated mode reads and runtime debugging remain unverified.
+
 From the repository root, with an owned phone attached:
 
 ```powershell
 dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --inventory
 dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --info
 dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --ssh-check
+dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --developer-mode-status
 ```
 
 The tool also now accepts `--verify-tunnel` and `--forward <device-port>`; see [managed tunnels and static inspection](usb-tunnels-and-static-offsets.md) for their separate scope and limits. There is no arbitrary command, key/domain, host, restore, or firmware argument. Default automated tests exercise parsers and the read-only local inventory; they do not automatically run basic phone-information or SSH reads on arbitrary connected hardware. The `--info` command and UI button explicitly request information reads. `--ssh-check` explicitly attempts only standard port 22 through the selected USB connection, sends an SSH 2.0 identification if it connects, reads a bounded identification, then closes; it does not authenticate, verify a host key, send commands, or start a persistent tunnel. A positive banner alone is not authenticated SSH access.

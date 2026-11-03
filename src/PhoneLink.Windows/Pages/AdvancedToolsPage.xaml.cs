@@ -157,6 +157,18 @@ public sealed partial class AdvancedToolsPage : Page
         if (result.Images.Count > 0) ImageSelector.SelectedIndex = 0;
     });
 
+    private async void DeveloperModeButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
+    {
+        if (App.IsLocked) return;
+        var result = await ExperimentalIphoneInformationProbe.ProbeDeveloperModeAsync(token);
+        if (!_loaded || token.IsCancellationRequested || App.IsLocked) return;
+        var flag = result.ReportedEnabled switch { true => "enabled", false => "disabled", _ => "unknown" };
+        ShowStatus($"Reported Developer Mode: {flag}. Field status: {result.Field.Status}" +
+            (result.Field.DeviceErrorCode is { } code ? $" ({code})" : "") +
+            $". Read at {result.CapturedAt.LocalDateTime:g}. This no-session observation does not authenticate phone identity or prove debugger/SSH access. No setting, service, trust or firmware was changed.",
+            result.ReportedEnabled is null ? InfoBarSeverity.Warning : InfoBarSeverity.Informational);
+    });
+
     private void ImageSelector_SelectionChanged(object sender, SelectionChangedEventArgs args)
     {
         Rows.Clear();
@@ -219,7 +231,7 @@ public sealed partial class AdvancedToolsPage : Page
         StartButton.IsEnabled = !_busy && _tunnel is null;
         StopButton.IsEnabled = _tunnel is not null;
         RemotePortBox.IsEnabled = !_busy && _tunnel is null;
-        VerifyButton.IsEnabled = SshButton.IsEnabled = InspectButton.IsEnabled = !_busy;
+        VerifyButton.IsEnabled = SshButton.IsEnabled = InspectButton.IsEnabled = DeveloperModeButton.IsEnabled = !_busy;
         ExportButton.IsEnabled = !_busy && _inspection is not null;
     }
 

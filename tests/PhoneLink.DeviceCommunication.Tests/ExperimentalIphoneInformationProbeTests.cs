@@ -6,6 +6,54 @@ namespace PhoneLink.DeviceCommunication.Tests;
 
 public sealed class ExperimentalIphoneInformationProbeTests
 {
+    [Fact]
+    public void DeveloperModeQueryIsOnlyOneAllowlistedRead()
+    {
+        var bytes = ExperimentalIphoneInformationProbe.BuildReadRequest("DeveloperModeStatus", "com.apple.security.mac.amfi");
+        var dictionary = ExperimentalUsbMuxProbe.ParseDictionary(bytes);
+        Assert.Equal("GetValue", dictionary["Request"].Value);
+        Assert.Equal("DeveloperModeStatus", dictionary["Key"].Value);
+        Assert.Equal("com.apple.security.mac.amfi", dictionary["Domain"].Value);
+        Assert.Equal(4, dictionary.Count);
+        Assert.Throws<ArgumentException>(() => ExperimentalIphoneInformationProbe.BuildReadRequest("DeveloperModeStatus"));
+        Assert.Throws<ArgumentException>(() => ExperimentalIphoneInformationProbe.BuildReadRequest("DeveloperModeStatus", "com.apple.mobile.battery"));
+        Assert.Throws<ArgumentException>(() => ExperimentalIphoneInformationProbe.BuildReadRequest("EnableDeveloperMode", "com.apple.security.mac.amfi"));
+    }
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public void DeveloperFlagIsReportedOnlyForActualBoolean(string element, bool expected)
+    {
+        var result = ExperimentalIphoneInformationProbe.ParseDeveloperModeResponse(Response(new XElement(element)), DateTimeOffset.UtcNow);
+        Assert.Equal(expected, result.ReportedEnabled);
+        Assert.Equal(IphoneInformationFieldStatus.Available, result.Field.Status);
+    }
+
+    [Theory]
+    [InlineData("integer", "1")]
+    [InlineData("string", "true")]
+    [InlineData("true", "unexpected")]
+    public void InvalidDeveloperFlagNeverBecomesEnabledOrDisabled(string kind, string value)
+    {
+        var result = ExperimentalIphoneInformationProbe.ParseDeveloperModeResponse(Response(new XElement(kind, value)), DateTimeOffset.UtcNow);
+        Assert.Null(result.ReportedEnabled);
+        Assert.Equal(IphoneInformationFieldStatus.UnexpectedValue, result.Field.Status);
+    }
+
+    [Theory]
+    [InlineData("GetProhibited", "GetProhibited")]
+    [InlineData("Private error with identifiers", "OtherDeviceError")]
+    public void DeniedDeveloperFlagStaysUnknownWithoutRawErrorEcho(string error, string expected)
+    {
+        var bytes = Encoding.UTF8.GetBytes(new XDocument(new XElement("plist", new XElement("dict",
+            new XElement("key", "Request"), new XElement("string", "GetValue"),
+            new XElement("key", "Error"), new XElement("string", error)))).ToString());
+        var result = ExperimentalIphoneInformationProbe.ParseDeveloperModeResponse(bytes, DateTimeOffset.UtcNow);
+        Assert.Null(result.ReportedEnabled);
+        Assert.Equal(IphoneInformationFieldStatus.DeviceReportedError, result.Field.Status);
+        Assert.Equal(expected, result.Field.DeviceErrorCode);
+    }
     [Theory]
     [InlineData("UniqueDeviceID")]
     [InlineData("SerialNumber")]

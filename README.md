@@ -4,7 +4,7 @@ A local-first Windows + iPhone integration project, with supported platform inte
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates crash analysis, the audio receiver and companion health snapshots, and has not been trusted or installed. All 346 .NET tests and 10 packaging-artifact checks passed. The companion, including the new health checks, passed [native Xcode/iOS simulator CI on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41598539264). Physical-iPhone companion installation and signed-device verification remain open.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates crash analysis, the audio receiver, companion health snapshots and Developer Mode status probing, and has not been trusted or installed. All 354 .NET tests and 10 packaging-artifact checks passed. The companion, including the new health checks, passed [native Xcode/iOS simulator CI on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41598539264). Physical-iPhone companion installation and signed-device verification remain open.
 
 Implemented:
 
@@ -29,6 +29,7 @@ Implemented:
 - local analysis of user-selected type-309 JSON crash reports, with allowlisted signatures and a separately copied redacted summary; real UI import/display/copy verified with the synthetic fixture, not yet with owner reports; see [scope and verification](docs/crash-report-analysis.md);
 - explicit iPhone-side health capture and per-snapshot confirmed sharing to the connected PC, with a bounded/session-bound Windows inbox; storage stays on iPhone, no permission prompts or repairs run; see [verification and physical-device gates](docs/companion-health-snapshots.md);
 - explicit experimental USB transport and read-only iPhone-information probes, without an iOS companion prerequisite for those probes;
+- a separate explicit read-only Developer Mode status probe; current phone returns GetProhibited, so its state stays unknown; no setting or debug service is enabled;
 - per-field phone-query outcomes and bounded automatic/manual recovery of a missing app discovery advertisement, with before/after checks;
 - managed loopback-only USB forwarding with target rechecks, Stop controls, byte statistics, and a read-only round-trip verifier;
 - bounded static Mach-O symbol/offset inspection with architecture/UUID/hash identity, a Windows table, JSON export, and portable CLI; native ARM64 fixture import/table/export verified end-to-end in Windows;

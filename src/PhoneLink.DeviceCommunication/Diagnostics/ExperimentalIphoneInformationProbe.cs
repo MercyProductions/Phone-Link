@@ -20,11 +20,32 @@ public enum IphoneInformationFieldStatus { Available, DeviceReportedError, Missi
 public sealed record IphoneInformationField(string Key, string? Domain,
     IphoneInformationFieldStatus Status, string? DeviceErrorCode);
 
+public sealed record DeveloperModeObservation(bool? ReportedEnabled, IphoneInformationField Field, DateTimeOffset CapturedAt);
+
 public static class ExperimentalIphoneInformationProbe
 {
+    public const string DeveloperModeDomain = "com.apple.security.mac.amfi";
+    public const string DeveloperModeKey = "DeveloperModeStatus";
     // Only these non-unique read-only keys are requested. No all-values query or private-key access.
     private static readonly string[] Keys = ["DeviceClass", "ProductType", "ProductVersion", "BuildVersion"];
     private static readonly string[] BatteryKeys = ["BatteryCurrentCapacity", "BatteryIsCharging", "ExternalConnected"];
+
+    public static async Task<DeveloperModeObservation> ProbeDeveloperModeAsync(CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(6));
+        using var connection = await OpenSingleUsbChannelAsync(62078, timeout.Token).ConfigureAwait(false);
+        var payload = await ReadValuePayloadAsync(connection.GetStream(), DeveloperModeKey, DeveloperModeDomain, timeout.Token).ConfigureAwait(false);
+        try { return ParseDeveloperModeResponse(payload, DateTimeOffset.UtcNow); }
+        finally { CryptographicOperations.ZeroMemory(payload); }
+    }
+
+    public static DeveloperModeObservation ParseDeveloperModeResponse(byte[] payload, DateTimeOffset capturedAt)
+    {
+        var parsed = ParseResponse(payload);
+        var field = ParseFieldResponse(payload, DeveloperModeKey, DeveloperModeDomain);
+        return new(field.Status == IphoneInformationFieldStatus.Available ? ParseFlag(parsed.Value) : null, field, capturedAt);
+    }
 
     public static async Task<IphoneBasicInformation> ProbeAsync(CancellationToken cancellationToken)
     {
@@ -126,7 +147,8 @@ public static class ExperimentalIphoneInformationProbe
 
     private static bool IsAllowed(string key, string? domain) =>
         domain is null && Keys.Contains(key, StringComparer.Ordinal) ||
-        domain == "com.apple.mobile.battery" && BatteryKeys.Contains(key, StringComparer.Ordinal);
+        domain == "com.apple.mobile.battery" && BatteryKeys.Contains(key, StringComparer.Ordinal) ||
+        domain == DeveloperModeDomain && key == DeveloperModeKey;
 
     private static (XElement? Value, IphoneInformationFieldStatus Status, string? ErrorCode) ParseResponse(byte[] payload)
     {
