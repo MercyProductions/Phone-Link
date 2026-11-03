@@ -6,7 +6,7 @@ The bounded parser reads only the companion image's 64-bit Mach-O header/load-co
 
 The JSON has a fixed schema containing capture time, own-marker-image scope, code-image UUID, CPU type/subtype, preferred text address/size, loaded header address, slide, marker runtime address and marker image offset. No phone identifier, filesystem path, credential, raw memory bytes, symbols from other modules or phone content is exported. A code-image UUID identifies a build, not a physical phone.
 
-The resolver requires matching UUID and exact CPU type/subtype and only maps unslid addresses inside the captured text range. Build matching is necessary but not cryptographic authenticity: a JSON document can be edited, and matching a UUID does not authenticate its origin or prove an address remains live. The capture applies only to that process run; restart/reload invalidates assumptions. No address is executed, dereferenced as an external target, or used to write memory. The current Windows static report remains static and does not automatically consume this JSON.
+The resolver requires matching UUID and exact CPU type/subtype and only maps unslid addresses inside the captured text range. Build matching is necessary but not cryptographic authenticity: a JSON document can be edited, and matching a UUID does not authenticate its origin or prove an address remains live. The capture applies only to that process run; restart/reload invalidates assumptions. No address is executed, dereferenced as an external target, or used to write memory. The Windows static report remains static; the CLI now offers a separate explicit snapshot-derived mapping below.
 
 ## Sharing and lifecycle
 
@@ -18,7 +18,19 @@ This is live metadata for the companion's own code image, not an arbitrary proce
 
 Two native test cases exercise the actual loaded companion marker image and synthetic malformed headers/negative slides. They check marker mapping consistency, UUID/CPU mismatch refusal, exact JSON field allowlist, text bounds, command size/count consistency, missing UUID and address overflow. Native CI verification is recorded after the run completes. No owner phone data is included in CI.
 
-Rendered UI, physical iPhone capture, pointer-authentication configurations, share-sheet/lifecycle behavior, cross-process access and Windows import/integration remain unverified. The code intentionally reports unavailable rather than stripping or guessing pointer-authentication bits.
+Rendered UI, physical iPhone capture, pointer-authentication configurations, share-sheet/lifecycle behavior, cross-process access, actual companion-to-Windows snapshot roundtrip and Windows UI integration remain unverified. The code intentionally reports unavailable rather than stripping or guessing pointer-authentication bits.
+
+## Windows CLI snapshot import
+
+```powershell
+dotnet run --project tools/PhoneLink.OffsetDumper -- 'C:\owned\matching-image.dylib' --runtime 'C:\owned\reviewed-runtime.json'
+```
+
+The optional UTF-8 JSON is limited to 8 KiB and the exact twelve-field schema. Duplicate/unknown/missing fields, invalid types, unsupported scope/version, inconsistent slide/marker arithmetic, overflow, ambiguous image matches, changed text layout and UUID/architecture mismatches fail without emitting a mapped report. The image's UUID, architecture, exact subtype, image base and file-backed `__TEXT` address/size must match. Only entries in that text range are mapped; constants and other ranges are not invented runtime addresses. Mapping is limited to 4,096 entries with explicit truncation, preserving pre-existing static truncation too.
+
+Output contains the unchanged `StaticInspection` (`RuntimeAddressesAvailable=false`) plus `RuntimeTextMapping`. Every mapped value is labeled `SnapshotDerivedAddress`; `SnapshotOriginAuthenticated` and `LiveProcessVerified` are always false. This offline analysis does not expire historical captures or claim their addresses are currently live. The file UUID/layout comparison is not a content signature or proof that the JSON came from the companion. No input file is executed, modified or uploaded, and no process is read or attached.
+
+Verification: 19 new .NET cases passed; full solution 396 passed; full Debug build zero warnings/errors. Actual CLI parsing of the project-owned native ARM64 fixture with `tests/Fixtures/runtime/synthetic-native-arm64.json` mapped its three entries to synthetic address `0x7000002e8`, retained static runtime availability false, and emitted both verification flags false. That JSON is intentionally synthetic, not captured from a phone or a live process, and does not prove Swift/Windows interoperability. Native companion verification remains the separately tracked pending run above.
 
 ## Primary references
 

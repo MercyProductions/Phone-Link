@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-11-03T09:00:00.000Z",
+  "scope": "companion-own-marker-image",
+  "imageUUID": "c6f02115-8384-32d6-bc05-165e6637d950",
+  "cpuType": 16777228,
+  "cpuSubtype": 0,
+  "preferredTextAddress": "0x0",
+  "loadedHeaderAddress": "0x700000000",
+  "textVirtualSize": "0x4000",
+  "slide": "0x700000000",
+  "markerRuntimeAddress": "0x7000002e8",
+  "markerImageOffset": "0x2e8"
+}

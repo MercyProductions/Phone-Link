@@ -4,7 +4,7 @@ A local-first Windows + iPhone integration project, with supported platform inte
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates later toolbox additions, and has not been trusted or installed. All 377 .NET tests and 10 packaging-artifact checks passed. The companion's health snapshots and local guided checks passed [native Xcode/iOS simulator CI with 16 tests on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41605087525). The newer [own-runtime-image probe](docs/companion-runtime-image.md) has a separate native run still pending verification. Physical-iPhone companion installation and signed-device verification remain open.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates later toolbox additions, and has not been trusted or installed. All 396 .NET tests and 10 packaging-artifact checks passed. The companion's health snapshots and local guided checks passed [native Xcode/iOS simulator CI with 16 tests on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41605087525). The newer [own-runtime-image probe and optional Windows CLI snapshot mapping](docs/companion-runtime-image.md) have separate verification: Windows mapping tests pass, while the native iOS run is still pending. Physical-iPhone companion installation and signed-device verification remain open.
 
 Implemented:
 
