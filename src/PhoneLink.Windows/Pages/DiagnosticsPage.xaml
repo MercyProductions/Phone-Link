@@ -44,6 +44,11 @@
             <TextBlock Text="Background maintenance checks for missing app discovery every 30 seconds while eligible. After three failed recovery attempts, automatic retries pause until a network-address change, successful manual check, or app restart. Healthy registrations and sessions are not restarted. Local registration recovery does not prove an iPhone connection."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="Live USB presence" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="Watch Apple-vendor USB node arrivals/removals while comparing cables or ports. One phone can expose several nodes; these events do not identify a physical disconnect, bad cable, USB Trust, charging quality or hardware fault. Only the latest 20 count/timestamp events stay in memory. Leaving this page, stopping or locking clears them. No automatic phone commands or repairs run."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Button x:Name="PresenceButton" Content="Start live USB monitor" Click="PresenceButton_Click" HorizontalAlignment="Left" />
+            <TextBlock x:Name="PresenceText" Text="USB monitor stopped. Its history is separate from the copied connection report." TextWrapping="Wrap" />
             <TextBlock Text="Companion health snapshots" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="On iPhone, open Health checks, capture and review a snapshot, then explicitly send it to this PC. Run connection checks here to read the latest receipt. These values are separate from USB probes and are not in the copied connection report."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

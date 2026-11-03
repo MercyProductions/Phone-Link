@@ -4,7 +4,7 @@ A local-first Windows + iPhone integration project, with supported platform inte
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates later toolbox additions, and has not been trusted or installed. All 399 .NET tests and 10 packaging-artifact checks passed. The companion, including its own-runtime-image probe, passed [native Xcode/iOS simulator CI with 18 tests on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41615285145). [Windows runtime mapping](docs/companion-runtime-image.md) now has real simulator capture/binary interoperability verified through the CLI and Windows UI, including exact-symbol filtering for large images. Physical-iPhone companion installation and signed-device verification remain open.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates later toolbox additions, and has not been trusted or installed. All 406 .NET tests and 10 packaging-artifact checks passed. The companion, including its own-runtime-image probe, passed [native Xcode/iOS simulator CI with 18 tests on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41615285145). [Windows runtime mapping](docs/companion-runtime-image.md) now has real simulator capture/binary interoperability verified through the CLI and Windows UI, including exact-symbol filtering for large images. Physical-iPhone companion installation and signed-device verification remain open.
 
 Implemented:
 
@@ -25,7 +25,7 @@ Implemented:
 - immediate trusted-device revocation and live-session termination;
 - close-to-tray operation with an explicit Exit command and opt-in Windows Hello protection at startup, after five minutes without interaction, on tray hiding, and on Windows session lock/suspend;
 - modern WinUI pages for Messages, Contacts, Photos, Calls, Notifications, Devices, Settings, and About;
-- a live iPhone Troubleshooter for Apple USB presence, Windows problem flags, Apple Devices installation, local pairing paths, and authenticated companion sessions, with a minimal shareable report;
+- a live iPhone Troubleshooter for Apple USB presence, Windows problem flags, Apple Devices installation, local pairing paths, and authenticated companion sessions, with a minimal shareable report and a separately controlled [USB node-change monitor](docs/live-usb-presence.md);
 - local analysis of user-selected type-309 JSON crash reports, with allowlisted signatures and a separately copied redacted summary; real UI import/display/copy verified with the synthetic fixture, not yet with owner reports; see [scope and verification](docs/crash-report-analysis.md);
 - explicit iPhone-side health capture and per-snapshot confirmed sharing to the connected PC, with a bounded/session-bound Windows inbox; storage stays on iPhone, no permission prompts or repairs run; see [verification and physical-device gates](docs/companion-health-snapshots.md);
 - explicit experimental USB transport and read-only iPhone-information probes, without an iOS companion prerequisite for those probes;

@@ -18,6 +18,10 @@ public sealed partial class DiagnosticsPage : Page
     private CancellationTokenSource? _crashCancellation;
     private IphoneCrashAnalysis? _crashAnalysis;
     private bool _loaded;
+    private WindowsUsbPresenceMonitor? _presenceMonitor;
+    private CancellationTokenSource? _presenceCancellation;
+    private DispatcherTimer? _presenceTimer;
+    private long _presenceEpoch;
     public ObservableCollection<DiagnosticFinding> Findings { get; } = [];
 
     public DiagnosticsPage() { InitializeComponent(); }
@@ -30,6 +34,7 @@ public sealed partial class DiagnosticsPage : Page
 
     private void Page_Unloaded(object sender, RoutedEventArgs args)
     {
+        StopPresence();
         ClearCompanionHealthForPrivacy();
         _loaded = false;
         _scanCancellation?.Cancel();
@@ -44,6 +49,82 @@ public sealed partial class DiagnosticsPage : Page
     private async void ScanButton_Click(object sender, RoutedEventArgs args) => await ScanAsync();
 
     public void ClearCompanionHealthForPrivacy() => CompanionHealthText.Text = "No companion health snapshot displayed.";
+
+    public void SetPrivacyLocked(bool locked)
+    {
+        if (!locked) return; // Monitoring requires a fresh explicit start after unlocking.
+        StopPresence();
+        _scanCancellation?.Cancel();
+        _crashCancellation?.Cancel();
+        ClearCompanionHealthForPrivacy();
+        _crashAnalysis = null;
+        _report = null;
+        Findings.Clear();
+        CrashAnalysisText.Text = PhoneInfoText.Text = RecoveryText.Text = string.Empty;
+        SnapshotText.Text = "No connection snapshot displayed.";
+        CopyButton.IsEnabled = CrashCopyButton.IsEnabled = false;
+    }
+
+    private async void PresenceButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (_presenceMonitor is not null || _presenceCancellation is not null) { StopPresence(); return; }
+        if (!_loaded || App.IsLocked) return;
+        var epoch = ++_presenceEpoch;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        _presenceCancellation = cancellation;
+        PresenceButton.Content = "Stop live USB monitor";
+        PresenceText.Text = "Enumerating current Apple USB nodes; initial enumeration is not a reconnect event…";
+        try
+        {
+            var monitor = await WindowsUsbPresenceMonitor.StartAsync(cancellation.Token);
+            if (!_loaded || App.IsLocked || cancellation.IsCancellationRequested || epoch != _presenceEpoch) { monitor.Dispose(); return; }
+            _presenceMonitor = monitor;
+            _presenceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _presenceTimer.Tick += PresenceTimer_Tick;
+            _presenceTimer.Start();
+            RenderPresence();
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (_loaded && !App.IsLocked && epoch == _presenceEpoch)
+            {
+                StopPresence();
+                PresenceText.Text = "USB monitoring is unavailable or timed out. Presence is unknown, not zero. Run connection checks or explicitly retry; no repair was attempted.";
+            }
+        }
+        finally { if (ReferenceEquals(_presenceCancellation, cancellation)) _presenceCancellation = null; }
+    }
+
+    private void PresenceTimer_Tick(object? sender, object args) => RenderPresence();
+
+    private void RenderPresence()
+    {
+        if (!_loaded || App.IsLocked) { StopPresence(); return; }
+        if (_presenceMonitor is not { } monitor) return;
+        var snapshot = monitor.Snapshot;
+        if (snapshot.State != UsbPresenceState.Watching)
+        {
+            StopPresence();
+            PresenceText.Text = "USB monitoring stopped unexpectedly. Current presence is unknown; no successful repair is claimed. Explicitly start again if needed.";
+            return;
+        }
+        PresenceText.Text = $"Watching: {snapshot.PresentNodes} present Apple-vendor USB node(s). Initial enumeration is the baseline, not a reconnect.\n" +
+            (snapshot.RecentChanges.Count == 0 ? "No node arrivals/removals observed since enumeration completed." :
+                string.Join("\n", snapshot.RecentChanges.Select(change => $"{change.ObservedAt.LocalDateTime:HH:mm:ss}: node {(change.Added ? "arrived" : "removed")}; {change.PresentNodes} present."))) +
+            "\nCounts are not phone count or proof of cable/hardware health. No identifiers or history are copied into the connection report.";
+    }
+
+    private void StopPresence()
+    {
+        _presenceEpoch++;
+        _presenceCancellation?.Cancel();
+        _presenceCancellation = null;
+        if (_presenceTimer is { } timer) { timer.Stop(); timer.Tick -= PresenceTimer_Tick; _presenceTimer = null; }
+        _presenceMonitor?.Dispose();
+        _presenceMonitor = null;
+        PresenceButton.Content = "Start live USB monitor";
+        PresenceText.Text = "USB monitor stopped; in-memory history cleared. Start explicitly to observe new changes.";
+    }
 
     private async void CrashImportButton_Click(object sender, RoutedEventArgs args)
     {
@@ -100,7 +181,7 @@ public sealed partial class DiagnosticsPage : Page
 
     private async Task ScanAsync()
     {
-        if (_scanCancellation is not null) return;
+        if (!_loaded || App.IsLocked || _scanCancellation is not null) return;
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         _scanCancellation = cancellation;
         ScanButton.IsEnabled = CopyButton.IsEnabled = ExperimentalButton.IsEnabled = false;
@@ -307,7 +388,7 @@ public sealed partial class DiagnosticsPage : Page
 
     private void CopyButton_Click(object sender, RoutedEventArgs args)
     {
-        if (_report is null) return;
+        if (!_loaded || App.IsLocked || _report is null) return;
         try
         {
             var data = new DataPackage();

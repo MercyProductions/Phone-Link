@@ -101,6 +101,12 @@ The actual Windows CLI and WinUI now match the corrected native snapshot to its 
 
 This supersedes the earlier open simulator-roundtrip notes, not the physical-device gates. Signed companion installation, phone pairing/permissions, physical outputs, actual repairs, accessory parity, SSH authentication and other-process/kernel access remain open. Existing package/trust/audio approval questions were not inferred. The full goal remains active; the companion signing/install route still needs the owner's Mac/Xcode availability answer.
 
+## November 3 live USB monitoring checkpoint
+
+Added explicit Troubleshooter Start/Stop monitoring through native Windows DeviceWatcher. Initial enumeration is a baseline; duplicate events do not invent reconnects. Only latest-20 arrival/removal count/timestamp events are exposed, with at most 256 private transient matching node keys, fail-unknown bounds/aborts, detached native callbacks and stopped-state protection. Page unload/lock clears the monitor; unlock requires explicit restart. Lock now also cancels pending diagnostic operations and clears the page's diagnostic data, rather than only clearing companion health.
+
+Actual WinUI verification observed four Apple USB nodes, no false baseline events, Stop/cleared display, fresh restart and stopped state after navigation away/back. Full build zero warnings/errors; all 406 tests passed including five history and two native watcher cases. No physical unplug/replug, lock/unlock race or hardware fault was induced; these remain gates, not claimed results. [Scope, commands and Microsoft references](live-usb-presence.md). The prior signed MSIX is unchanged. No trust/install, phone setting, service/driver change, audio activation or repair operation occurred. The broader accessory/repair/SSH/runtime goal remains active, with physical companion deployment still pending owner input.
+
 ## Primary research
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.
