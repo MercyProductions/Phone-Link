@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page x:Class="PhoneLink.Windows.Pages.CallTransportSetupPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+    <ScrollViewer>
+        <StackPanel Padding="32" Spacing="16">
+            <TextBlock Text="Experimental Bluetooth call setup" FontSize="30" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="Choose your own phone transport. Windows names are not authenticated iPhone identities. Discovery is read-only. Each separate setup action requires confirmation; nothing registers or connects automatically. A restricted capability and eligible Windows deployment are required. A compiled build or successful inspection does not establish access or working calls."
+                TextWrapping="Wrap" />
+            <Button x:Name="DiscoverButton" Content="Find Bluetooth phone transports" Click="DiscoverButton_Click" />
+            <ComboBox x:Name="TransportSelector" Header="Select your own phone" PlaceholderText="No transport selected" MinWidth="300" SelectionChanged="TransportSelector_SelectionChanged" />
+            <Button x:Name="RegisterButton" Content="Request access and register this app" IsEnabled="False" Click="RegisterButton_Click" />
+            <Button x:Name="ConnectButton" Content="Connect registered transport" IsEnabled="False" Click="ConnectButton_Click" />
+            <Button x:Name="UnregisterButton" Content="Unregister this app from selected transport" IsEnabled="False" Click="UnregisterButton_Click" />
+            <Button x:Name="CancelButton" Content="Cancel pending operation" IsEnabled="False" Click="CancelButton_Click" />
+            <TextBlock Text="Registration and permission choices can persist after leaving this page, locking or exiting. No automatic unregister/rollback runs. Cancellation may stop waiting after Windows has already changed state. This API exposes no disconnect operation here; Cancel does not claim to disconnect a phone or end a call. Unregister removes this app's registration, not Windows Bluetooth pairing or another app's registration."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="Connecting a transport may affect an existing phone/audio relationship. This page sends no number, dial, answer, hang-up, microphone or audio-routing command. Windows returning connected is not verification that cellular calls or audio work. No automatic retry."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="SetupStatus" Text="No setup action attempted." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

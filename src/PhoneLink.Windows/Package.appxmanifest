@@ -49,6 +49,7 @@
     <Capability Name="internetClientServer" />
     <Capability Name="privateNetworkClientServer" />
     <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="phoneLineTransportManagement" />
     <DeviceCapability Name="bluetooth" />
   </Capabilities>
 </Package>

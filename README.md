@@ -4,7 +4,7 @@ A local-first Windows + iPhone integration project, with supported platform inte
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates later toolbox additions, and has not been trusted or installed. All 406 .NET tests and 10 packaging-artifact checks passed. The companion, including its own-runtime-image probe, passed [native Xcode/iOS simulator CI with 18 tests on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41615285145). [Windows runtime mapping](docs/companion-runtime-image.md) now has real simulator capture/binary interoperability verified through the CLI and Windows UI, including exact-symbol filtering for large images. Physical-iPhone companion installation and signed-device verification remain open.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates later toolbox additions, and has not been trusted or installed. All 431 .NET tests and 10 packaging-artifact checks passed. The companion, including its own-runtime-image probe, passed [native Xcode/iOS simulator CI with 18 tests on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41615285145). [Windows runtime mapping](docs/companion-runtime-image.md) now has real simulator capture/binary interoperability verified through the CLI and Windows UI, including exact-symbol filtering for large images. Physical-iPhone companion installation and signed-device verification remain open.
 
 Implemented:
 
@@ -22,6 +22,7 @@ Implemented:
 - native Windows app notifications for new, non-silent ANCS events, cleared when the session ends or the app locks;
 - live MAP/PBAP capability checks without assuming that Windows exposes those profiles;
 - user-confirmed click-to-call: Windows requests a number, then iPhone requires a tap before opening `tel:`;
+- [experimental Windows Bluetooth call-transport setup](docs/windows-call-transport.md) with separate confirmed access/register/connect/unregister actions; discovery/review/cancel verified, native control and actual calling/audio still unverified;
 - immediate trusted-device revocation and live-session termination;
 - close-to-tray operation with an explicit Exit command and opt-in Windows Hello protection at startup, after five minutes without interaction, on tray hiding, and on Windows session lock/suspend;
 - modern WinUI pages for Messages, Contacts, Photos, Calls, Notifications, Devices, Settings, and About;

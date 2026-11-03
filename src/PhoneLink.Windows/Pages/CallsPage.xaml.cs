@@ -47,6 +47,11 @@ public sealed partial class CallsPage : Page, IDisposable
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
 
+    private void TransportSetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loaded && !App.IsLocked) Frame.Navigate(typeof(CallTransportSetupPage));
+    }
+
     private async void CallButton_Click(object sender, RoutedEventArgs e)
     {
         CallButton.IsEnabled = false;
