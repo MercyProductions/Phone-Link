@@ -19,6 +19,9 @@ public sealed partial class AdvancedToolsPage : Page
     private CancellationTokenSource _pageLifetime = new();
     private Task? _operation;
     private LoopbackDeviceTunnel? _tunnel;
+    private CancellationTokenSource? _sshCancellation;
+    private CancellationTokenSource? _operationCancellation;
+    private ushort _forwardedPort;
     private MachOInspection? _inspection;
     private int _runtimeEpoch;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -44,6 +47,8 @@ public sealed partial class AdvancedToolsPage : Page
     private async void Page_Unloaded(object sender, RoutedEventArgs args)
     {
         _loaded = false;
+        _sshCancellation?.Cancel();
+        SshProbeText.Text = "No current forwarded SSH observation.";
         ClearRuntimeForPrivacy();
         _timer.Stop();
         var lifetime = _pageLifetime;
@@ -61,12 +66,15 @@ public sealed partial class AdvancedToolsPage : Page
 
     private Task RunAsync(Func<CancellationToken, Task> action)
     {
-        if (!_loaded || _busy) return Task.CompletedTask;
+        if (!_loaded || _busy || App.IsLocked) return Task.CompletedTask;
         return _operation = ExecuteAsync(action, _pageLifetime.Token);
     }
 
     private async Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken)
     {
+        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _operationCancellation = operationCancellation;
+        cancellationToken = operationCancellation.Token;
         _busy = true;
         UpdateButtons();
         StatusBar.IsOpen = false;
@@ -84,6 +92,7 @@ public sealed partial class AdvancedToolsPage : Page
         }
         finally
         {
+            _operationCancellation = null;
             _busy = false;
             if (_loaded)
             {
@@ -103,8 +112,11 @@ public sealed partial class AdvancedToolsPage : Page
         setup.CancelAfter(TimeSpan.FromSeconds(10));
         var connector = await PinnedUsbDeviceConnector.SelectSingleAsync(setup.Token);
         token.ThrowIfCancellationRequested();
+        if (!_loaded || App.IsLocked) return;
         var port = (ushort)value;
         _tunnel = LoopbackDeviceTunnel.Start(ct => connector.OpenChannelAsync(port, ct), cancellationToken: _pageLifetime.Token);
+        _forwardedPort = port;
+        SshProbeText.Text = "This forwarder's target service has not been checked. Identification will not establish host-key trust or login.";
         TunnelText.Text = $"127.0.0.1:{_tunnel.LocalPort} → selected USB device port {port}. Target service and authentication are not verified.";
     });
 
@@ -117,6 +129,8 @@ public sealed partial class AdvancedToolsPage : Page
 
     private async Task StopTunnelAsync()
     {
+        _sshCancellation?.Cancel();
+        SshProbeText.Text = "No current forwarded SSH observation. Stopping invalidates earlier results.";
         var tunnel = Interlocked.Exchange(ref _tunnel, null);
         if (tunnel is not null) await tunnel.DisposeAsync();
         if (_loaded) { TunnelText.Text = "Stopped. No ports are listening."; UpdateButtons(); }
@@ -134,9 +148,19 @@ public sealed partial class AdvancedToolsPage : Page
 
     private async void SshButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
-        var result = await ExperimentalSshAvailabilityProbe.ProbeAsync(token);
-        if (!token.IsCancellationRequested && _loaded)
-            ShowStatus(result.Status, result.ServerIdentified ? InfoBarSeverity.Informational : InfoBarSeverity.Warning);
+        var tunnel = _tunnel;
+        if (tunnel is null || !tunnel.IsRunning) return;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+        _sshCancellation = cancellation;
+        SshProbeText.Text = "Checking identification through this active forwarder only…";
+        try
+        {
+            var result = await ForwardedSshAvailabilityProbe.ProbeAsync(tunnel, cancellation.Token);
+            if (!cancellation.IsCancellationRequested && _loaded && !App.IsLocked &&
+                ReferenceEquals(_tunnel, tunnel) && tunnel.IsRunning)
+                SshProbeText.Text = $"Forwarded USB port {_forwardedPort}: {result.Status}";
+        }
+        finally { _sshCancellation = null; }
     });
 
     private async void InspectButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
@@ -193,10 +217,18 @@ public sealed partial class AdvancedToolsPage : Page
             RuntimeSummary.Text = "No runtime snapshot displayed. Static JSON export never includes imported runtime addresses.";
     }
 
-    public void SetRuntimePrivacyLocked(bool locked)
+    public async void SetRuntimePrivacyLocked(bool locked)
     {
-        if (locked) { RuntimeSymbolFilter.Text = string.Empty; ClearRuntimeForPrivacy(); }
-        RuntimeImportButton.IsEnabled = !locked && !_busy && _inspection is not null;
+        if (locked)
+        {
+            _operationCancellation?.Cancel();
+            RuntimeSymbolFilter.Text = string.Empty;
+            ClearRuntimeForPrivacy();
+            try { await StopTunnelAsync(); }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            { SshProbeText.Text = "Forwarder stopping could not be verified. Earlier SSH observations are invalid."; }
+        }
+        UpdateButtons();
     }
 
     private void RuntimeSymbolFilter_TextChanged(object sender, TextChangedEventArgs args) => ClearRuntimeForPrivacy();
@@ -271,17 +303,18 @@ public sealed partial class AdvancedToolsPage : Page
             return;
         }
         var stats = tunnel.CaptureStatistics();
-        TunnelText.Text = $"127.0.0.1:{tunnel.LocalPort} → USB port {(int)RemotePortBox.Value} · {stats.ActiveConnections} active · " +
+        TunnelText.Text = $"127.0.0.1:{tunnel.LocalPort} → USB port {_forwardedPort} · {stats.ActiveConnections} active · " +
             $"{stats.BytesToDevice:N0} bytes sent / {stats.BytesFromDevice:N0} received · {stats.FailedConnections} failed · {stats.LastFailureCategory ?? "no failure recorded"}. " +
             "Forwarding active; remote service and SSH authentication are not verified.";
     }
 
     private void UpdateButtons()
     {
-        StartButton.IsEnabled = !_busy && _tunnel is null;
+        StartButton.IsEnabled = !_busy && !App.IsLocked && _tunnel is null;
         StopButton.IsEnabled = _tunnel is not null;
         RemotePortBox.IsEnabled = !_busy && _tunnel is null;
-        VerifyButton.IsEnabled = SshButton.IsEnabled = InspectButton.IsEnabled = DeveloperModeButton.IsEnabled = !_busy;
+        VerifyButton.IsEnabled = InspectButton.IsEnabled = DeveloperModeButton.IsEnabled = !_busy && !App.IsLocked;
+        SshButton.IsEnabled = !_busy && !App.IsLocked && _tunnel?.IsRunning == true;
         ExportButton.IsEnabled = !_busy && _inspection is not null;
         RuntimeImportButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
         ImageSelector.IsEnabled = !_busy;

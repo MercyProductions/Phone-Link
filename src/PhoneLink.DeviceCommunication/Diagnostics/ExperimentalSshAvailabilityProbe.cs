@@ -33,25 +33,36 @@ public static class ExperimentalSshAvailabilityProbe
         var one = new byte[1];
         for (var lineIndex = 0; lineIndex < 8; lineIndex++)
         {
-            var line = new StringBuilder();
+            var line = new byte[255];
+            var count = 0;
             var terminated = false;
             for (var length = 0; length < 255; length++)
             {
                 if (await stream.ReadAsync(one, cancellationToken).ConfigureAwait(false) == 0)
-                    return new(false, "Channel closed before an SSH identification was received.", null, null);
+                    return new(false, "Channel closed before an SSH identification was received; no login was attempted.", null, null);
+                line[count++] = one[0];
                 if (one[0] == (byte)'\n') { terminated = true; break; }
-                if (one[0] == (byte)'\r') continue;
-                if (one[0] is < 32 or > 126)
-                    return new(false, "The standard port did not provide a supported SSH identification.", null, null);
-                line.Append((char)one[0]);
             }
-            if (!terminated) return new(false, "The identification line exceeded the bounded SSH response limit.", null, null);
-            var text = line.ToString();
-            if (text.StartsWith("SSH-2.0-", StringComparison.Ordinal) && text.Length > 8)
-                return new(true, "SSH 2.0 identification observed. Host key and authentication are not verified; no login or command was attempted.", "2.0", null);
-            if (text.StartsWith("SSH-", StringComparison.Ordinal))
-                return new(false, "An unsupported SSH protocol identification was received; no login was attempted.", null, null);
+            if (!terminated) return new(false, "The identification line exceeded the bounded SSH response limit; no login was attempted.", null, null);
+            // Preamble is bounded and ignored, never retained/displayed (it may be UTF-8).
+            if (!line.AsSpan(0, count).StartsWith("SSH-"u8)) continue;
+            var hasCarriageReturn = count >= 2 && line[count - 2] == (byte)'\r';
+            var contentLength = count - (hasCarriageReturn ? 2 : 1);
+            var content = line.AsSpan(0, contentLength);
+            if (content.ContainsAnyExceptInRange((byte)32, (byte)126))
+                return InvalidIdentification();
+            var text = Encoding.ASCII.GetString(content);
+            var prefixLength = text.StartsWith("SSH-2.0-", StringComparison.Ordinal) ? 8 :
+                text.StartsWith("SSH-1.99-", StringComparison.Ordinal) ? 9 : 0;
+            if (prefixLength == 0 || (prefixLength == 8 && !hasCarriageReturn)) return InvalidIdentification();
+            var software = text[prefixLength..].Split(' ', 2)[0];
+            if (software.Length == 0 || software.Any(character => character is < '!' or > '~' or '-'))
+                return InvalidIdentification();
+            return new(true, "SSH 2.0-compatible identification observed. Host key and authentication are not verified; no login or command was attempted.", prefixLength == 8 ? "2.0" : "1.99", null);
         }
-        return new(false, "No supported SSH identification was found within the bounded response.", null, null);
+        return new(false, "No supported SSH identification was found within the bounded response; no login was attempted.", null, null);
     }
+
+    private static SshAvailability InvalidIdentification() => new(false,
+        "An unsupported or malformed SSH identification was received; no login was attempted.", null, null);
 }

@@ -38,6 +38,7 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
     {
         _connect = connect;
         _stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        StoppingToken = _stop.Token;
         _slots = new SemaphoreSlim(maximumConnections, maximumConnections);
         _listener = new TcpListener(IPAddress.Loopback, localPort);
         try { _listener.Start(maximumConnections); }
@@ -49,6 +50,7 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
     public int LocalPort { get; }
     public bool IsRunning => !_acceptTask.IsCompleted;
     public Task Completion => _acceptTask;
+    public CancellationToken StoppingToken { get; }
 
     public static LoopbackDeviceTunnel Start(Func<CancellationToken, Task<TunnelConnection>> connect,
         int localPort = 0, int maximumConnections = 4, CancellationToken cancellationToken = default)
