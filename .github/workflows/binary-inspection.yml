@@ -1,0 +1,50 @@
+name: Native Mach-O inspection
+on:
+  push:
+    branches: [main]
+    paths: ['src/PhoneLink.Application/Features/BinaryInspection/**', 'tools/PhoneLink.OffsetDumper/**', 'tests/PhoneLink.Application.Tests/MachOInspectorTests.cs', 'tests/Fixtures/MachO/**', '.github/workflows/binary-inspection.yml']
+  pull_request:
+    paths: ['src/PhoneLink.Application/Features/BinaryInspection/**', 'tools/PhoneLink.OffsetDumper/**', 'tests/PhoneLink.Application.Tests/MachOInspectorTests.cs', 'tests/Fixtures/MachO/**', '.github/workflows/binary-inspection.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: binary-inspection-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-fixtures:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Test parsers and build portable inspector
+        run: |
+          dotnet test tests/PhoneLink.Application.Tests/PhoneLink.Application.Tests.csproj
+          dotnet build tools/PhoneLink.OffsetDumper/PhoneLink.OffsetDumper.csproj
+      - name: Compile native images and compare with Apple tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/macho
+          for arch in arm64 x86_64; do
+            xcrun clang -arch "$arch" -dynamiclib -nostdlib tests/Fixtures/MachO/sample.c -o "artifacts/macho/fixture-$arch.dylib"
+            dotnet run --no-build --project tools/PhoneLink.OffsetDumper/PhoneLink.OffsetDumper.csproj -- "artifacts/macho/fixture-$arch.dylib" > "artifacts/macho/fixture-$arch.json"
+          done
+          xcrun lipo -create artifacts/macho/fixture-arm64.dylib artifacts/macho/fixture-x86_64.dylib -output artifacts/macho/fixture-universal.dylib
+          dotnet run --no-build --project tools/PhoneLink.OffsetDumper/PhoneLink.OffsetDumper.csproj -- artifacts/macho/fixture-universal.dylib > artifacts/macho/fixture-universal.json
+          python3 tests/Fixtures/MachO/verify_native.py artifacts/macho
+      - name: Preserve project-owned fixtures and reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-macho-fixtures
+          path: artifacts/macho
+          if-no-files-found: ignore
+          retention-days: 7
