@@ -1,0 +1,207 @@
+using System.Security.Cryptography;
+using Windows.Devices.Bluetooth;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Windows.Devices.Enumeration;
+using Windows.Security.Cryptography;
+
+namespace PhoneLink.Integrations.AppleBluetooth.Media;
+
+public sealed class AmsDeviceCandidate
+{
+    internal AmsDeviceCandidate(string id, string name) { Id = id; DisplayName = string.IsNullOrWhiteSpace(name) ? "Paired Bluetooth device" : name; }
+    internal string Id { get; }
+    public string DisplayName { get; }
+    public override string ToString() => DisplayName;
+}
+public sealed record AmsDiscoveryResult(IReadOnlyList<AmsDeviceCandidate> Candidates, int UnavailableProbes);
+
+// Creation/discovery must be invoked from the UI context required by FromIdAsync.
+// The session belongs to one explicitly selected paired device, never a fallback.
+public sealed class AmsSession : IAsyncDisposable
+{
+    private static readonly Guid ServiceUuid = Guid.Parse("89d3502b-0f36-433a-8ef4-c502ad55f8dc");
+    private static readonly Guid RemoteUuid = Guid.Parse("9b3c81d8-57b1-4a8a-b8df-0e56f7ca51c2");
+    private static readonly Guid UpdateUuid = Guid.Parse("2f7cabce-808d-411f-9a0c-bb92ba96c102");
+    private readonly AmsSessionState _state = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly AmsCommandSender _sender;
+    private readonly object _disposeGate = new();
+    private readonly List<string> _issues = [];
+    private BluetoothLEDevice? _device;
+    private GattDeviceService? _service;
+    private GattCharacteristic? _remote, _updates;
+    private Task? _disposeTask;
+    private int _ended, _invalid;
+    private bool _remoteSubscribed, _updatesSubscribed;
+    private volatile bool _ready;
+
+    private AmsSession()
+    {
+        _sender = new(_gate, request => IsConnected && _state.IsCurrent(request), async (command, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            var response = _remote!.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Write);
+            var result = await _remote.WriteValueWithResultAsync(CryptographicBuffer.CreateFromByteArray(command),
+                response ? GattWriteOption.WriteWithResponse : GattWriteOption.WriteWithoutResponse).AsTask(token);
+            return new(result.Status == GattCommunicationStatus.Success, response, result.ProtocolError);
+        }, _lifetime.Token);
+    }
+
+    public event EventHandler? Changed;
+    public string DeviceName => _device?.Name ?? "Selected paired device";
+    public bool IsConnected => _ready && Volatile.Read(ref _ended) == 0 && _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+    public int InvalidUpdates => Volatile.Read(ref _invalid);
+    public string EndReason { get; private set; } = "Not ended";
+    public IReadOnlyList<string> SetupIssues => _issues.AsReadOnly();
+    public AmsSnapshot Capture() => _state.Capture();
+    public AmsCommandRequest CreateRequest(AmsRemoteCommand command) => _state.CreateRequest(command);
+    public Task<AmsCommandResult> SendAsync(AmsCommandRequest request, Func<bool> isAuthorized, CancellationToken cancellationToken) =>
+        _sender.SendAsync(request, isAuthorized, cancellationToken);
+
+    public static async Task<AmsDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
+    {
+        List<AmsDeviceCandidate> candidates = [];
+        var unavailable = 0;
+        var paired = await DeviceInformation.FindAllAsync(BluetoothLEDevice.GetDeviceSelectorFromPairingState(true)).AsTask(cancellationToken);
+        foreach (var information in paired)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                using var device = await BluetoothLEDevice.FromIdAsync(information.Id).AsTask(cancellationToken);
+                if (device is null) { unavailable++; continue; }
+                var result = await device.GetGattServicesForUuidAsync(ServiceUuid, BluetoothCacheMode.Uncached).AsTask(cancellationToken);
+                try
+                {
+                    if (result.Status != GattCommunicationStatus.Success) unavailable++;
+                    else if (result.Services.Count > 0) candidates.Add(new(information.Id, information.Name));
+                }
+                finally { foreach (var service in result.Services) service.Dispose(); }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) when (exception is not OutOfMemoryException) { unavailable++; }
+        }
+        return new(candidates.AsReadOnly(), unavailable);
+    }
+
+    public static async Task<AmsSession> StartAsync(AmsDeviceCandidate candidate, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        var session = new AmsSession();
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, session._lifetime.Token);
+        try { await session.ConnectAsync(candidate, lifetime.Token); return session; }
+        catch { await session.DisposeAsync().ConfigureAwait(false); throw; }
+    }
+
+    private async Task ConnectAsync(AmsDeviceCandidate candidate, CancellationToken cancellationToken)
+    {
+        var paired = await DeviceInformation.FindAllAsync(BluetoothLEDevice.GetDeviceSelectorFromPairingState(true)).AsTask(cancellationToken);
+        if (!paired.Any(device => device.Id == candidate.Id)) throw new InvalidOperationException("The selected device is no longer paired. No replacement was selected.");
+        _device = await BluetoothLEDevice.FromIdAsync(candidate.Id).AsTask(cancellationToken)
+            ?? throw new InvalidOperationException("The selected paired device is unavailable.");
+        var services = await _device.GetGattServicesForUuidAsync(ServiceUuid, BluetoothCacheMode.Uncached).AsTask(cancellationToken);
+        if (services.Status != GattCommunicationStatus.Success || services.Services.Count != 1)
+        {
+            foreach (var service in services.Services) service.Dispose();
+            throw new InvalidOperationException($"The selected device did not expose one usable AMS instance ({services.Status}).");
+        }
+        _service = services.Services[0];
+        var access = await _service.RequestAccessAsync().AsTask(cancellationToken);
+        if (access != DeviceAccessStatus.Allowed) throw new InvalidOperationException($"Windows denied AMS service access ({access}). No permission was approved automatically.");
+        var characteristics = await _service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(cancellationToken);
+        if (characteristics.Status != GattCommunicationStatus.Success)
+            throw new InvalidOperationException($"AMS service access was allowed, but characteristic access failed ({characteristics.Status}).");
+        _remote = characteristics.Characteristics.FirstOrDefault(characteristic => characteristic.Uuid == RemoteUuid &&
+            characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify) &&
+            (characteristic.CharacteristicProperties & (GattCharacteristicProperties.Write | GattCharacteristicProperties.WriteWithoutResponse)) != 0);
+        _updates = characteristics.Characteristics.FirstOrDefault(characteristic => characteristic.Uuid == UpdateUuid &&
+            characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify | GattCharacteristicProperties.Write));
+        _device.ConnectionStatusChanged += ConnectionChanged;
+        _device.GattServicesChanged += ServicesChanged;
+        if (_remote is not null)
+        {
+            _remote.ValueChanged += RemoteChanged;
+            _remoteSubscribed = await SubscribeAsync(_remote, cancellationToken);
+            if (!_remoteSubscribed) _issues.Add("Remote-command notifications could not be subscribed; commands remain unavailable.");
+        }
+        else _issues.Add("The required Remote Command notify/write properties were not exposed.");
+        if (_updates is not null)
+        {
+            _updates.ValueChanged += UpdateChanged;
+            _updatesSubscribed = await SubscribeAsync(_updates, cancellationToken);
+            if (_updatesSubscribed)
+            {
+                foreach (var entity in Enum.GetValues<AmsEntity>())
+                {
+                    var status = await _updates.WriteValueAsync(CryptographicBuffer.CreateFromByteArray(AmsProtocol.CreateSubscription(entity)),
+                        GattWriteOption.WriteWithResponse).AsTask(cancellationToken);
+                    if (status != GattCommunicationStatus.Success) _issues.Add($"{entity} observation registration failed ({status}); unavailable fields remain unknown.");
+                }
+            }
+            else _issues.Add("Entity Update notifications could not be subscribed; metadata remains unknown.");
+        }
+        else _issues.Add("The required Entity Update notify/write properties were not exposed.");
+        if (!_remoteSubscribed && !_updatesSubscribed) throw new InvalidOperationException("AMS exposed no usable notification channel. No media command was sent.");
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Volatile.Read(ref _ended) != 0) throw new InvalidOperationException("The media session ended during setup.");
+        _ready = true;
+    }
+
+    private static async Task<bool> SubscribeAsync(GattCharacteristic characteristic, CancellationToken cancellationToken) =>
+        await characteristic.WriteClientCharacteristicConfigurationDescriptorAsync(GattClientCharacteristicConfigurationDescriptorValue.Notify)
+            .AsTask(cancellationToken) == GattCommunicationStatus.Success;
+
+    private void RemoteChanged(GattCharacteristic sender, GattValueChangedEventArgs args) => ProcessUpdate(args, commands: true);
+    private void UpdateChanged(GattCharacteristic sender, GattValueChangedEventArgs args) => ProcessUpdate(args, commands: false);
+    private void ProcessUpdate(GattValueChangedEventArgs args, bool commands)
+    {
+        if (Volatile.Read(ref _ended) != 0) return;
+        byte[]? bytes = null;
+        try
+        {
+            CryptographicBuffer.CopyToByteArray(args.CharacteristicValue, out bytes);
+            if (commands) _state.UpdateCommands(bytes);
+            else _state.Update(AmsProtocol.ParseUpdate(bytes, DateTimeOffset.UtcNow));
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        { Interlocked.Increment(ref _invalid); _state.Invalidate(); }
+        finally { if (bytes is not null) CryptographicOperations.ZeroMemory(bytes); }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ConnectionChanged(BluetoothLEDevice sender, object args)
+    {
+        if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected) End("Bluetooth disconnected");
+        else Changed?.Invoke(this, EventArgs.Empty);
+    }
+    private void ServicesChanged(BluetoothLEDevice sender, object args) => End("GATT services changed; a fresh session is required");
+    private void End(string reason)
+    {
+        if (Interlocked.Exchange(ref _ended, 1) != 0) return;
+        EndReason = reason;
+        _ready = false;
+        _state.End();
+        _lifetime.Cancel();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public ValueTask DisposeAsync() { lock (_disposeGate) return new(_disposeTask ??= FinishDisposalAsync()); }
+    private async Task FinishDisposalAsync()
+    {
+        End("Stopped");
+        if (_remote is not null) _remote.ValueChanged -= RemoteChanged;
+        if (_updates is not null) _updates.ValueChanged -= UpdateChanged;
+        if (_device is not null)
+        { _device.ConnectionStatusChanged -= ConnectionChanged; _device.GattServicesChanged -= ServicesChanged; }
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // Release our handlers and owned WinRT objects. Do not issue a late
+            // CCCD=None write that could race a fresh session or another client.
+            try { _service?.Dispose(); }
+            finally { _device?.Dispose(); }
+        }
+        finally { _gate.Release(); _gate.Dispose(); _lifetime.Dispose(); }
+    }
+}

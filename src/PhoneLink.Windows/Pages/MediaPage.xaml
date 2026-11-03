@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page x:Class="PhoneLink.Windows.Pages.MediaPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PhoneLink.Windows.Pages"
+    Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="32" Spacing="16">
+            <TextBlock Text="iPhone media" FontSize="32" FontWeight="SemiBold" />
+            <TextBlock Text="Apple Media Service accessory controls for a paired device you own. This controls the phone's active player; it does not stream audio to Windows or require the companion. Service discovery alone does not prove access."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button x:Name="ScanButton" Content="Scan paired devices" Click="ScanButton_Click" />
+                <Button x:Name="StartButton" Content="Start selected session" Click="StartButton_Click" IsEnabled="False" />
+                <Button x:Name="StopButton" Content="Stop / cancel" Click="StopButton_Click" IsEnabled="False" />
+                <ProgressRing x:Name="BusyRing" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
+            </StackPanel>
+            <ComboBox x:Name="DeviceSelector" Header="Select your paired phone explicitly" DisplayMemberPath="DisplayName"
+                HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed" />
+            <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" />
+            <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Remote controls" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock x:Name="SessionText" Text="No session. Scan and select your phone to begin." TextWrapping="Wrap" />
+                    <ComboBox x:Name="CommandSelector" Header="Commands currently advertised by the player" DisplayMemberPath="Label"
+                        HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed" />
+                    <Button x:Name="SendButton" Content="Review and send command" Click="SendButton_Click" IsEnabled="False" />
+                    <TextBlock Text="Every command needs confirmation. Commands can change playback, phone volume, or media preferences. An accepted write does not prove the player acted. No automatic retry is sent. The session stops on navigation away, Phone Link lock, or Stop."
+                        TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+            <TextBlock Text="Latest player, queue and track observations" FontSize="21" FontWeight="SemiBold" />
+            <TextBlock Text="Fields arrive independently, not as an atomic now-playing snapshot. Received times are shown; no progress or playback change is invented. Truncated/unknown-flag values stay marked. Extended attribute reads are not implemented yet. Data stays in memory and is cleared when the session ends."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <ItemsControl ItemsSource="{x:Bind Observations}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="local:MediaObservationRow">
+                        <Border Padding="16" Margin="0,0,0,8" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" />
+                                <TextBlock Text="{x:Bind Value}" TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

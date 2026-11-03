@@ -45,6 +45,7 @@ public sealed partial class MainWindow : Window
     public void SetLocked(bool isLocked)
     {
         if (isLocked && NavFrame.Content is NotificationsPage notificationsPage) notificationsPage.CancelPendingActionsForPrivacy();
+        if (isLocked && NavFrame.Content is MediaPage mediaPage) mediaPage.StopForPrivacy();
         LockOverlay.Visibility = isLocked ? Visibility.Visible : Visibility.Collapsed;
         NavView.IsEnabled = !isLocked;
     }
@@ -171,6 +172,9 @@ public sealed partial class MainWindow : Window
                     break;
                 case "notifications":
                     NavFrame.Navigate(typeof(NotificationsPage));
+                    break;
+                case "media":
+                    NavFrame.Navigate(typeof(MediaPage));
                     break;
                 case "devices":
                     NavFrame.Navigate(typeof(ConnectedDevicesPage));

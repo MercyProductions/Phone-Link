@@ -88,6 +88,9 @@
                         <FontIcon Glyph="&#xEA8F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="iPhone media" Tag="media">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8D6;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Connected devices" Tag="devices">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE968;" />
