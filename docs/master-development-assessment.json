@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "assessmentDate": "2026-11-03",
+  "assessedRevision": "1a123da80d1b2a66b9593df17450d61516e072fe",
+  "purpose": "Source-backed baseline and development matrix for the master directive; not a feature-completion or security-certification claim.",
+  "requirementsInput": {
+    "receivedThroughSection": 15,
+    "truncated": true,
+    "lastReceivedText": "Use an explicit permissions and",
+    "missingRequirementsInferred": false,
+    "firstObjective": "Sign/install the companion and prove an actual authenticated device connection before claiming end-to-end integration."
+  },
+  "inventory": {
+    "solutionProjects": 16,
+    "productionProjects": 8,
+    "testProjects": 6,
+    "cliProjects": 2,
+    "winUiPagesReviewedFromSource": 13,
+    "dotnetSdk": "10.0.300",
+    "csharpVersion": "14.0",
+    "windowsAppSdk": "2.3.1",
+    "windowsTargetAndMinimumSdk": "10.0.26100.0",
+    "swiftVersion": "6.0",
+    "iosMinimumVersion": "26.0",
+    "iosDeviceFamily": "iPhone (TARGETED_DEVICE_FAMILY=1); native iPad target not configured",
+    "iosDevelopmentTeam": "unset",
+    "iosCustomEntitlementsFile": "none referenced by the current project",
+    "iosPermissionDescriptions": ["Camera for QR scan", "Contacts", "Local network"],
+    "iosPrivacyReasons": ["DiskSpace:85F4.1", "UserDefaults:CA92.1"],
+    "iosBackgroundModes": "none declared; do not promise indefinite background connectivity"
+  },
+  "freshBaseline": {
+    "windowsBuild": {"command": "dotnet build PhoneLink.slnx --no-restore -v quiet", "result": "passed", "warnings": 0, "errors": 0},
+    "dotnetTests": {
+      "command": "dotnet test PhoneLink.slnx --no-build --no-restore -v quiet",
+      "result": "passed",
+      "passed": 440,
+      "byProject": {"Domain": 3, "Protocol": 15, "Security": 7, "Persistence": 8, "Application": 205, "DeviceCommunication": 202}
+    },
+    "packageFixtures": {"command": ".\\packaging\\Test-PackageArtifacts.ps1", "result": "passed", "passed": 10, "installedOrTrustedAnything": false},
+    "deviceArtifactValidator": {"command": "python -m unittest discover -s ios/scripts/tests -v", "result": "passed", "passed": 13, "scope": "Synthetic artifact fixtures, not physical installation"},
+    "nugetAudit": {"command": "dotnet list PhoneLink.slnx package --vulnerable --include-transitive --no-restore", "result": "No known vulnerable packages reported by configured sources; not an independent security audit"},
+    "nativeBinaryCi": {"run": "https://github.com/MercyProductions/Phone-Link/actions/runs/41647559799", "revision": "1a123da80d1b2a66b9593df17450d61516e072fe", "result": "success"},
+    "nativeIosCi": {"run": "https://github.com/MercyProductions/Phone-Link/actions/runs/41647511794", "revision": "1a123da80d1b2a66b9593df17450d61516e072fe", "result": "success", "unsignedDeviceArchive": "success", "simulatorTests": "passed", "simulatorTestsPassed": 18, "nativeArtifactValidatorTestsPassed": 13, "downloadedIpaRevisionAndHashMatch": true, "localArtifactDirectory": "artifacts/master-baseline-41647511794", "physicalInstallationVerified": false},
+    "nativeWarnings": "AppIntents metadata and action-runtime deprecation/capacity annotations remain; no warning-free native-build claim.",
+    "freshRenderedUiInspection": "not performed in this assessment; source inspection and historical UI evidence are distinct",
+    "physicalPhoneVerification": "not performed; owner reports phone disconnected"
+  },
+  "statusDefinitions": {
+    "partial": "Reachable implementation exists, but requested functionality or end-to-end device evidence is incomplete.",
+    "missing": "No production implementation of the requested feature was found in the assessed source.",
+    "testOnlyEvidence": "Simulation, fake adapters or fixture tests establish only the stated modeled behavior, never a real hardware result."
+  },
+  "developmentMatrix": [
+    {
+      "id": "connection-bootstrap", "priority": "P0", "status": "partial",
+      "exists": ["One-time QR offers", "TLS 1.3/SPKI pinning", "Ed25519 mutual proofs", "Six-word approval", "Trust revocation", "WSS authenticated sessions", "Unsigned ARM64 device build"],
+      "missing": ["Owner-controlled signing and installed launch", "Physical QR review/approval", "Verified authenticated reconnect and revocation", "Real companion-to-Windows health/contact/photo delivery"],
+      "sourceEvidence": ["src/PhoneLink.DeviceCommunication/Pairing/LocalPairingServer.cs", "ios/PhoneLinkCompanion/PhoneLinkCompanion/Infrastructure/Pairing/PairingClient.swift", "ios/PhoneLinkCompanion/PhoneLinkCompanion/App/CompanionSession.swift"],
+      "nextProof": "Connect the owner's phone, sign/install without bypasses, pair explicitly, and verify an authenticated session and a confirmed health receipt."
+    },
+    {
+      "id": "unified-connectivity", "priority": "P1", "status": "partial",
+      "exists": ["IDeviceTransport contract", "TransportStateMachine", "Separate WSS, USB forwarding and Bluetooth components"],
+      "missing": ["Concrete IDeviceTransport implementations", "Unified device/session registry", "Explicit cross-transport association and device selection", "Connection history", "Common latency/throughput/quality measurements"],
+      "sourceEvidence": ["src/PhoneLink.Application/Ports/IDeviceTransport.cs", "src/PhoneLink.DeviceCommunication/Transports/TransportStateMachine.cs", "src/PhoneLink.Windows/AppServices.cs"],
+      "nextProof": "Compose existing adapters without replacing security or treating an OS discovery label as authenticated identity."
+    },
+    {
+      "id": "usb-connectivity", "priority": "P1", "status": "partial",
+      "exists": ["Apple-vendor node classification", "Numeric Windows problem codes", "Native arrival/removal monitor", "Bounded experimental usbmux inventory/GetValue", "Pinned single-device forwarding", "Cancellation"],
+      "missing": ["Authorized trust/session inspection", "Multi-device selection", "Device-specific durable history", "Driver provider/version/conflict diagnostics", "Apple service diagnostics", "Throughput tests", "Recovery/DFU state providers"],
+      "sourceEvidence": ["src/PhoneLink.DeviceCommunication/Diagnostics/WindowsConnectionDiagnosticProbe.cs", "src/PhoneLink.DeviceCommunication/Diagnostics/WindowsUsbPresenceMonitor.cs", "src/PhoneLink.DeviceCommunication/Diagnostics/ExperimentalIphoneInformationProbe.cs"],
+      "nextProof": "Physical arrival/removal and authorized service tests on explicitly selected devices; unknown responses stay unknown."
+    },
+    {
+      "id": "wireless-connectivity", "priority": "P1", "status": "partial",
+      "exists": ["Eligible local addresses", "Bonjour advertiser/browser", "Trusted endpoint fallback", "Foreground companion reconnect", "Network-change invalidation", "Bounded discovery recovery"],
+      "missing": ["Physical reconnect/interruption evidence", "Common connection-quality dashboard", "Latency and throughput measurements", "Explicit manual endpoint workflow and secure device switching"],
+      "sourceEvidence": ["src/PhoneLink.DeviceCommunication/Discovery/LocalNetworkCatalog.cs", "src/PhoneLink.DeviceCommunication/Discovery/WindowsBonjourBrowser.cs", "ios/PhoneLinkCompanion/PhoneLinkCompanion/Infrastructure/Session/DeviceSessionClient.swift"],
+      "nextProof": "Authenticated phone tests across network changes without bypassing pin/identity failures or promising background execution."
+    },
+    {
+      "id": "bluetooth", "priority": "P1", "status": "partial",
+      "exists": ["MAP/PBAP/ANCS service capability discovery", "ANCS and AMS session/control implementations", "A2DP receiver adapter", "Phone-line transport inspection/setup"],
+      "missing": ["Resolution of observed ANCS/AMS characteristic AccessDenied", "Verified notification/media effects", "Actual receiver sound", "Unified permission/failure explanations"],
+      "sourceEvidence": ["src/PhoneLink.Integrations.AppleBluetooth/Ancs/AncsNotificationSession.cs", "src/PhoneLink.Integrations.AppleBluetooth/Media/AmsSession.cs", "src/PhoneLink.Integrations.AppleBluetooth/Audio/WindowsRemoteAudioConnection.cs"],
+      "nextProof": "User-authorized native profile tests; service visibility must not be presented as usable characteristic access."
+    },
+    {
+      "id": "device-dashboard", "priority": "P1", "status": "partial",
+      "exists": ["Bounded USB class/product/OS/build queries with per-field outcomes", "Companion health snapshots", "Trust/session and network findings"],
+      "missing": ["Unified provenance/confidence model", "Comprehensive dashboard", "Authorized identifier providers", "Hardware inventory providers", "Staleness and per-device history", "Native iPad target/validation"],
+      "sourceEvidence": ["src/PhoneLink.DeviceCommunication/Diagnostics/ExperimentalIphoneInformationProbe.cs", "src/PhoneLink.Application/Features/Diagnostics/CompanionHealthInbox.cs", "src/PhoneLink.Windows/Pages/DiagnosticsPage.xaml.cs"],
+      "nextProof": "Every displayed field must carry device binding, source, timestamp and Verified/Reported/Estimated/Restricted/Unsupported/Unavailable semantics."
+    },
+    {
+      "id": "battery-power", "priority": "P2", "status": "partial",
+      "exists": ["Explicit companion charge/charging/low-power/thermal-pressure capture", "USB battery queries preserve GetProhibited as unavailable"],
+      "missing": ["Historical charts/trends", "Charging interruption correlation", "Authorized cycle/capacity/temperature providers", "Validated aging/consumption estimates"],
+      "sourceEvidence": ["ios/PhoneLinkCompanion/PhoneLinkCompanion/Features/Home/HealthView.swift", "src/PhoneLink.DeviceCommunication/Diagnostics/ExperimentalIphoneInformationProbe.cs"],
+      "nextProof": "Physical snapshot delivery; never relabel charge as maximum capacity or thermal pressure as temperature."
+    },
+    {
+      "id": "display-touch", "priority": "P2", "status": "partial",
+      "exists": ["Local 6x8 touch coverage", "Manual solid colors", "User-reported observations", "Foreground/lifecycle clearing"],
+      "missing": ["Physical operation evidence", "Multi-touch and responsiveness tests", "Orientation/brightness/flicker/ghost-touch workflows", "Structured subsystem reports"],
+      "sourceEvidence": ["ios/PhoneLinkCompanion/PhoneLinkCompanion/Features/Home/GuidedChecksView.swift"],
+      "nextProof": "Installed companion user-run tests; no automated hardware pass/fail from incomplete coverage."
+    },
+    {
+      "id": "audio-diagnostics", "priority": "P2", "status": "partial",
+      "exists": ["Explicit short tone and Stop", "Haptic request", "Separate Bluetooth media receiver implementation"],
+      "missing": ["User-approved microphone recording/playback", "Route/channel/latency diagnostics", "Physical speaker/haptic evidence", "Recording privacy/lifetime controls"],
+      "sourceEvidence": ["ios/PhoneLinkCompanion/PhoneLinkCompanion/Features/Home/GuidedChecksView.swift", "src/PhoneLink.Windows/Pages/AudioReceiverPage.xaml.cs"],
+      "nextProof": "Explicit consent for each audible/recording test; new microphone functionality requires appropriate permission text and user action."
+    },
+    {
+      "id": "camera-diagnostics", "priority": "P2", "status": "missing",
+      "exists": ["VisionKit QR scanner for pairing; this is not a camera diagnostic suite"],
+      "missing": ["Front/rear camera tests", "Capture/video/flash/focus/exposure checks", "Camera switching and startup-failure reporting"],
+      "sourceEvidence": ["ios/PhoneLinkCompanion/PhoneLinkCompanion/Features/Pairing/QRScannerView.swift", "ios/PhoneLinkCompanion/PhoneLinkCompanion/Resources/Info.plist"],
+      "nextProof": "Public-API feature review, updated purpose strings, user-invoked capture and physical camera validation."
+    },
+    {
+      "id": "sensor-diagnostics", "priority": "P2", "status": "missing",
+      "exists": ["Guided haptic request only; no general sensor diagnostic engine"],
+      "missing": ["Motion/accelerometer/gyroscope/magnetometer", "Proximity/barometer availability", "Location permission/accuracy", "Source-backed sensor reports"],
+      "sourceEvidence": ["ios/PhoneLinkCompanion/PhoneLinkCompanion/Features/Home/GuidedChecksView.swift", "ios/PhoneLinkCompanion/PhoneLinkCompanion/Resources/Info.plist"],
+      "nextProof": "Per-sensor public API/availability/permission checks; report absent or denied capability without guessing."
+    },
+    {
+      "id": "reports", "priority": "P2", "status": "partial",
+      "exists": ["Minimal connection text report", "Redacted crash summary", "Static Mach-O JSON export"],
+      "missing": ["Unified diagnostic report schema", "PDF/HTML/CSV exports", "Subsystem method/confidence/log references", "Cross-test before/after reports"],
+      "sourceEvidence": ["src/PhoneLink.Application/Features/Diagnostics/ConnectionDiagnosticReport.cs", "src/PhoneLink.Application/Features/Diagnostics/IphoneCrashReportAnalyzer.cs", "src/PhoneLink.Windows/Pages/AdvancedToolsPage.xaml.cs"],
+      "nextProof": "Redaction tests and populated export review for each format before sharing owner data."
+    },
+    {
+      "id": "safe-repair", "priority": "P1", "status": "partial",
+      "exists": ["Bounded app-owned discovery registration repair", "Before/after verification", "Three-failure automatic retry budget"],
+      "missing": ["General operation permission/risk policy", "Validated temporary-cache repair", "Correlated authenticated-session recovery", "Repair history/effectiveness evidence"],
+      "sourceEvidence": ["src/PhoneLink.Application/Features/Diagnostics/DiscoveryRecovery.cs", "src/PhoneLink.Windows/AppServices.cs"],
+      "nextProof": "Repair only app-owned state with verifiable preconditions/results; do not delete trust or user data as a generic repair."
+    },
+    {
+      "id": "firmware-recovery", "priority": "P3", "status": "missing",
+      "exists": ["Separate Apple Devices launch/guidance; no firmware engine"],
+      "missing": ["Firmware catalogs/compatibility/signing checks", "IPSW download/resume/import/inspection", "Recovery and DFU detection", "Supported restore integration/progress/errors/history"],
+      "sourceEvidence": ["src/PhoneLink.Windows/Pages/DiagnosticsPage.xaml.cs"],
+      "nextProof": "Official supported route research, verified compatibility and backup preflight; explicit high-risk approval before any flash/restore."
+    },
+    {
+      "id": "backup-restore", "priority": "P2", "status": "missing",
+      "exists": ["Apple Devices launch; database schema is not a device backup system"],
+      "missing": ["Authorized backup creation", "User-selected backup inventory/verification/browser/export", "Encryption-password handling", "Retention/comparison/scheduling", "Supported restore preparation/execution/verification"],
+      "sourceEvidence": ["src/PhoneLink.Windows/Pages/DiagnosticsPage.xaml.cs"],
+      "nextProof": "Start with explicit user-selected read-only backup metadata; never bypass encryption or promise arbitrary selective restore."
+    },
+    {
+      "id": "transfers-media", "priority": "P1", "status": "partial",
+      "exists": ["Selected-photo import up to 25 MiB", "Authenticated chunks/final hashes", "Immediate encrypted staging", "Bounded concurrency", "Windows export", "Legacy PLA1 read compatibility"],
+      "missing": ["Large files/videos", "Bidirectional app-document transfer", "Durable resume", "Queues/priority/ETA/history", "Duplicate/conflict handling", "Gallery thumbnails/albums/batch/Live Photo workflows"],
+      "sourceEvidence": ["src/PhoneLink.DeviceCommunication/Attachments/InboundAttachmentManager.cs", "src/PhoneLink.DeviceCommunication/Attachments/ChunkEncryptedAttachment.cs", "ios/PhoneLinkCompanion/PhoneLinkCompanion/Features/Photos/PhotoImportService.swift"],
+      "nextProof": "First verify the current small-photo path physically; evolve protocol/storage with interruption and key-lifetime tests rather than merely raising the size limit."
+    },
+    {
+      "id": "application-management", "priority": "P2", "status": "partial",
+      "exists": ["Own unsigned IPA/archive metadata and all-file consistency validation in build tooling"],
+      "missing": ["Generic IPA inspection UI", "Signature/entitlement/provisioning diagnostics", "Authorized app inventory/install interfaces", "App-document/backup integration", "Installation failure analysis"],
+      "sourceEvidence": ["ios/scripts/verify_device_archive.py", "src/PhoneLink.Windows/Pages/AdvancedToolsPage.xaml.cs"],
+      "nextProof": "Distinguish consumer, supervised and development-device routes; do not infer installability from static IPA checks."
+    },
+    {
+      "id": "messaging", "priority": "P2", "status": "missing",
+      "exists": ["MAP capability discovery", "Messages UI shell", "Reserved database tables"],
+      "missing": ["MAP transport", "Conversation/history/search pipelines", "Send/reply/status/attachments", "Independent app-owned messaging"],
+      "sourceEvidence": ["src/PhoneLink.Windows/Pages/MessagesPage.xaml", "src/PhoneLink.Windows/Pages/MessagesPage.xaml.cs", "src/PhoneLink.Persistence.Sqlite/Migrations/001_initial.sql"],
+      "nextProof": "Keep controls disabled until a source-correct transport works; never label app-owned messages as SMS/iMessage."
+    },
+    {
+      "id": "contacts", "priority": "P1", "status": "partial",
+      "exists": ["Authorized per-PC sync/outbox/checkpoint recovery", "Permission-subset reconciliation", "Multiple numbers/emails", "Windows contact-name search"],
+      "missing": ["Physical delivery/permission-downgrade tests", "Avatars/groups", "Import/export/duplicates/conflicts", "User-visible sync history/contact backup"],
+      "sourceEvidence": ["ios/PhoneLinkCompanion/PhoneLinkCompanion/Features/Contacts/ContactSyncService.swift", "src/PhoneLink.DeviceCommunication/Synchronization/ContactSyncEnvelopeHandler.cs", "src/PhoneLink.Persistence.Sqlite/SqliteContactStore.cs"],
+      "nextProof": "Prove full/limited/revoked authorization reconciliation on a real paired phone before expanding retained fields."
+    },
+    {
+      "id": "calling", "priority": "P1", "status": "partial",
+      "exists": ["Expiring companion-assisted dial request with foreground confirmation", "Read-only phone transport probe", "Separate confirmed register/connect/unregister controllers"],
+      "missing": ["Explicit target selection for companion dial commands", "Native registration/connection evidence", "Actual cellular call/answer/hang-up", "Incoming state/history", "Microphone/speaker routing"],
+      "sourceEvidence": ["src/PhoneLink.Windows/AppServices.cs", "src/PhoneLink.Application/Features/Calling/CallTransportControl.cs", "src/PhoneLink.Integrations.AppleBluetooth/Calling/WindowsCallTransportControl.cs"],
+      "nextProof": "Owner-approved registration-only experiment first; persistent registration, transport connection, dialing and audio are separate approvals/results."
+    },
+    {
+      "id": "screen-mirroring", "priority": "P3", "status": "missing",
+      "exists": ["AirPlay service observation only; no receiver or capture implementation"],
+      "missing": ["Supported receiver/capture route", "Frames/decoding/latency/fullscreen", "Consent-based recording/screenshots/audio sync", "Capability-gated supported interaction"],
+      "sourceEvidence": ["src/PhoneLink.DeviceCommunication/Discovery/WindowsBonjourBrowser.cs"],
+      "nextProof": "Revalidate platform API/licensing and explicit capture consent; mirroring does not authorize unrestricted remote input."
+    },
+    {
+      "id": "notification-media-center", "priority": "P1", "status": "partial",
+      "exists": ["Session-only ANCS feed/state/actions", "Windows toast dispatch", "AMS metadata/advertised commands", "Separate A2DP receiver UI"],
+      "missing": ["Physical authorized behavior", "Feed filtering/search/grouping", "Unified media/source diagnostics and privacy UX"],
+      "sourceEvidence": ["src/PhoneLink.Windows/Pages/NotificationsPage.xaml.cs", "src/PhoneLink.Windows/Pages/MediaPage.xaml.cs", "src/PhoneLink.Windows/Pages/AudioReceiverPage.xaml.cs"],
+      "nextProof": "Resolve observed characteristic denial and verify effects without persisting ANCS UIDs beyond their session."
+    },
+    {
+      "id": "developer-inspection-logs", "priority": "P2", "status": "partial",
+      "exists": ["Bounded usbmux/GetValue diagnostics", "Static Mach-O/FAT/UUID/symbol/export/function inspection", "JSON export", "Type-309 crash analysis", "Own-image runtime capture and offline mapping"],
+      "missing": ["USB tree/interface/endpoint UI", "Redacted protocol timing/tracing", "Authorized additional log formats", "Load-command/signature/entitlement/string/comparison tools", "CSV export", "Authenticated runtime-metadata ingress"],
+      "sourceEvidence": ["src/PhoneLink.Application/Features/BinaryInspection/MachOInspector.cs", "src/PhoneLink.Application/Features/Diagnostics/IphoneCrashReportAnalyzer.cs", "src/PhoneLink.Application/Features/BinaryInspection/CompanionRuntimeMapper.cs"],
+      "nextProof": "Keep static offsets, untrusted snapshot-derived addresses and verified live state distinct; validate each new report format with real/synthetic cases."
+    },
+    {
+      "id": "developer-console", "priority": "P2", "status": "missing",
+      "exists": ["Two separate CLI utilities, not an in-app command registry/console"],
+      "missing": ["Approved command registry/help", "Explicit device targeting", "Structured results/history/presets", "Cancellation/permission policy", "Redacted export"],
+      "sourceEvidence": ["tools/PhoneLink.DeviceProbe/Program.cs", "tools/PhoneLink.OffsetDumper/Program.cs"],
+      "nextProof": "Allowlisted Phone Link operations only; no paired-phone arbitrary shell execution."
+    },
+    {
+      "id": "ssh-forwarding", "priority": "P2", "status": "partial",
+      "exists": ["Loopback-only pinned USB forwarding", "Byte/connection counters", "Read-only round-trip verifier", "Standard-port SSH identification check"],
+      "missing": ["A legitimate reachable SSH service", "Authenticated SSH client integration", "Profiles/history and richer tunnel diagnostics"],
+      "sourceEvidence": ["src/PhoneLink.DeviceCommunication/Tunnels/LoopbackDeviceTunnel.cs", "src/PhoneLink.DeviceCommunication/Diagnostics/ExperimentalSshAvailabilityProbe.cs"],
+      "nextProof": "Earlier attached-phone port-22 check was rejected; forwarding is not a server installation or permission grant. Require normal SSH host-key/authentication checks if a service becomes available."
+    },
+    {
+      "id": "diagnostic-intelligence-automation", "priority": "P2", "status": "partial",
+      "exists": ["Deterministic connection findings", "USB problem-code guidance", "Allowlisted crash signatures", "Bounded app discovery maintenance"],
+      "missing": ["Persistent issue/event correlation", "Before/after comparisons", "General consented job scheduler", "Connection-triggered diagnostics/backups/imports", "Optional local AI summaries"],
+      "sourceEvidence": ["src/PhoneLink.Application/Features/Diagnostics/ConnectionDiagnosticReport.cs", "src/PhoneLink.Application/Features/Diagnostics/UsbProblemGuidance.cs", "src/PhoneLink.Windows/AppServices.cs"],
+      "nextProof": "Rules must cite actual evidence and unknown states; automation needs explicit scope/permissions and may not infer destructive-operation approval."
+    },
+    {
+      "id": "security-release", "priority": "P0", "status": "partial",
+      "exists": ["Ed25519", "Pinned TLS 1.3", "DPAPI/Keychain", "Encrypted SQLite and AES-GCM attachments", "Revocation", "Optional Hello lock", "Versioned development MSIX scripts"],
+      "missing": ["Current installed/signed Windows and iPhone validation", "General command-result persistence", "Atomic contact projection/receipt commit", "Authenticated key rotation", "Complete structured redacted logging", "Broader lifecycle/upgrade/security release evidence"],
+      "sourceEvidence": ["src/PhoneLink.Security/Storage/WindowsCredentialSecretStore.cs", "src/PhoneLink.Persistence.Sqlite/SqliteDatabase.cs", "docs/security-threat-model.md"],
+      "nextProof": "Preserve existing protections. Threat-model objectives, a passing dependency advisory query and test counts are not security certification."
+    }
+  ],
+  "sourceFindings": [
+    {"id": "F01", "finding": "Messages has no send/search/conversation handlers; those controls are disabled. MAP discovery and reserved tables do not implement messaging.", "evidence": "src/PhoneLink.Windows/Pages/MessagesPage.xaml.cs"},
+    {"id": "F02", "finding": "No concrete IDeviceTransport implementation was found. Existing connections are separate components, not a unified engine.", "evidence": "src/PhoneLink.Application/Ports/IDeviceTransport.cs"},
+    {"id": "F03", "finding": "RequestDialAsync selects the first connected trusted iPhone rather than an explicit user-selected target. Fix before exposing multi-device command workflows.", "evidence": "src/PhoneLink.Windows/AppServices.cs"},
+    {"id": "F04", "finding": "Architecture/threat documents include future objectives: Generic Host/MVVM/SwiftData, durable commands, key rotation and other controls cannot be assumed shipped.", "evidence": "docs/phase-2-architecture.md; docs/security-threat-model.md"},
+    {"id": "F05", "finding": "Raw exception.Message reaches some debug/UI paths. Redaction/canary review is required; this is a potential exposure path, not a demonstrated private-data leak.", "evidence": "src/PhoneLink.Windows/AppServices.cs"},
+    {"id": "F06", "finding": "Frozen security policy checkboxes and initially disabled eligibility-gated buttons are not automatically placeholders. Distinguish those from the unwired messaging UI.", "evidence": "src/PhoneLink.Windows/Pages/SettingsPage.xaml"},
+    {"id": "F07", "finding": "No NotImplementedException or TODO marker was found by the scoped production-source search. That does not prove feature completeness; absent handlers/providers are stronger evidence.", "evidence": "src; ios/PhoneLinkCompanion/PhoneLinkCompanion"}
+  ],
+  "schemaTablesWithoutProductionCSharpSqlCallersFound": ["device_endpoints", "conversations", "conversation_participants", "messages", "app_notifications", "call_history", "sync_checkpoints", "outbox_deliveries", "processed_commands", "settings", "retention_policies", "audit_log"],
+  "schemaCaveat": "Based on scoped executable SQL/source searches, not a promise that migration/test references do not exist. Do not drop tables or infer corresponding features from their existence.",
+  "physicalConnectionGates": [
+    "Owner reports phone disconnected; no phone probe or authorization change was performed for this assessment.",
+    "Owner chose Windows sideloading. The staged Sideloadly installer reports Authenticode NotSigned and has not been executed; execution/dependency review remains explicit.",
+    "The companion IPA is unsigned and contains no provisioning profile; signing/install/launch remain unverified.",
+    "Owner must handle Apple account authentication, developer trust/Developer Mode and phone permissions. No credentials in chat, logs, source or public CI.",
+    "The old Windows MSIX predates later features; package identity and direct-launch protected data stores differ, without automatic trust migration.",
+    "Persistent Windows phone-transport registration and audible receiver testing are separate pending approvals, not implied by choosing iOS sideloading."
+  ],
+  "firstConnectionAcceptance": [
+    "Owner-selected signing route installs and launches the current companion without bypassing security.",
+    "Both devices review a fresh QR offer and explicitly confirm matching six words.",
+    "Windows shows an authenticated current session, not merely USB/Bluetooth presence.",
+    "One reviewed health snapshot receives a correlated acceptance receipt in that session.",
+    "A disconnect/reconnect authenticates again; a revoked peer cannot reconnect.",
+    "Only then verify permitted Contacts and a small selected photo on the physical phone."
+  ],
+  "implementationChangesDuringAssessment": "None to production code, permissions, entitlements or database schema. This report is an assessment artifact, not a new runtime capability."
+}
