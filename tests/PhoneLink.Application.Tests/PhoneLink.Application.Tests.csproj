@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PhoneLink.Application\PhoneLink.Application.csproj" />
+    <EmbeddedResource Include="..\..\docs\fixtures\synthetic-app-crash.ips" LogicalName="SyntheticCrashReport" />
   </ItemGroup>
 
 </Project>

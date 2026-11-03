@@ -31,6 +31,15 @@
                 HorizontalAlignment="Left" ToolTipService.ToolTip="Use with one owned iPhone connected by USB. Reads model, OS and available battery observations; no settings or firmware changes." />
             <Button x:Name="RecoveryButton" Content="Repair missing app discovery" Click="RecoveryButton_Click" HorizontalAlignment="Left"
                 ToolTipService.ToolTip="Checks before and after restoring only Phone Link's missing Bonjour advertisement. Does not reset pairing, disconnect healthy sessions, change drivers, or repair phone hardware." />
+            <TextBlock Text="Crash-report analysis" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="Select a report you exported from iPhone Analytics Data. Only type-309 JSON crash reports up to 4 MiB are supported. Analysis stays local and does not establish a hardware fault. Other report types, including panic and Jetsam reports, are not yet supported. The original is never uploaded or changed."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button x:Name="CrashImportButton" Content="Analyze selected .ips report" Click="CrashImportButton_Click" />
+                <Button x:Name="CrashCopyButton" Content="Copy redacted analysis" Click="CrashCopyButton_Click" IsEnabled="False" />
+            </StackPanel>
+            <TextBlock x:Name="CrashAnalysisText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <HyperlinkButton Content="Apple crash-report guidance" NavigateUri="https://developer.apple.com/documentation/xcode/diagnosing-issues-using-crash-reports-and-device-logs" HorizontalAlignment="Left" />
             <TextBlock x:Name="RecoveryText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock Text="Background maintenance checks for missing app discovery every 30 seconds while eligible. After three failed recovery attempts, automatic retries pause until a network-address change, successful manual check, or app restart. Healthy registrations and sessions are not restarted. Local registration recovery does not prove an iPhone connection."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

@@ -7,6 +7,8 @@ using PhoneLink.Domain.Devices;
 using PhoneLink.Security.Storage;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Management.Deployment;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace PhoneLink.Windows.Pages;
 
@@ -14,6 +16,8 @@ public sealed partial class DiagnosticsPage : Page
 {
     private CancellationTokenSource? _scanCancellation;
     private ConnectionDiagnosticReport? _report;
+    private CancellationTokenSource? _crashCancellation;
+    private IphoneCrashAnalysis? _crashAnalysis;
     private bool _loaded;
     public ObservableCollection<DiagnosticFinding> Findings { get; } = [];
 
@@ -29,11 +33,69 @@ public sealed partial class DiagnosticsPage : Page
     {
         _loaded = false;
         _scanCancellation?.Cancel();
+        _crashCancellation?.Cancel();
+        _crashAnalysis = null;
+        CrashAnalysisText.Text = string.Empty;
+        CrashCopyButton.IsEnabled = false;
         PhoneInfoText.Text = string.Empty;
         RecoveryText.Text = string.Empty;
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs args) => await ScanAsync();
+
+    private async void CrashImportButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || App.IsLocked || _crashCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource();
+        _crashCancellation = cancellation;
+        CrashImportButton.IsEnabled = CrashCopyButton.IsEnabled = false;
+        _crashAnalysis = null;
+        CrashAnalysisText.Text = string.Empty;
+        try
+        {
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add(".ips");
+            picker.FileTypeFilter.Add(".json");
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
+            var file = await picker.PickSingleFileAsync();
+            if (file is null || cancellation.IsCancellationRequested || !_loaded || App.IsLocked) return;
+            cancellation.CancelAfter(TimeSpan.FromSeconds(20));
+            CrashAnalysisText.Text = "Analyzing locally…";
+            using var random = await file.OpenReadAsync();
+            if (random.Size > IphoneCrashReportAnalyzer.MaximumBytes)
+                throw new InvalidDataException("Report exceeds the 4 MiB analysis limit.");
+            using var stream = random.AsStreamForRead();
+            var analysis = await Task.Run(() => IphoneCrashReportAnalyzer.AnalyzeAsync(stream, cancellation.Token), cancellation.Token);
+            if (!_loaded || cancellation.IsCancellationRequested || App.IsLocked) return;
+            _crashAnalysis = analysis;
+            CrashAnalysisText.Text = analysis.ToRedactedText();
+            CrashCopyButton.IsEnabled = true;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (_loaded && !App.IsLocked)
+                CrashAnalysisText.Text = "Analysis not completed. Choose a complete type-309 JSON .ips report up to 4 MiB. Malformed, ambiguous, oversized and other report formats are not supported. No repair was attempted and the original was not changed.";
+        }
+        finally
+        {
+            _crashCancellation = null;
+            if (_loaded) CrashImportButton.IsEnabled = true;
+        }
+    }
+
+    private void CrashCopyButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || App.IsLocked || _crashAnalysis is null) return;
+        try
+        {
+            var data = new DataPackage();
+            data.SetText(_crashAnalysis.ToRedactedText());
+            Clipboard.SetContent(data);
+            ShowStatus("Redacted analysis copied", "Only the analysis shown here was copied, not the source report. Review it before sharing.", InfoBarSeverity.Success);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        { ShowStatus("Clipboard unavailable", "The analysis remains on this page.", InfoBarSeverity.Warning); }
+    }
 
     private async Task ScanAsync()
     {
