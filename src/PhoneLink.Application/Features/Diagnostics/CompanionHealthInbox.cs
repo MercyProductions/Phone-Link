@@ -63,6 +63,11 @@ public sealed class CompanionHealthInbox
     }
 
     public void Remove(Guid deviceId) { lock (_gate) _entries.Remove(deviceId); }
+    public void Remove(Guid deviceId, Guid sessionId)
+    {
+        lock (_gate)
+            if (_entries.TryGetValue(deviceId, out var entry) && entry.SessionId == sessionId) _entries.Remove(deviceId);
+    }
     public void SetPrivacyLocked(bool locked) { lock (_gate) { _locked = locked; _entries.Clear(); } }
 
     public static bool IsValid(CompanionHealthSnapshotPayload value) => value.SchemaVersion == 1 &&

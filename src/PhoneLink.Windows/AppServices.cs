@@ -3,6 +3,7 @@ using PhoneLink.DeviceCommunication.Discovery;
 using PhoneLink.DeviceCommunication.Synchronization;
 using PhoneLink.DeviceCommunication.Attachments;
 using PhoneLink.DeviceCommunication.Sessions;
+using PhoneLink.DeviceCommunication.Diagnostics;
 using PhoneLink.Application.Features.Attachments;
 using PhoneLink.Application.Features.Calling;
 using PhoneLink.Application.Features.Contacts;
@@ -607,6 +608,7 @@ public sealed class AppServices : IAsyncDisposable
         InboundAttachmentManager attachmentManager,
         CancellationToken cancellationToken)
     {
+        var healthHandler = new CompanionHealthEnvelopeHandler(_companionHealth);
         await foreach (var frame in server.ReadFramesAsync(cancellationToken))
         {
             try
@@ -633,11 +635,10 @@ public sealed class AppServices : IAsyncDisposable
 
                 if (received.Envelope.Kind == "diagnostics.health.snapshot")
                 {
-                    var accepted = false;
-                    if (!App.IsLocked && received.Envelope.RequiresAck && received.Envelope.CorrelationId is null)
-                        accepted = _companionHealth.TryStoreJson(received.DeviceId.Value, received.SessionId,
-                            received.Envelope.Payload, DateTimeOffset.UtcNow);
-                    await SendResponseAsync(server, received, "diagnostics.health.receipt", new { accepted }, cancellationToken).ConfigureAwait(false);
+                    var receipt = healthHandler.Handle(received, _windowsDeviceId,
+                        (deviceId, sessionId) => server.TryGetSessionId(deviceId, out var active) && active == sessionId,
+                        App.IsLocked, DateTimeOffset.UtcNow);
+                    if (receipt is not null) await server.SendAsync(received.DeviceId, receipt, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 

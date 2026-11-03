@@ -3,7 +3,11 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Text;
 using PhoneLink.Application.Ports;
+using PhoneLink.Application.Features.Diagnostics;
+using PhoneLink.DeviceCommunication.Diagnostics;
+using PhoneLink.DeviceCommunication.Sessions;
 using PhoneLink.DeviceCommunication.Pairing;
 using PhoneLink.Domain.Devices;
 using PhoneLink.Protocol;
@@ -20,9 +24,15 @@ namespace PhoneLink.DeviceCommunication.Tests;
 
 public sealed class AuthenticatedSessionTests
 {
-    [Fact]
-    public async Task TrustedClientExchangesSessionBoundEnvelopes()
+    [Theory]
+    [InlineData("replay")]
+    [InlineData("revoke")]
+    [InlineData("forged-origin")]
+    [InlineData("wrong-session")]
+    [InlineData("duplicate-json")]
+    public async Task TrustedClientExchangesSessionBoundEnvelopes(string termination)
     {
+        var revokeInsteadOfReplay = termination == "revoke";
         var secretStore = new InMemorySecretStore();
         var certificate = await new LocalTlsCertificateProvider(secretStore)
             .LoadOrCreateAsync(CancellationToken.None);
@@ -104,6 +114,7 @@ public sealed class AuthenticatedSessionTests
         var ready = SessionWireSerializer.Parse<SessionReady>(await ReceiveAsync(socket));
         Assert.Equal(challenge.SessionId, ready.SessionId);
         Assert.Equal(ProtocolConstants.CurrentVersion, ready.ProtocolVersion);
+        Assert.Contains("diagnostics.health.v1", ready.Capabilities);
 
         var ping = new ProtocolEnvelope
         {
@@ -123,7 +134,7 @@ public sealed class AuthenticatedSessionTests
             true,
             CancellationToken.None);
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await using var received = server.ReadFramesAsync(timeout.Token).GetAsyncEnumerator(timeout.Token);
         Assert.True(await received.MoveNextAsync());
         var receivedEnvelope = Assert.IsType<PhoneLink.DeviceCommunication.Sessions.ReceivedDeviceEnvelope>(
@@ -220,10 +231,85 @@ public sealed class AuthenticatedSessionTests
         Assert.Equal(pong.MessageId, returned.MessageId);
         Assert.Equal(ping.MessageId, returned.CorrelationId);
 
-        await socket.CloseAsync(
-            WebSocketCloseStatus.NormalClosure,
-            "Test complete",
-            CancellationToken.None);
+        var healthInbox = new CompanionHealthInbox();
+        var healthHandler = new CompanionHealthEnvelopeHandler(healthInbox);
+        var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        server.SessionDisconnected += (_, args) =>
+        {
+            healthInbox.Remove(args.DeviceId.Value);
+            disconnected.TrySetResult();
+        };
+        var healthRequest = ping with
+        {
+            MessageId = Guid.NewGuid(), Kind = "diagnostics.health.snapshot", RequiresAck = true,
+            Payload = JsonSerializer.SerializeToElement(new
+            {
+                schemaVersion = 1, capturedAt = DateTimeOffset.UtcNow, batteryPercent = (int?)42,
+                batteryState = "charging", thermalState = "nominal", lowPowerMode = false,
+                contactsPermission = "limited", photosPermission = "limited", cameraPermission = "not-determined",
+                notificationPermission = "provisional",
+            }),
+        };
+        ReceivedDeviceEnvelope? validQueuedHealth = null;
+        for (var testCase = 0; testCase < 5; testCase++)
+        {
+            var request = healthRequest with { MessageId = Guid.NewGuid() };
+            if (testCase == 1) request = request with { Payload = JsonSerializer.SerializeToElement(new { schemaVersion = 99 }) };
+            if (testCase == 2) request = request with { RequiresAck = false };
+            if (testCase == 3) request = request with { CorrelationId = Guid.NewGuid() };
+            await socket.SendAsync(ProtocolEnvelopeSerializer.Serialize(request), WebSocketMessageType.Text, true, timeout.Token);
+            Assert.True(await received.MoveNextAsync());
+            var frame = Assert.IsType<ReceivedDeviceEnvelope>(received.Current);
+            if (testCase == 0) { validQueuedHealth = frame; healthRequest = request; }
+            var receipt = healthHandler.Handle(frame, serverDeviceId,
+                (id, session) => server.TryGetSessionId(id, out var active) && active == session,
+                privacyLocked: testCase == 4, DateTimeOffset.UtcNow);
+            Assert.NotNull(receipt);
+            await server.SendAsync(clientDeviceId, receipt, timeout.Token);
+            var delivered = ProtocolEnvelopeSerializer.Parse(await ReceiveAsync(socket));
+            Assert.Equal("diagnostics.health.receipt", delivered.Kind);
+            Assert.Equal(request.MessageId, delivered.CorrelationId);
+            Assert.Equal(challenge.SessionId, delivered.SessionId);
+            Assert.Equal(serverDeviceId, delivered.OriginDeviceId);
+            Assert.False(delivered.RequiresAck);
+            Assert.Equal(testCase == 0, delivered.Payload.GetProperty("accepted").GetBoolean());
+        }
+        Assert.Equal(42, healthInbox.Get(clientDeviceId.Value, challenge.SessionId, DateTimeOffset.UtcNow)!.Snapshot.BatteryPercent);
+
+        if (revokeInsteadOfReplay)
+        {
+            await trustedDevices.RevokeAsync(clientDeviceId, DateTimeOffset.UtcNow, timeout.Token);
+            await server.DisconnectAsync(clientDeviceId, timeout.Token);
+        }
+        else
+        {
+            // These frames must be rejected by transport validation before reaching the feature handler.
+            var rejected = termination switch
+            {
+                "forged-origin" => healthRequest with { MessageId = Guid.NewGuid(), OriginDeviceId = Guid.NewGuid() },
+                "wrong-session" => healthRequest with { MessageId = Guid.NewGuid(), SessionId = Guid.NewGuid() },
+                "duplicate-json" => healthRequest with { MessageId = Guid.NewGuid() },
+                _ => healthRequest,
+            };
+            var rejectedBytes = ProtocolEnvelopeSerializer.Serialize(rejected);
+            if (termination == "duplicate-json")
+            {
+                var json = Encoding.UTF8.GetString(rejectedBytes);
+                var ambiguous = json.Replace("\"schemaVersion\":1", "\"schemaVersion\":1,\"schemaVersion\":1", StringComparison.Ordinal);
+                Assert.NotEqual(json, ambiguous);
+                rejectedBytes = Encoding.UTF8.GetBytes(ambiguous);
+            }
+            await socket.SendAsync(rejectedBytes, WebSocketMessageType.Text, true, timeout.Token);
+        }
+        var close = await socket.ReceiveAsync(new byte[1], timeout.Token);
+        Assert.Equal(WebSocketMessageType.Close, close.MessageType);
+        Assert.Equal(revokeInsteadOfReplay ? WebSocketCloseStatus.NormalClosure : WebSocketCloseStatus.PolicyViolation, close.CloseStatus);
+        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Test complete", timeout.Token);
+        await disconnected.Task.WaitAsync(timeout.Token);
+        Assert.False(server.IsConnected(clientDeviceId));
+        Assert.Null(healthInbox.Get(clientDeviceId.Value, challenge.SessionId, DateTimeOffset.UtcNow));
+        Assert.Null(healthHandler.Handle(validQueuedHealth!, serverDeviceId,
+            (id, session) => server.TryGetSessionId(id, out var active) && active == session, false, DateTimeOffset.UtcNow));
     }
 
     private static bool CertificateMatchesPin(X509Certificate? presented, ReadOnlySpan<byte> expected)
@@ -246,8 +332,9 @@ public sealed class AuthenticatedSessionTests
 
     private static async Task<byte[]> ReceiveAsync(ClientWebSocket socket)
     {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var output = new byte[ProtocolConstants.MaximumJsonFrameBytes];
-        var result = await socket.ReceiveAsync(output, CancellationToken.None);
+        var result = await socket.ReceiveAsync(output, deadline.Token);
         Assert.Equal(WebSocketMessageType.Text, result.MessageType);
         Assert.True(result.EndOfMessage);
         return output[..result.Count];
