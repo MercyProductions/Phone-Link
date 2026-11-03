@@ -34,7 +34,16 @@ jobs:
           xcodebuild -showsdks
           simulator_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); matches=[d["udid"] for runtime,devices in data["devices"].items() if "iOS-26" in runtime for d in devices if d.get("isAvailable") and d["name"].startswith("iPhone")]; assert matches, "No iOS 26 iPhone simulator installed"; print(matches[0])')"
           printf 'id=%s\n' "$simulator_id" >> "$GITHUB_OUTPUT"
+      - name: Boot the selected simulator before testing
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl help bootstatus
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.id }}' -b
+          xcrun simctl list devices booted
       - name: Build and test the companion
+        timeout-minutes: 12
         shell: bash
         run: |
           set -euo pipefail
@@ -43,6 +52,7 @@ jobs:
             -scheme PhoneLinkCompanion \
             -configuration Debug \
             -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
+            -parallel-testing-enabled NO \
             -resultBundlePath artifacts/ios-tests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             test

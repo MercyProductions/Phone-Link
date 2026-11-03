@@ -20,10 +20,12 @@ public sealed partial class AdvancedToolsPage : Page
     private Task? _operation;
     private LoopbackDeviceTunnel? _tunnel;
     private MachOInspection? _inspection;
+    private int _runtimeEpoch;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _loaded;
     private bool _busy;
     public ObservableCollection<OffsetEntryRow> Rows { get; } = [];
+    public ObservableCollection<RuntimeOffsetRow> RuntimeRows { get; } = [];
 
     public AdvancedToolsPage()
     {
@@ -42,6 +44,7 @@ public sealed partial class AdvancedToolsPage : Page
     private async void Page_Unloaded(object sender, RoutedEventArgs args)
     {
         _loaded = false;
+        ClearRuntimeForPrivacy();
         _timer.Stop();
         var lifetime = _pageLifetime;
         var operation = _operation;
@@ -171,6 +174,7 @@ public sealed partial class AdvancedToolsPage : Page
 
     private void ImageSelector_SelectionChanged(object sender, SelectionChangedEventArgs args)
     {
+        ClearRuntimeForPrivacy();
         Rows.Clear();
         var index = ImageSelector.SelectedIndex;
         if (_inspection is null || index < 0 || index >= _inspection.Images.Count) return;
@@ -180,6 +184,48 @@ public sealed partial class AdvancedToolsPage : Page
             $"Output partial: {image.EntriesTruncated}. Encrypted content: {image.EncryptedContent}. " + string.Join(" ", image.Warnings) +
             " Names may be shortened in the table; JSON retains parsed names. Constants and missing mappings are not file/runtime addresses.";
     }
+
+    public void ClearRuntimeForPrivacy()
+    {
+        _runtimeEpoch++;
+        RuntimeRows.Clear();
+        if (RuntimeSummary is not null)
+            RuntimeSummary.Text = "No runtime snapshot displayed. Static JSON export never includes imported runtime addresses.";
+    }
+
+    public void SetRuntimePrivacyLocked(bool locked)
+    {
+        if (locked) ClearRuntimeForPrivacy();
+        RuntimeImportButton.IsEnabled = !locked && !_busy && _inspection is not null;
+    }
+
+    private async void RuntimeImportButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
+    {
+        var inspection = _inspection;
+        var index = ImageSelector.SelectedIndex;
+        if (inspection is null || index < 0 || index >= inspection.Images.Count || App.IsLocked) return;
+        ClearRuntimeForPrivacy();
+        var epoch = _runtimeEpoch;
+        var selectedImage = inspection.Images[index];
+        var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(App.MainWindow.AppWindow.Id);
+        picker.FileTypeFilter.Add(".json");
+        var file = await picker.PickSingleFileAsync();
+        if (file is null || token.IsCancellationRequested || !_loaded || App.IsLocked || epoch != _runtimeEpoch) return;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var stream = new FileStream(file.Path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            8192, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (stream.Length > CompanionRuntimeMapper.MaximumSnapshotBytes)
+            throw new InvalidDataException("Runtime snapshot exceeds 8 KiB.");
+        var bytes = new byte[checked((int)stream.Length)];
+        await stream.ReadExactlyAsync(bytes, deadline.Token);
+        var mapping = await Task.Run(() => CompanionRuntimeMapper.Map(inspection with { Images = [selectedImage] }, bytes), deadline.Token);
+        if (deadline.IsCancellationRequested || !_loaded || App.IsLocked || epoch != _runtimeEpoch) return;
+        RuntimeSummary.Text = $"Reported capture: {mapping.ReportedCaptureTime:O}\nMatched {mapping.Architecture} · UUID {mapping.ImageUuid}. " +
+            $"Showing up to 500 of {mapping.TextEntries.Count} mapped text entries. Partial output: {mapping.EntriesTruncated}.\n" +
+            "Snapshot origin authenticated: false. Live process verified: false.\n" + mapping.Warning;
+        foreach (var entry in mapping.TextEntries.Take(500)) RuntimeRows.Add(new(entry));
+    });
 
     private async void ExportButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
@@ -233,10 +279,18 @@ public sealed partial class AdvancedToolsPage : Page
         RemotePortBox.IsEnabled = !_busy && _tunnel is null;
         VerifyButton.IsEnabled = SshButton.IsEnabled = InspectButton.IsEnabled = DeveloperModeButton.IsEnabled = !_busy;
         ExportButton.IsEnabled = !_busy && _inspection is not null;
+        RuntimeImportButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
+        ImageSelector.IsEnabled = !_busy;
     }
 
     private void ShowStatus(string message, InfoBarSeverity severity)
     { StatusBar.Message = message; StatusBar.Severity = severity; StatusBar.IsOpen = true; }
+}
+
+public sealed class RuntimeOffsetRow(SnapshotMappedOffset entry)
+{
+    public string Name { get; } = new OffsetEntryRow(entry.StaticEntry).Name;
+    public string Address { get; } = "Snapshot-derived only: " + entry.SnapshotDerivedAddress;
 }
 
 public sealed class OffsetEntryRow

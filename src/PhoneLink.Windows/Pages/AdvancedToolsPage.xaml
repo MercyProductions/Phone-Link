@@ -61,6 +61,21 @@
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
+                    <TextBlock Text="Optional reviewed runtime snapshot" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="Import only a snapshot you intend to inspect. It contains sensitive process addresses. UUID/layout matching is not authentication or proof that addresses are still live. Switching images, leaving this page or locking clears the displayed mapping. Static JSON export excludes it."
+                        TextWrapping="Wrap" />
+                    <Button x:Name="RuntimeImportButton" Content="Import reviewed runtime JSON" Click="RuntimeImportButton_Click" IsEnabled="False" />
+                    <TextBlock x:Name="RuntimeSummary" Text="No runtime snapshot displayed. Static JSON export never includes imported runtime addresses." TextWrapping="Wrap" />
+                    <ListView Height="220" ItemsSource="{x:Bind RuntimeRows}" SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:RuntimeOffsetRow">
+                                <StackPanel Spacing="4" Padding="8">
+                                    <TextBlock Text="{x:Bind Name}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{x:Bind Address}" FontFamily="Consolas" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
                 </StackPanel>
             </Border>
         </StackPanel>
