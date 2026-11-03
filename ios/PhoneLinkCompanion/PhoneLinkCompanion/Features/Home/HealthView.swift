@@ -138,6 +138,7 @@ struct HealthView: View {
         NavigationStack {
             Form {
                 Section("Interactive checks") {
+                    NavigationLink("Own runtime image and ASLR") { RuntimeImageView() }
                     NavigationLink("Touch, display, sound and haptics") { GuidedChecksView() }
                     Text("Run checks yourself on this iPhone. Observations stay local and do not certify hardware health.")
                         .font(.footnote).foregroundStyle(.secondary)

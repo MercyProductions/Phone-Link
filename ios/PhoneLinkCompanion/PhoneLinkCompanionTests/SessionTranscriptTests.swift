@@ -3,6 +3,58 @@ import Testing
 @testable import PhoneLinkCompanion
 
 struct SessionTranscriptTests {
+    @Test func ownLoadedRuntimeImageHasConsistentMarkerAndNoPaths() throws {
+        let result = try RuntimeImageProbe.capture()
+        let base = try #require(RuntimeImageSnapshot.hexValue(result.preferredTextAddress))
+        let offset = try #require(RuntimeImageSnapshot.hexValue(result.markerImageOffset))
+        let address = try #require(RuntimeImageSnapshot.hexValue(result.markerRuntimeAddress))
+        #expect(result.resolveTextAddress(base + offset, expectedUUID: result.imageUUID,
+            expectedCpuType: result.cpuType, expectedCpuSubtype: result.cpuSubtype) == address)
+        #expect(result.resolveTextAddress(base, expectedUUID: UUID().uuidString,
+            expectedCpuType: result.cpuType, expectedCpuSubtype: result.cpuSubtype) == nil)
+        #expect(result.resolveTextAddress(base, expectedUUID: result.imageUUID,
+            expectedCpuType: result.cpuType ^ 1, expectedCpuSubtype: result.cpuSubtype) == nil)
+        #expect(result.resolveTextAddress(base, expectedUUID: result.imageUUID,
+            expectedCpuType: result.cpuType, expectedCpuSubtype: result.cpuSubtype ^ 1) == nil)
+        let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any])
+        #expect(Set(json.keys) == ["schemaVersion", "capturedAt", "scope", "imageUUID", "cpuType", "cpuSubtype",
+            "preferredTextAddress", "loadedHeaderAddress", "textVirtualSize", "slide", "markerRuntimeAddress", "markerImageOffset"])
+    }
+
+    @Test func runtimeParserHandlesNegativeSlideAndRejectsMalformedMetadata() throws {
+        let fixture = runtimeHeaderFixture()
+        let result = try RuntimeImageProbe.parse(fixture, headerAddress: 0x800, markerAddress: 0x900)
+        #expect(result.slide == "-0x800")
+        #expect(result.markerImageOffset == "0x100")
+        #expect(result.resolveTextAddress(0x1100, expectedUUID: result.imageUUID,
+            expectedCpuType: result.cpuType, expectedCpuSubtype: result.cpuSubtype) == 0x900)
+        #expect(result.resolveTextAddress(0x2000, expectedUUID: result.imageUUID,
+            expectedCpuType: result.cpuType, expectedCpuSubtype: result.cpuSubtype) == nil)
+        #expect(result.resolveTextAddress(0xFFF, expectedUUID: result.imageUUID,
+            expectedCpuType: result.cpuType, expectedCpuSubtype: result.cpuSubtype) == nil)
+        #expect(throws: RuntimeImageError.self) { try RuntimeImageProbe.parse(Data(fixture.dropLast()), headerAddress: 0x800, markerAddress: 0x900) }
+        #expect(throws: RuntimeImageError.self) { try RuntimeImageProbe.parse(fixture, headerAddress: 0x800, markerAddress: 0x1800) }
+        #expect(throws: RuntimeImageError.self) { try RuntimeImageProbe.parse(fixture, headerAddress: UInt64.max - 1, markerAddress: UInt64.max) }
+        var invalid = fixture; invalid[36] = 0
+        #expect(throws: RuntimeImageError.self) { try RuntimeImageProbe.parse(invalid, headerAddress: 0x800, markerAddress: 0x900) }
+        var noUUID = fixture; noUUID[104] = 0
+        #expect(throws: RuntimeImageError.self) { try RuntimeImageProbe.parse(noUUID, headerAddress: 0x800, markerAddress: 0x900) }
+    }
+
+    private func runtimeHeaderFixture() -> Data {
+        var data = Data(repeating: 0, count: 128)
+        func u32(_ offset: Int, _ value: UInt32) {
+            for byte in 0..<4 { data[offset + byte] = UInt8(truncatingIfNeeded: value >> (8 * byte)) }
+        }
+        u32(0, 0xfeedfacf); u32(4, 0x100000c); u32(8, 0); u32(12, 6); u32(16, 2); u32(20, 96)
+        u32(32, 0x19); u32(36, 72)
+        data.replaceSubrange(40..<46, with: "__TEXT".utf8)
+        u32(56, 0x1000); u32(64, 0x1000); u32(80, 0x1000)
+        u32(104, 0x1b); u32(108, 24)
+        for byte in 0..<16 { data[112 + byte] = UInt8(byte) }
+        return data
+    }
+
     @Test func touchCoverageCountsOnlyReceivedCellsAndBoundsEdges() {
         var coverage = TouchCoverage()
         let size = CGSize(width: 60, height: 80)
