@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PhoneLink.Application.Features.Diagnostics;
 using PhoneLink.DeviceCommunication.Diagnostics;
 using PhoneLink.DeviceCommunication.Tunnels;
 
@@ -27,9 +28,9 @@ if (args.Length == 2 && args[0] == "--forward" && ushort.TryParse(args[1], out v
     finally { Console.CancelKeyPress -= cancel; }
 }
 
-if (args.Length != 1 || args[0] is not ("--inventory" or "--info" or "--ssh-check" or "--verify-tunnel" or "--developer-mode-status"))
+if (args.Length != 1 || args[0] is not ("--inventory" or "--info" or "--ssh-check" or "--verify-tunnel" or "--developer-mode-status" or "--connection-check"))
 {
-    Console.Error.WriteLine("Probes: --inventory, --info, --ssh-check, --verify-tunnel, --developer-mode-status. Managed transport: --forward <device-port>. No logins or state-changing phone commands are sent automatically.");
+    Console.Error.WriteLine("Probes: --inventory, --info, --ssh-check, --verify-tunnel, --developer-mode-status, --connection-check. Managed transport: --forward <device-port>. No logins or state-changing phone commands are sent automatically.");
     return 2;
 }
 using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -41,9 +42,11 @@ try
         "--info" => await ExperimentalIphoneInformationProbe.ProbeAsync(cancellation.Token),
         "--ssh-check" => await ExperimentalSshAvailabilityProbe.ProbeAsync(cancellation.Token),
         "--developer-mode-status" => await ExperimentalIphoneInformationProbe.ProbeDeveloperModeAsync(cancellation.Token),
+        "--connection-check" => ConnectionDiagnosticEvaluator.Evaluate(
+            await WindowsConnectionDiagnosticProbe.CaptureAsync(cancellation.Token)).ToShareableText(),
         _ => await UsbTunnelVerifier.VerifyAsync(cancellation.Token),
     };
-    Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine(result is string text ? text : JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
     return 0;
 }
 catch (Exception exception) when (exception is not OutOfMemoryException)

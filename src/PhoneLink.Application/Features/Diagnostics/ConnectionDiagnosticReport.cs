@@ -22,13 +22,17 @@ public sealed class DiagnosticFinding(string id, string title, DiagnosticOutcome
     };
 }
 
-// Counts and a deployment-mode flag only: no device IDs, names, addresses or secrets.
+public sealed record UsbDeviceProblemCount(uint Code, int NodeCount);
+
+// Aggregate counts/codes and a deployment-mode flag only: no device identifiers or secrets.
 public sealed record ConnectionDiagnosticSnapshot(DateTimeOffset CapturedAt,
     int? AppleUsbNodes, int? UsbNodesWithProblems, int? UsbNodesWithUnknownStatus,
     bool? AppleDevicesInstalled, string? AppleDevicesVersion, int? LocalEndpointCount,
     int? TrustedCompanions, int? ConnectedCompanions, IReadOnlyList<string> UnavailableProbes)
 {
     public bool? HasPackageIdentity { get; init; }
+    public IReadOnlyList<UsbDeviceProblemCount>? UsbProblemCodes { get; init; }
+    public int? UsbNodesWithUnavailableProblemCode { get; init; }
 }
 
 public sealed record ConnectionDiagnosticReport(ConnectionDiagnosticSnapshot Snapshot,
@@ -69,11 +73,21 @@ public static class ConnectionDiagnosticEvaluator
             "For a cable connection, unlock the iPhone and connect it directly to the PC using a data-capable cable. Charging alone does not establish data access.", ConnectionGuide));
         findings.Add(new("driver", "Windows device/driver status",
             snapshot.AppleUsbNodes is null or 0 ? DiagnosticOutcome.Unknown :
-                snapshot.UsbNodesWithProblems > 0 ? DiagnosticOutcome.Attention :
+                snapshot.UsbNodesWithProblems > 0 || snapshot.UsbProblemCodes?.Any(item => item.Code > 0 && item.NodeCount > 0) == true ? DiagnosticOutcome.Attention :
                 snapshot.UsbNodesWithProblems is null || snapshot.UsbNodesWithUnknownStatus is null or > 0 ? DiagnosticOutcome.Unknown : DiagnosticOutcome.Passed,
             snapshot.AppleUsbNodes is null or 0 ? "No present Apple USB nodes are available for a driver-status check." :
                 $"{snapshot.UsbNodesWithProblems?.ToString(CultureInfo.InvariantCulture) ?? "Unknown"} node(s) report a Windows problem; {snapshot.UsbNodesWithUnknownStatus?.ToString(CultureInfo.InvariantCulture) ?? "unknown"} have unavailable status. A clean status does not prove iOS trust or hardware health.",
             "If Windows reports a problem, inspect the device in Device Manager and use official Windows/Apple software updates. This scan does not remove or replace drivers.", ConnectionGuide));
+        if (snapshot.AppleUsbNodes > 0 && snapshot.UsbProblemCodes is { } codes)
+        {
+            foreach (var code in codes.Where(item => item.Code > 0 && item.NodeCount > 0).OrderBy(item => item.Code))
+                findings.Add(UsbProblemGuidance.Create(code));
+            findings.Add(new("usb-code-coverage", "Windows USB problem-code coverage",
+                snapshot.UsbNodesWithUnavailableProblemCode == 0 ? DiagnosticOutcome.Guidance : DiagnosticOutcome.Unknown,
+                $"Numeric problem codes captured for {codes.Sum(item => item.NodeCount).ToString(CultureInfo.InvariantCulture)} Apple USB node(s); {snapshot.UsbNodesWithUnavailableProblemCode?.ToString(CultureInfo.InvariantCulture) ?? "unknown"} unavailable. Codes describe Windows device state, not a confirmed iPhone hardware fault.",
+                "Compare with Device Manager if symptoms persist. No driver, device, service or phone setting was changed.",
+                UsbProblemGuidance.Reference));
+        }
         findings.Add(new("apple-devices", "Apple Devices for Windows",
             snapshot.AppleDevicesInstalled switch { true => DiagnosticOutcome.Passed, false => DiagnosticOutcome.Attention, _ => DiagnosticOutcome.Unknown },
             snapshot.AppleDevicesInstalled switch

@@ -61,6 +61,10 @@ Rechecked the actual phone path: one USB transport connection, standard SSH port
 
 Added a real Windows DNS-SD recovery integration test using isolated synthetic in-memory trust and a unique temporary advertisement. Verified missing-to-registered recovery, an independent Windows browser observation of the matching name/port, healthy no-op without restart, and another callback-confirmed recovery after fixture disposal. No owner trust/database or phone setting changed. The focused native test passed; remote iPhone discovery/authentication, fresh multicast visibility, native failure injection and physical lifecycle races remain open. See [precise scope](app-discovery-recovery.md). The full goal remains active; pending trust/install, playback and phone-setting answers were not inferred.
 
+## November 3 Windows USB fault classification
+
+Added typed native Device Manager problem-code capture, identifier-free aggregates, tailored guidance for five common codes, generic handling for other numeric codes, explicit unavailable-code coverage, and nonzero-code precedence over a clean Boolean flag. Integrated through existing Troubleshooter finding bindings and a new read-only `--connection-check` CLI option. The attached phone path returned four present Apple USB nodes with all numeric codes available and none nonzero. Sixteen added cases bring the suite to 371 passing tests. Physical fault states, fault-row UI rendering and repair effectiveness remain open. No driver/device/service/phone state changed and pending approvals remain unanswered. See [scope and verification](windows-usb-problem-codes.md).
+
 ## Primary research
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.

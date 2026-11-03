@@ -7,8 +7,10 @@ namespace PhoneLink.DeviceCommunication.Diagnostics;
 
 public static class WindowsConnectionDiagnosticProbe
 {
+    // DEVPKEY_Device_ProblemCode, Windows SDK 10.0.26100 devpkey.h; custom WinRT property syntax.
+    private const string ProblemCodeProperty = "{4340a6c5-93fa-4706-972c-7b648008a5a7} 3";
     private static readonly string[] Properties =
-        ["System.Devices.HardwareIds", "System.Devices.DeviceHasProblem", "System.Devices.Present"];
+        ["System.Devices.HardwareIds", "System.Devices.DeviceHasProblem", "System.Devices.Present", ProblemCodeProperty];
 
     public static async Task<ConnectionDiagnosticSnapshot> CaptureAsync(CancellationToken cancellationToken)
     {
@@ -17,12 +19,15 @@ public static class WindowsConnectionDiagnosticProbe
         int? usbCount = null, problemCount = null, unknownCount = null, endpointCount = null;
         bool? appleDevicesInstalled = null;
         string? version = null;
+        Dictionary<uint, int> problemCodes = [];
+        int? unavailableCodes = null;
         try
         {
             var devices = await DeviceInformation.FindAllAsync(
                 "System.Devices.Present:=System.StructuredQueryType.Boolean#True", Properties,
                 DeviceInformationKind.Device).AsTask(cancellationToken).ConfigureAwait(false);
             usbCount = problemCount = unknownCount = 0;
+            unavailableCodes = 0;
             foreach (var device in devices)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -30,6 +35,10 @@ public static class WindowsConnectionDiagnosticProbe
                     && hardwareIds is string[] strings ? strings : [];
                 if (!IsAppleUsbNode(device.Id, ids)) continue;
                 usbCount++;
+                var code = device.Properties.TryGetValue(ProblemCodeProperty, out var rawCode)
+                    ? ParseProblemCode(rawCode) : null;
+                if (code is { } numeric) problemCodes[numeric] = problemCodes.GetValueOrDefault(numeric) + 1;
+                else unavailableCodes++;
                 if (device.Properties.TryGetValue("System.Devices.DeviceHasProblem", out var value) && value is bool problem)
                 {
                     if (problem) problemCount++;
@@ -41,6 +50,8 @@ public static class WindowsConnectionDiagnosticProbe
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             usbCount = problemCount = unknownCount = null;
+            unavailableCodes = null;
+            problemCodes.Clear();
             unavailable.Add("usb-query-unavailable");
         }
         try
@@ -63,8 +74,22 @@ public static class WindowsConnectionDiagnosticProbe
         catch (Exception exception) when (exception is not OutOfMemoryException) { unavailable.Add("network-query-unavailable"); }
         cancellationToken.ThrowIfCancellationRequested();
         return new(DateTimeOffset.UtcNow, usbCount, problemCount, unknownCount,
-            appleDevicesInstalled, version, endpointCount, null, null, unavailable);
+            appleDevicesInstalled, version, endpointCount, null, null, unavailable)
+        {
+            UsbProblemCodes = usbCount is null ? null : problemCodes.OrderBy(item => item.Key)
+                .Select(item => new UsbDeviceProblemCount(item.Key, item.Value)).ToArray(),
+            UsbNodesWithUnavailableProblemCode = unavailableCodes,
+        };
     }
+
+    // SDK declares UInt32; accept nonnegative Int32 too, as documentation describes Int32.
+    // Do not coerce strings, booleans, negative values, or missing properties into healthy zero.
+    public static uint? ParseProblemCode(object? value) => value switch
+    {
+        uint code => code,
+        int code when code >= 0 => (uint)code,
+        _ => null,
+    };
 
     public static bool IsAppleUsbNode(string instanceId, IEnumerable<string> hardwareIds)
     {
