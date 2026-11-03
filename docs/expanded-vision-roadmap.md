@@ -4,7 +4,7 @@ Objective source: the October 19, 2026 next-generation iPhone integration direct
 
 ## Current evidence
 
-The repository contains 14 .NET solution projects, C# 14 / .NET 10, WinUI 3, Windows App SDK 2.3.1, encrypted SQLite, a Swift 6 / iOS 26 companion, tests, and development MSIX scripts. Existing trust and transport components should be extended rather than replaced. The August feasibility document is historical research and requires a fresh SDK/platform review before treating version-dependent claims as current.
+The repository contains 15 .NET solution projects including an explicit device-probe CLI, C# 14 / .NET 10, WinUI 3, Windows App SDK 2.3.1, encrypted SQLite, a Swift 6 / iOS 26 companion, tests, and development MSIX scripts. Existing trust and transport components should be extended rather than replaced. The August feasibility document is historical research and requires a fresh SDK/platform review before treating version-dependent claims as current.
 
 Source inspection confirms QR trust, identity proofs, pinned TLS, WSS sessions, contact sync, selected-photo import, ANCS session parsing, Bluetooth profile probes, confirmed dial requests, revocation, and tray operation. Native Xcode simulator compilation/tests now pass as recorded below. Interface presence and simulator success do not verify physical-iPhone behavior; hardware verification remains open.
 
@@ -98,3 +98,13 @@ Verification so far:
 - `dotnet list PhoneLink.slnx package --vulnerable --include-transitive`: no vulnerable packages reported for all 14 projects against the configured NuGet feeds on October 20. This is an advisory-feed check, not proof the dependency graph has no vulnerabilities.
 
 The existing development MSIX is stale. Physical-iPhone pairing/reconnect, permission downgrade, multiple-PC sync, real Bluetooth integration, Hello/OS session events, and packaged upgrade behavior remain manual gates. Generic file/video sharing and persistent resume are the next implementation milestone; the 25 MiB selected-photo limit has not yet been raised. The full expanded goal remains active.
+
+## Owned-device diagnostics and new active goal, November 2
+
+The owner authorized reverse engineering and undocumented interface research on their own iPhone, extending the earlier public-API-only research restriction. Supported integrations and experimental interfaces remain distinct, with no implied authority for unrelated devices, security bypasses, credential extraction, or destructive repair. The [toolbox map](iphone-toolbox.md) and [accessory/repair/SSH/offset-dumper checkpoint](accessory-repair-goal.md) preserve the full scope and outstanding requirements.
+
+Implemented and integrated the Windows Troubleshooter, safe minimal report, explicit experimental local Apple transport inventory, allowlisted single-USB-phone information reads, and an explicit SSH availability probe. After the owner changed cables, the phone became visible to Windows and Apple's local transport. Basic hardware/iOS/build queries succeeded on the real phone without pairing credential access; the tested battery-domain values were unavailable and are shown as unknown. Standard SSH port 22 was rejected by the transport; no login or persistent tunnel was attempted. See [experimental diagnostics evidence](experimental-usb-diagnostics.md) for protocol scope and exact non-destructive commands.
+
+Verification: Debug solution build passed with zero warnings/errors; all 130 .NET tests passed (3 domain, 21 application, 15 protocol, 7 security, 8 persistence, 76 communication). Runtime computer-use checks verified live scan completion, healthy Apple USB node observations, the experimental transport button, and phone-information display. The copied report and official-app launch controls were not activated during that UI check. The earlier external QR-link change passed native iOS CI in [run 39375891304](https://github.com/MercyProductions/Phone-Link/actions/runs/39375891304); that does not establish signed physical companion installation.
+
+Next: managed loopback forwarding and SSH endpoint/authentication proof, bounded image-offset inspection with build/UUID/ASLR distinctions, per-field diagnostic denial reasons and authorized service/session support, actual automatic app-owned repairs with before/after evidence, accessory operations, and original file/media/distribution work. Majority Watch/AirPods-style parity, automatic phone repair, authenticated SSH tunneling and an offset dumper are not complete. The full goal remains active.

@@ -1,0 +1,47 @@
+# Experimental USB diagnostics
+
+Owner-authorized research, November 2, 2026. This is independent implementation of observed Apple local/device protocol behavior, not an Apple public SDK or a promise of compatibility with every iOS version. No third-party binary or vendor DLL was modified or installed.
+
+## Implemented operations
+
+1. **Local inventory:** connect only to `127.0.0.1:27015`, send one bounded plist `ListDevices` request, and return USB/network/other connection counts. No port scanning, pairing record requests, device identifiers in results, or device commands. A four-second deadline and 1 MiB response bound apply.
+2. **Basic USB information:** obtain the live inventory, require exactly one USB-connected device, and use its ephemeral transport ID to open the fixed lockdownd information port through the local service. This is channel setup, not a pairing operation. Then issue only allowlisted `GetValue` requests:
+   - `DeviceClass`, `ProductType`, `ProductVersion`, `BuildVersion`, with no domain.
+   - `BatteryCurrentCapacity`, `BatteryIsCharging`, `ExternalConnected`, only in `com.apple.mobile.battery`.
+
+The information probe has a twelve-second overall deadline and a 64 KiB per-response bound. It does not issue a bulk GetValue query, read pairing credentials, start a trusted session, launch phone services, write values, reboot, update, restore, or attempt to bypass a locked/protected state. Unsupported/protected values remain unknown. It refuses ambiguous multi-USB-device selection rather than silently choosing a phone. Device unplug/replug during selection can invalidate the ephemeral ID and cause the read to fail; users should keep the selected device connected throughout the explicit check.
+
+The UI exposes both probes as separate **Experimental** buttons under Troubleshooter. Basic information is displayed with a read timestamp, cleared on navigation/rescan, and excluded from the minimal copied connection report. The report may include generic experimental inventory counts, not raw XML, phone names, UDIDs, serials, or pairing material.
+
+XML parsing ignores DTD declarations without resolving external resources, rejects duplicate dictionary keys, and validates framing/version/message/tag. Returned serials present in the local inventory are not exposed in result objects; raw payload byte buffers are cleared after parsing. This is not a claim that managed-memory dumps cannot contain transient strings.
+
+## Explicit command-line probes
+
+From the repository root, with an owned phone attached:
+
+```powershell
+dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --inventory
+dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --info
+dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --ssh-check
+```
+
+The tool accepts only those three operations. There is no arbitrary command, key/domain, host, target port, restore, or firmware argument. Default automated tests exercise parsers and the read-only local inventory; they do not automatically run basic phone-information or SSH reads on arbitrary connected hardware. The `--info` command and UI button explicitly request information reads. `--ssh-check` explicitly attempts only standard port 22 through the selected USB connection, sends an SSH 2.0 identification if it connects, reads a bounded identification, then closes; it does not authenticate, verify a host key, send commands, or start a persistent tunnel. A positive banner alone is not authenticated SSH access.
+
+## Physical evidence on November 2
+
+- Before the owner's cable swap: Windows enumerated no present Apple USB nodes and the responding local Apple transport reported `USB=0, network=0, other=0`.
+- After the owner changed from USB-C–USB-C to USB-A–USB-C: Windows reported Apple iPhone, Apple Mobile Device USB Composite Device, Apple Mobile Device USB Device, and Apple Mobile Device Ethernet with status OK. The local transport reported `USB=1, network=0, other=0`. These four Windows device nodes are not four phones. This establishes the new data path works; it does not isolate whether the prior cable, port, adapter, or another factor caused the earlier failure.
+- The responding loopback listener was owned by `AppleMobileDeviceProcess` under the current-user Apple Devices package installation.
+- `--info` actually read device class, hardware identifier, iOS version, and build from the attached phone without pairing credential access. The specific owner-device values are kept out of this public repository's evidence log. These are reported metadata, not cryptographically authenticated hardware identity or proof of USB Trust. Parser tests use schematic fixtures rather than publishing a device inventory.
+- All three tested battery observations were unavailable through this no-session query path. The result retains null/unknown; it does not fabricate battery percentage, capacity, health, charging wattage, temperature, or degradation estimates. Investigating a properly authorized diagnostics service is a separate next step.
+- No data-changing phone command was sent. No physical iOS companion installation or new QR approval was performed by these probes.
+- `--ssh-check` completed against the attached phone: the local transport rejected standard port 22 with response code 3; no SSH banner, login, or command was established. This is a result for that port and time, not proof no other endpoint could ever be configured.
+- The Windows Debug UI actually ran the complete connection scan and both experimental buttons: four healthy Apple USB nodes, one USB transport connection, basic phone fields displayed, battery values unknown. The computer-use skill verified the live controls and scrollable page. Clipboard and Apple Devices launch controls were not activated during this validation.
+
+## Research references and next proofs
+
+- [pymobiledevice3 local transport source](https://github.com/doronz88/pymobiledevice3/blob/71f2dab7f7f3d8f357912e07d4bdbbeb38756624/pymobiledevice3/usbmux.py): Windows endpoint, frame structure, inventory and channel setup. Protocol facts were used; vendor source was not copied into the application.
+- [libimobiledevice GetValue interface](https://docs.libimobiledevice.org/libimobiledevice/latest/lockdown_8h_a204c585addfca987e09f8fda24a04b28.html) and [implementation reference](https://github.com/libimobiledevice/libimobiledevice/blob/master/src/lockdown.c).
+- [tidevice's battery-domain examples](https://github.com/alibaba/tidevice/blob/main/README_EN.md): candidate read keys; availability is established only by actual device responses.
+
+Next: per-field denial/unsupported reasons, a verified device picker for multiple phones, transport-disconnect recovery tests, explicit supported trust/session adapters, authorized crash-report import/analysis, and deeper diagnostics-service research. Maintain separate risk classification for read observations, launching a service, changing settings, reboot/recovery, and destructive repair. Do not market API reachability or a plausible panic-string explanation as successful repair.

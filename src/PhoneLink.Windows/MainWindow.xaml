@@ -93,6 +93,11 @@
                         <FontIcon Glyph="&#xE968;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Troubleshooter" Tag="diagnostics">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE90F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
                 <NavigationViewItem Content="About" Tag="about">

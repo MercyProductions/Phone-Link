@@ -174,6 +174,9 @@ public sealed partial class MainWindow : Window
                 case "devices":
                     NavFrame.Navigate(typeof(ConnectedDevicesPage));
                     break;
+                case "diagnostics":
+                    NavFrame.Navigate(typeof(DiagnosticsPage));
+                    break;
                 case "about":
                     NavFrame.Navigate(typeof(AboutPage));
                     break;

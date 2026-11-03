@@ -1,6 +1,6 @@
 # Phone Link
 
-A real Windows + iPhone integration project built only on documented Apple, Microsoft, and open standards.
+A local-first Windows + iPhone integration project, with supported platform integrations and separately labeled experimental, owner-authorized device-protocol research.
 
 ## Current status
 
@@ -22,6 +22,8 @@ Implemented:
 - immediate trusted-device revocation and live-session termination;
 - close-to-tray operation with an explicit Exit command and opt-in Windows Hello protection at startup, after five minutes without interaction, on tray hiding, and on Windows session lock/suspend;
 - modern WinUI pages for Messages, Contacts, Photos, Calls, Notifications, Devices, Settings, and About;
+- a live iPhone Troubleshooter for Apple USB presence, Windows problem flags, Apple Devices installation, local pairing paths, and authenticated companion sessions, with a minimal shareable report;
+- explicit experimental USB transport and read-only iPhone-information probes, without an iOS companion prerequisite for those probes;
 - a reproducible signed development MSIX build.
 
 Important limits:
@@ -35,6 +37,8 @@ Important limits:
 - Windows Hello must already be available for the optional app lock; Phone Link does not create a fallback PIN or replace Windows sign-in security.
 
 See the detailed [feature feasibility matrix](docs/phase-1-feature-feasibility.md), [architecture](docs/phase-2-architecture.md), [protocol](docs/protocol-v1.md), [database schema](docs/database-schema.md), and [threat model](docs/security-threat-model.md).
+
+The [iPhone toolbox expansion map](docs/iphone-toolbox.md) covers diagnostics, backup/migration, user-shared crash reports, hardware checks, official recovery, repair assistance, and the broader Windows integration tracks. The Troubleshooter and explicit USB information checks are implemented and verified on the attached phone; automatic phone repair is not. The November 2 Debug build passed with all 130 .NET tests. See [experimental USB diagnostics](docs/experimental-usb-diagnostics.md) for the allowlisted CLI probes and evidence, and the [active accessory/repair/tunnel/dumper checkpoint](docs/accessory-repair-goal.md) for remaining work. The signed MSIX still needs rebuilding to include these changes.
 
 The [expanded-vision roadmap](docs/expanded-vision-roadmap.md) tracks the October requirements, current gaps, and verification evidence. The existing installer predates the current discovery changes. Direct executable launches now use `%LOCALAPPDATA%/MercyProductions/PhoneLink` for protected local data; installed packages retain their package-local storage. Scoped link-local IPv6 addresses are displayed as interface metadata but excluded from QR offers because Windows interface scope IDs cannot be reused on iPhone.
 
@@ -84,6 +88,6 @@ Open the project in Xcode, select a personal development team, and run on a phys
 ## Security rules
 
 - Never enter or transmit an Apple Account password.
-- Never use private Apple APIs, jailbreaks, credential extraction, or reverse-engineered Apple services.
+- Keep supported platform integrations distinct from experimental protocol research. The owner authorized reverse engineering of their own iPhone on November 2; that does not authorize targeting other people's devices, credential extraction, security bypasses, or unconfirmed destructive operations. Undocumented interfaces must be labeled and verified, not presented as Apple-supported APIs.
 - Treat every optional Bluetooth profile as unavailable until runtime discovery succeeds.
 - Keep private keys in iOS Keychain or Windows local-user DPAPI protection, never in configuration files or plaintext SQLite.

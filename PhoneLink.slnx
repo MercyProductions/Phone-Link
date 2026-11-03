@@ -17,4 +17,7 @@
     <Project Path="tests/PhoneLink.Protocol.Tests/PhoneLink.Protocol.Tests.csproj" />
     <Project Path="tests/PhoneLink.Security.Tests/PhoneLink.Security.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj" />
+  </Folder>
 </Solution>

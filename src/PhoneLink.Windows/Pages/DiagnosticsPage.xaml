@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page x:Class="PhoneLink.Windows.Pages.DiagnosticsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:diag="using:PhoneLink.Application.Features.Diagnostics"
+    Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid Padding="32" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Spacing="8">
+            <TextBlock Text="iPhone Troubleshooter" FontSize="32" FontWeight="SemiBold" />
+            <TextBlock Text="Find connection problems using live Windows evidence. Start with a scan; no drivers, permissions, phone settings, or data are changed."
+                TextWrapping="Wrap" MaxWidth="850" HorizontalAlignment="Left"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+        <StackPanel Grid.Row="1" Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button x:Name="ScanButton" Content="Run connection checks" Click="ScanButton_Click" Style="{StaticResource AccentButtonStyle}" />
+                <Button x:Name="CopyButton" Content="Copy private-data-free report" Click="CopyButton_Click" IsEnabled="False" />
+                <Button Content="Open Apple Devices" Click="AppleDevicesButton_Click" />
+                <ProgressRing x:Name="ScanProgress" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
+            </StackPanel>
+            <Button x:Name="ExperimentalButton" Content="Experimental: probe Apple USB transport" Click="ExperimentalButton_Click"
+                HorizontalAlignment="Left" ToolTipService.ToolTip="Read-only local Apple service query. No pairing records or phone commands are requested." />
+            <Button x:Name="PhoneInfoButton" Content="Experimental: read connected iPhone information" Click="PhoneInfoButton_Click"
+                HorizontalAlignment="Left" ToolTipService.ToolTip="Use with one owned iPhone connected by USB. Reads model, OS and available battery observations; no settings or firmware changes." />
+            <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="SnapshotText" Text="Checks run locally. No serial numbers, device names, or IP addresses are included in the report."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+        <InfoBar x:Name="StatusBar" Grid.Row="2" IsOpen="False" IsClosable="True" />
+        <ItemsControl Grid.Row="3" ItemsSource="{x:Bind Findings}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="diag:DiagnosticFinding">
+                    <Border Padding="18" Margin="0,0,0,12" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <TextBlock Text="{x:Bind OutcomeLabel}" FontWeight="Bold" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" FontSize="18" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <TextBlock Text="{x:Bind Evidence}" TextWrapping="Wrap" />
+                            <TextBlock Text="{x:Bind NextStep}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <HyperlinkButton Content="Official guidance" NavigateUri="{x:Bind SupportUri}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
+    </ScrollViewer>
+</Page>
