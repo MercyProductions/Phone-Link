@@ -37,6 +37,10 @@ The owner authorized reverse engineering and undocumented interface research on 
 
 Added a bounded local type-309 IPS analyzer and Troubleshooter import/copy controls. It identifies documented exception signatures and offers category-specific investigation guidance without claiming hardware damage or repairing the phone. Raw report names, identifiers, paths, timestamps and diagnostic strings are excluded from output; input is neither uploaded nor persisted. Thirty-seven new synthetic cases bring the solution total to 299 tests. The UI section renders and picker opens, but successful file selection/result/copy remains a manual gate because the helper does not expose PickerHost as a target. No real owner report was read. See [full implementation, limits and verification](crash-report-analysis.md). Panic/JetSam analysis, repeated-incident correlation, symbolication and justified repair remain open. The existing approved-for-review signed artifact is unchanged and predates this feature; no certificate was trusted or package installed.
 
+## November 3 phone-to-PC audio checkpoint
+
+Added a documented Windows A2DP sink path, separate from AMS and HFP, with explicit selection/confirmation, one-attempt enable/open, Stop, cancellation and stale-context guards, cleanup status and lifecycle hooks. Native UI discovery found one remote source; selection and Cancel verified without enabling playback. Eighteen session tests bring the solution to 317 passing tests. Actual native enable/open, sound, disconnect and privacy-event cleanup remain unverified pending owner playback approval. This is not cellular calling, microphone routing or majority accessory parity. See [audio receiver evidence and remaining gates](bluetooth-audio-receiver.md). The prior signed package is unchanged and does not include this addition; no trust/install decision was inferred.
+
 ## Primary research
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.

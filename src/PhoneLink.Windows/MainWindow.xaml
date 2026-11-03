@@ -96,6 +96,11 @@
                         <FontIcon Glyph="&#xE968;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Phone audio to PC" Tag="audio-receiver">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE767;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Troubleshooter" Tag="diagnostics">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE90F;" />

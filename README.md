@@ -4,7 +4,7 @@ A local-first Windows + iPhone integration project, with supported platform inte
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates the crash-analysis addition, and has not been trusted or installed. All 299 .NET tests and 10 packaging-artifact checks passed. On October 20, the companion compiled with all 8 tests passing in [native Xcode 26.3/iOS 26.2 simulator CI](https://github.com/MercyProductions/Phone-Link/actions/runs/39374852047). Physical-iPhone companion installation and signed-device verification remain open.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates crash analysis and the audio receiver, and has not been trusted or installed. All 317 .NET tests and 10 packaging-artifact checks passed. On October 20, the companion compiled with all 8 tests passing in [native Xcode 26.3/iOS 26.2 simulator CI](https://github.com/MercyProductions/Phone-Link/actions/runs/39374852047). Physical-iPhone companion installation and signed-device verification remain open.
 
 Implemented:
 
@@ -18,6 +18,7 @@ Implemented:
 - live Apple Notification Center Service capability detection and an in-memory ANCS GATT session when Windows exposes it;
 - phone-labeled ANCS action commands with confirmation, stale-revision checks, serialized writes and no automatic retry; physical operation remains unverified because current characteristic access is denied;
 - an iPhone media page with explicitly selected AMS sessions, advertised-command controls, timestamped metadata, confirmation and cancellation; current native setup also hits characteristic AccessDenied, so playback effects remain unverified;
+- a separate [phone-to-PC Bluetooth audio receiver](docs/bluetooth-audio-receiver.md) with explicit selection/confirmation, Stop and lifecycle cleanup; native source discovery and Cancel verified, actual media sound not yet tested;
 - native Windows app notifications for new, non-silent ANCS events, cleared when the session ends or the app locks;
 - live MAP/PBAP capability checks without assuming that Windows exposes those profiles;
 - user-confirmed click-to-call: Windows requests a number, then iPhone requires a tap before opening `tel:`;

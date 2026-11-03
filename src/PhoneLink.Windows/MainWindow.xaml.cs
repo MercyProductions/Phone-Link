@@ -36,6 +36,11 @@ public sealed partial class MainWindow : Window
 
     private LocalPairingServer? _pairingServer;
 
+    public void StopAudioForPrivacy()
+    {
+        if (NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
+    }
+
     public void ShowFromTray()
     {
         AppWindow.Show();
@@ -46,6 +51,7 @@ public sealed partial class MainWindow : Window
     {
         if (isLocked && NavFrame.Content is NotificationsPage notificationsPage) notificationsPage.CancelPendingActionsForPrivacy();
         if (isLocked && NavFrame.Content is MediaPage mediaPage) mediaPage.StopForPrivacy();
+        if (isLocked && NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
         LockOverlay.Visibility = isLocked ? Visibility.Visible : Visibility.Collapsed;
         NavView.IsEnabled = !isLocked;
     }
@@ -109,6 +115,7 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
+        if (NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
         AppWindow.Closing -= AppWindow_Closing;
         if (_pairingServer is null)
         {
@@ -128,6 +135,7 @@ public sealed partial class MainWindow : Window
         }
 
         args.Cancel = true;
+        if (NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
         App.LockForPrivacy();
         sender.Hide();
     }
@@ -175,6 +183,9 @@ public sealed partial class MainWindow : Window
                     break;
                 case "media":
                     NavFrame.Navigate(typeof(MediaPage));
+                    break;
+                case "audio-receiver":
+                    NavFrame.Navigate(typeof(AudioReceiverPage));
                     break;
                 case "devices":
                     NavFrame.Navigate(typeof(ConnectedDevicesPage));
