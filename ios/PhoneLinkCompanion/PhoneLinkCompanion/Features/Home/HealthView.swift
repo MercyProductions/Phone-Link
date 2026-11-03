@@ -140,6 +140,7 @@ struct HealthView: View {
                 Section("Interactive checks") {
                     NavigationLink("Own runtime image and ASLR") { RuntimeImageView() }
                     NavigationLink("Touch, display, sound and haptics") { GuidedChecksView() }
+                    NavigationLink("Motion sensor check") { MotionChecksView() }
                     Text("Run checks yourself on this iPhone. Observations stay local and do not certify hardware health.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }

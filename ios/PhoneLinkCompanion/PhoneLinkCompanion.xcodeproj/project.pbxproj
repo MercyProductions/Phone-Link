@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A00000000000000000000022 /* MotionChecksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000025 /* MotionChecksView.swift */; };
+		A00000000000000000000023 /* MotionDiagnosticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000026 /* MotionDiagnosticTests.swift */; };
 		A00000000000000000000021 /* RuntimeImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000024 /* RuntimeImageView.swift */; };
 		A00000000000000000000020 /* GuidedChecksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000023 /* GuidedChecksView.swift */; };
 		A0000000000000000000001F /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000022 /* HealthView.swift */; };
@@ -53,6 +55,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B00000000000000000000025 /* MotionChecksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionChecksView.swift; sourceTree = "<group>"; };
+		B00000000000000000000026 /* MotionDiagnosticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionDiagnosticTests.swift; sourceTree = "<group>"; };
 		B00000000000000000000024 /* RuntimeImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeImageView.swift; sourceTree = "<group>"; };
 		B00000000000000000000023 /* GuidedChecksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedChecksView.swift; sourceTree = "<group>"; };
 		B00000000000000000000022 /* HealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
@@ -157,6 +161,7 @@
 				B00000000000000000000022 /* HealthView.swift */,
 				B00000000000000000000023 /* GuidedChecksView.swift */,
 				B00000000000000000000024 /* RuntimeImageView.swift */,
+				B00000000000000000000025 /* MotionChecksView.swift */,
 				B00000000000000000000004 /* HomeView.swift */,
 			);
 			path = Home;
@@ -197,6 +202,7 @@
 				B0000000000000000000000D /* IdentityFingerprintTests.swift */,
 				B00000000000000000000015 /* PairingProtocolTests.swift */,
 				B0000000000000000000001B /* SessionTranscriptTests.swift */,
+				B00000000000000000000026 /* MotionDiagnosticTests.swift */,
 			);
 			path = PhoneLinkCompanionTests;
 			sourceTree = "<group>";
@@ -380,6 +386,7 @@
 				A0000000000000000000001F /* HealthView.swift in Sources */,
 				A00000000000000000000020 /* GuidedChecksView.swift in Sources */,
 				A00000000000000000000021 /* RuntimeImageView.swift in Sources */,
+				A00000000000000000000022 /* MotionChecksView.swift in Sources */,
 				A00000000000000000000001 /* PhoneLinkCompanionApp.swift in Sources */,
 				A00000000000000000000002 /* CompanionSession.swift in Sources */,
 				A00000000000000000000003 /* RootView.swift in Sources */,
@@ -415,6 +422,7 @@
 				A0000000000000000000000B /* IdentityFingerprintTests.swift in Sources */,
 				A00000000000000000000012 /* PairingProtocolTests.swift in Sources */,
 				A00000000000000000000018 /* SessionTranscriptTests.swift in Sources */,
+				A00000000000000000000023 /* MotionDiagnosticTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -43,6 +43,8 @@
     <string>Phone Link shares the contacts you authorize with your paired Windows PC.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Phone Link connects directly to your paired Windows PC on the local network.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>Phone Link reads motion sensors only when you start a five-second foreground diagnostic. Summaries stay on this iPhone unless you choose to share them.</string>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
     <key>UILaunchScreen</key>

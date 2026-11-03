@@ -163,6 +163,16 @@ Verification: solution build zero warnings/errors; final `dotnet test PhoneLink.
 
 No phone probe, installer, service installation, SSH authentication, phone-setting change or security prompt was performed. The phone remains reported disconnected. Full accessory parity, physical signed pairing, repair effectiveness, actual Bluetooth calling/audio and verified runtime device/kernel offsets are still incomplete; the goal remains active.
 
+## November 3 foreground motion diagnostics
+
+Previous goal turn was progress: `b81240b` bound SSH identification to the actual pinned forwarder and passed 482 .NET tests. This continuation adds a real public-API sensor workflow to Health checks in the existing Swift companion, without replacing pairing/security or adding fake Windows measurements.
+
+`MotionChecksView` is user-started only, foreground-only and approximately five seconds long. Core Motion accelerometer, gyroscope and magnetometer availability is checked before starting each service, then getters are polled around 20 Hz. Only fresh finite samples contribute to bounded (maximum 120) per-axis min/max/count summaries. A prior run's cached sensor timestamp is excluded. No raw sample array, sensor uptime, location, heading, activity history, identifiers or exception strings are retained/exported. Units and API sources are displayed. Reported means delivery observed, Unavailable means the API reported unavailable, and Unknown means no valid fresh sample; none certifies hardware or proves a defect.
+
+Explicit Stop/clear, page disappearance and non-active scene state cancel the task, stop all three sensor services and clear summaries. Optional user-controlled ShareLink exports reviewed schema-1 JSON; no new Windows wire message or automatic upload was added. Shared copies remain with the chosen destination. `NSMotionUsageDescription` explains the foreground diagnostic; any system access decision remains with the owner. The unsigned device-package validator now requires this nonempty reason and has 14 passing local cases. Apple references: [Core Motion](https://developer.apple.com/documentation/coremotion/), [CMMotionManager](https://developer.apple.com/documentation/coremotion/cmmotionmanager), [motion purpose description](https://developer.apple.com/documentation/bundleresources/information-property-list/nsmotionusagedescription).
+
+Six new XCTest cases cover ranges, duplicate/out-of-order/non-finite rejection, prior-run cache exclusion, the bound, evidence classification and summary-only JSON. Xcode app/test source entries are explicit. Native compilation, simulator tests and iPhoneOS archive verification are pending macOS CI at this checkpoint; local Windows cannot establish Swift correctness or physical sensor delivery. No phone was connected, probed, installed, prompted or changed. Full goal remains active; signed physical pairing, sensor/permission/lifecycle behavior on the owned iPhone, accessory parity, effective repair and SSH login remain unverified.
+
 ## Primary research references
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.

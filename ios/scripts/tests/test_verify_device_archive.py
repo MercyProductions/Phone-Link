@@ -25,6 +25,7 @@ class DeviceArchiveTests(unittest.TestCase):
                      "CFBundlePackageType": "APPL", "CFBundleSupportedPlatforms": ["iPhoneOS"], "DTPlatformName": "iphoneos",
                      "MinimumOSVersion": "26.0", "CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "1",
                      "NSCameraUsageDescription": "Camera reason", "NSContactsUsageDescription": "Contacts reason",
+                     "NSMotionUsageDescription": "Explicit foreground sensor diagnostic reason",
                      "NSLocalNetworkUsageDescription": "Network reason", "NSBonjourServices": ["_phonelink._tcp"],
                      "CFBundleURLTypes": [{"CFBundleURLSchemes": ["phonelink"]}]}
         self.write_info()
@@ -91,6 +92,13 @@ class DeviceArchiveTests(unittest.TestCase):
 
     def test_missing_permission_reason_is_refused(self):
         del self.info["NSCameraUsageDescription"]
+        self.write_info()
+        self.pack()
+        with self.assertRaisesRegex(ValueError, "bundle metadata"):
+            self.check()
+
+    def test_missing_motion_reason_is_refused(self):
+        del self.info["NSMotionUsageDescription"]
         self.write_info()
         self.pack()
         with self.assertRaisesRegex(ValueError, "bundle metadata"):

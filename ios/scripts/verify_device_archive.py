@@ -73,7 +73,7 @@ def verify(archive, ipa, commit):
             "Expected an iPhoneOS bundle, not a simulator build")
     require(info.get("MinimumOSVersion") == "26.0", "Unexpected deployment baseline")
     for key in ("CFBundleShortVersionString", "CFBundleVersion", "NSCameraUsageDescription",
-                "NSContactsUsageDescription", "NSLocalNetworkUsageDescription"):
+                "NSContactsUsageDescription", "NSLocalNetworkUsageDescription", "NSMotionUsageDescription"):
         value = info.get(key)
         require(isinstance(value, str) and value.strip() and "$(" not in value, "Missing/unexpanded bundle metadata")
     schemes = [scheme for item in info.get("CFBundleURLTypes", []) for scheme in item.get("CFBundleURLSchemes", [])]
