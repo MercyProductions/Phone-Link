@@ -18,4 +18,6 @@ artifacts/
 ios/DerivedData/
 ios/**/xcuserdata/
 *.xcuserstate
+__pycache__/
+*.pyc
 

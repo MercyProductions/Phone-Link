@@ -16,6 +16,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  device_archive:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test device artifact validation
+        shell: bash
+        run: python3 -m unittest discover -s ios/scripts/tests -v
+      - name: Archive for physical iPhone without signing or provisioning
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -project ios/PhoneLinkCompanion/PhoneLinkCompanion.xcodeproj \
+            -scheme PhoneLinkCompanion -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath artifacts/PhoneLinkCompanion.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO archive
+      - name: Package and verify unsigned device artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=artifacts/PhoneLinkCompanion.xcarchive
+          app="$archive/Products/Applications/PhoneLinkCompanion.app"
+          test "$(xcrun lipo -archs "$app/PhoneLinkCompanion")" = arm64
+          xcrun vtool -show-build "$app/PhoneLinkCompanion"
+          xcrun dwarfdump --uuid "$app/PhoneLinkCompanion"
+          test ! -e "$app/embedded.mobileprovision"
+          stage="$(mktemp -d "$RUNNER_TEMP/phonelink-device.XXXXXX")"
+          mkdir -p "$stage/Payload" artifacts/unsigned-device
+          ditto "$app" "$stage/Payload/PhoneLinkCompanion.app"
+          ditto -c -k --norsrc --keepParent "$stage/Payload" artifacts/unsigned-device/PhoneLinkCompanion-unsigned.ipa
+          python3 ios/scripts/verify_device_archive.py --archive "$archive" \
+            --ipa artifacts/unsigned-device/PhoneLinkCompanion-unsigned.ipa \
+            --commit "$GITHUB_SHA" --report artifacts/unsigned-device/device-build.json
+      - name: Preserve unsigned device build for owner-controlled signing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-unsigned-device
+          path: artifacts/unsigned-device/
+          if-no-files-found: error
+          retention-days: 7
   simulator:
     runs-on: macos-15
     timeout-minutes: 25

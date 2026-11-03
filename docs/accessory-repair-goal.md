@@ -113,6 +113,12 @@ Added a separate Calls-page setup flow with bounded read-only endpoint discovery
 
 Full build zero warnings/errors and all 431 tests passed (24 new controller cases plus one native discovery case). Actual WinUI discovered one endpoint, selected it, showed the persistent-registration review and Cancel completed without a native setup/access request. Native Register/Connect/Unregister, OS permission, packaged eligibility, actual call/audio/microphone and lifecycle races remain open; do not equate these implemented controls or synthetic tests with working calling. [Precise evidence, API references and gates](windows-call-transport.md). Pending certificate/playback/Mac-install answers were not inferred. The full goal remains active; next native control testing needs an owner-approved persistent registration/access experiment and owner handling of any permission prompt.
 
+## November 3 physical-target build work in progress
+
+Added a separate Xcode Release/iPhoneOS archive job, unsigned IPA staging and a bounded archive/IPA validator. It checks real device platform rather than assuming ARM64 means iPhone, expected metadata/permissions/pairing handlers, no embedded provisioning/test bundle, and every packaged file against archive hashes. Thirteen synthetic validator cases pass locally. No Apple credential, signing key/profile, owner device identifier, installation or phone/security-setting change is used. [Build scope and owner-controlled signing gates](ios-device-build.md). Native device archive execution is not yet verified; follow the exact workflow run after push and update this checkpoint before claiming success.
+
+The registration-only Windows call-transport test question remains unanswered; automatic continuation is not approval. Existing Windows package trust/install, audio playback and Mac/Xcode availability questions are also unanswered. The full goal remains active and unproven; build artifacts are not substitutes for signed physical pairing, actual accessory behavior, repair effectiveness or SSH authentication.
+
 ## Primary research
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.

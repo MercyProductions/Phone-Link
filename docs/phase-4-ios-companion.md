@@ -71,6 +71,8 @@ xcodebuild \
 
 To run on a personal iPhone, open the project in Xcode, select the PhoneLinkCompanion target, choose the owner's Apple development team, and replace `com.gabri.PhoneLinkCompanion` if that bundle identifier is unavailable. Camera, local-network, Keychain persistence, and future background behavior must also be verified on a physical iPhone.
 
+CI now also has a separate unsigned Release/device archive and bounded IPA consistency check. See [physical-device build artifacts and signing gates](ios-device-build.md). This prepares a device-target artifact, not signed installation or permission approval.
+
 ## Verification boundary
 
 This Windows workstation has no Swift, Xcode, or iOS SDK toolchain, so local structural checks alone cannot establish compilation. Native macOS CI was added subsequently: [run 39374852047](https://github.com/MercyProductions/Phone-Link/actions/runs/39374852047) compiled the application and test targets using Xcode 26.3 / iOS 26.2 SDK and passed all 8 tests on an iPhone 17 Pro simulator on October 20. No signing secrets were used. Signed physical-iPhone installation, camera pairing, local-network trust/transfer behavior, Contacts permission downgrade, background transitions, and Bluetooth/call behavior still require hardware tests; a simulator build does not satisfy those gates.
