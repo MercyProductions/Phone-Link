@@ -16,9 +16,9 @@ This is live metadata for the companion's own code image, not an arbitrary proce
 
 ## Verification
 
-Two native test cases exercise the actual loaded companion marker image and synthetic malformed headers/negative slides. They check marker mapping consistency, UUID/CPU mismatch refusal, exact JSON field allowlist, text bounds, command size/count consistency, missing UUID and address overflow. Native CI verification is recorded after the run completes. No owner phone data is included in CI.
+Two native test cases target the actual loaded companion marker image and synthetic malformed headers/negative slides. They check marker mapping consistency, UUID/CPU mismatch refusal, exact JSON field allowlist, text bounds, command size/count consistency, missing UUID and address overflow. [Run 41607854988](https://github.com/MercyProductions/Phone-Link/actions/runs/41607854988) ended cancelled at the 25-minute job limit. Logs show app/test bundles compiled and validated, then no test results before cancellation; this does not prove the probe passed or establish why test execution stalled. The workflow now has a five-minute simulator boot preflight and a twelve-minute single-simulator test step. [Follow-up 41611855305](https://github.com/MercyProductions/Phone-Link/actions/runs/41611855305), source `46173a5`, was last observed queued. Native test success remains unproven. No owner phone data is included in CI.
 
-Rendered UI, physical iPhone capture, pointer-authentication configurations, share-sheet/lifecycle behavior, cross-process access, actual companion-to-Windows snapshot roundtrip and Windows UI integration remain unverified. The code intentionally reports unavailable rather than stripping or guessing pointer-authentication bits.
+Rendered iPhone UI, physical capture, pointer-authentication configurations, share-sheet/lifecycle behavior, cross-process access and actual companion-to-Windows snapshot roundtrip remain unverified. The code intentionally reports unavailable rather than stripping or guessing pointer-authentication bits.
 
 ## Windows CLI snapshot import
 
@@ -31,6 +31,12 @@ The optional UTF-8 JSON is limited to 8 KiB and the exact twelve-field schema. D
 Output contains the unchanged `StaticInspection` (`RuntimeAddressesAvailable=false`) plus `RuntimeTextMapping`. Every mapped value is labeled `SnapshotDerivedAddress`; `SnapshotOriginAuthenticated` and `LiveProcessVerified` are always false. This offline analysis does not expire historical captures or claim their addresses are currently live. The file UUID/layout comparison is not a content signature or proof that the JSON came from the companion. No input file is executed, modified or uploaded, and no process is read or attached.
 
 Verification: 19 new .NET cases passed; full solution 396 passed; full Debug build zero warnings/errors. Actual CLI parsing of the project-owned native ARM64 fixture with `tests/Fixtures/runtime/synthetic-native-arm64.json` mapped its three entries to synthetic address `0x7000002e8`, retained static runtime availability false, and emitted both verification flags false. That JSON is intentionally synthetic, not captured from a phone or a live process, and does not prove Swift/Windows interoperability. Native companion verification remains the separately tracked pending run above.
+
+## Windows app import
+
+After choosing an owned image in **USB & binary tools**, select **Import reviewed runtime JSON**. The same mapper applies only to the selected architecture/image. The page displays at most 500 rows, the reported capture time, matched build, truncation status and explicit unverified-origin/live warnings. Import is bounded to 8 KiB with a twenty-second I/O deadline after the picker. A generation guard suppresses results invalidated by selection, navigation or privacy lock. Lock clears the displayed mapping and unlock rearms the button when otherwise eligible. No automatic import, live device read, upload, or runtime export was added. Existing Save JSON report serializes only the static inspection, not these rows.
+
+Using the computer-use skill, the actual WinUI build selected the native ARM64 project fixture and the synthetic runtime JSON, rendered all three expected `0x7000002e8` rows and both false verification flags, then showed no runtime snapshot after leaving and returning. Full build zero warnings/errors and all 396 tests passed. Physical phone data was not imported. Lock/unlock, in-flight cancellation/selection races, mismatch/error UI, and static-save exclusion after an import were not independently exercised through UI; their source guards do not replace those runtime gates.
 
 ## Primary references
 
