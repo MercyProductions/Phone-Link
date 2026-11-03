@@ -130,6 +130,15 @@ final class DeviceSessionClient {
         return response.payload.highestContiguousSequence
     }
 
+    func sendHealthSnapshot(_ snapshot: CompanionHealthSnapshot) async throws {
+        guard connection?.capabilities.contains("diagnostics.health.v1") == true else {
+            throw DeviceSessionError.invalidAcknowledgement
+        }
+        let receipt: ProtocolEnvelope<HealthReceipt> = try await sendAndAwaitResponse(
+            kind: "diagnostics.health.snapshot", payload: snapshot, expectedKind: "diagnostics.health.receipt")
+        guard receipt.payload.accepted else { throw DeviceSessionError.invalidAcknowledgement }
+    }
+
     func reconcileContacts(_ identifiers: [String]) async throws {
         let _: ProtocolEnvelope<EmptyPayload> = try await sendAndAwaitResponse(
             kind: "contacts.reconcile",
@@ -550,6 +559,8 @@ final class DeviceSessionClient {
     }
 
 }
+
+private struct HealthReceipt: Codable { let accepted: Bool }
 
 private final class SessionPinnedTLSDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
     private let expectedSPKIHash: Data

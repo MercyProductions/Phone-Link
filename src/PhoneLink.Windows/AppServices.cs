@@ -32,6 +32,7 @@ public sealed class AppServices : IAsyncDisposable
     private readonly SemaphoreSlim _ancsLock = new(1, 1);
     private readonly object _discoveryTaskGate = new();
     private readonly ConcurrentDictionary<Guid, PendingCommand> _pendingCommands = new();
+    private readonly CompanionHealthInbox _companionHealth = new();
     private SqliteDatabase? _database;
     private WindowsCredentialSecretStore? _secretStore;
     private LocalPairingServer? _pairingServer;
@@ -58,6 +59,10 @@ public sealed class AppServices : IAsyncDisposable
     }
 
     public static AppServices Current => LazyCurrent.Value;
+
+    public void SetCompanionHealthPrivacyLocked(bool locked) => _companionHealth.SetPrivacyLocked(locked);
+    public ReceivedCompanionHealth? GetCompanionHealth(DeviceId deviceId, Guid activeSessionId) =>
+        _companionHealth.Get(deviceId.Value, activeSessionId, DateTimeOffset.UtcNow);
 
     public DiscoveryRecoveryResult? LastDiscoveryRecovery => Volatile.Read(ref _lastDiscoveryRecovery);
 
@@ -350,6 +355,7 @@ public sealed class AppServices : IAsyncDisposable
                 new ObjectDisposedException(nameof(AppServices)));
         }
         _pendingCommands.Clear();
+        _companionHealth.SetPrivacyLocked(true);
         await StopAncsSessionAsync().ConfigureAwait(false);
         await _discoveryLock.WaitAsync().ConfigureAwait(false);
         try
@@ -582,6 +588,7 @@ public sealed class AppServices : IAsyncDisposable
 
     private async void PairingServer_SessionChanged(object? sender, DeviceSessionChangedEventArgs args)
     {
+        _companionHealth.Remove(args.DeviceId.Value);
         if (sender is not LocalPairingServer server || _attachmentManager is not { } manager) return;
         try
         {
@@ -621,6 +628,16 @@ public sealed class AppServices : IAsyncDisposable
 
                 if (TryCompleteCommand(received))
                 {
+                    continue;
+                }
+
+                if (received.Envelope.Kind == "diagnostics.health.snapshot")
+                {
+                    var accepted = false;
+                    if (!App.IsLocked && received.Envelope.RequiresAck && received.Envelope.CorrelationId is null)
+                        accepted = _companionHealth.TryStoreJson(received.DeviceId.Value, received.SessionId,
+                            received.Envelope.Payload, DateTimeOffset.UtcNow);
+                    await SendResponseAsync(server, received, "diagnostics.health.receipt", new { accepted }, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 

@@ -3,6 +3,34 @@ import Testing
 @testable import PhoneLinkCompanion
 
 struct SessionTranscriptTests {
+    @Test func healthChargeValidationDoesNotTurnUnknownIntoZero() {
+        for value in [Float(-1), Float(1.1), Float.nan, Float.infinity] {
+            #expect(CompanionHealthSnapshot.percentage(value) == nil)
+        }
+        #expect(CompanionHealthSnapshot.percentage(0) == 0)
+        #expect(CompanionHealthSnapshot.percentage(1) == 100)
+        #expect(CompanionHealthSnapshot.percentage(0.42) == 42)
+    }
+
+    @Test func healthWireFieldsExcludeStorageAndIdentifiersAndEncodeNull() throws {
+        let value = CompanionHealthSnapshot(schemaVersion: 1, capturedAt: "2026-11-03T10:00:00.000Z",
+            batteryPercent: nil, batteryState: "unknown", thermalState: "nominal", lowPowerMode: false,
+            contactsPermission: "limited", photosPermission: "limited", cameraPermission: "not-determined",
+            notificationPermission: "provisional")
+        let data = try JSONEncoder().encode(value)
+        let fields = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(Set(fields.keys) == Set(["schemaVersion", "capturedAt", "batteryPercent", "batteryState",
+            "thermalState", "lowPowerMode", "contactsPermission", "photosPermission", "cameraPermission", "notificationPermission"]))
+        #expect(fields["batteryPercent"] is NSNull)
+        #expect(try JSONDecoder().decode(CompanionHealthSnapshot.self, from: data) == value)
+    }
+
+    @MainActor @Test func healthProbeReadsWithoutRequestingPermissions() async {
+        let value = await CompanionHealthProbe.capture()
+        #expect(value.schemaVersion == 1)
+        #expect(value.batteryPercent == nil || (0...100).contains(value.batteryPercent!))
+        #expect(["unknown", "nominal", "fair", "serious", "critical"].contains(value.thermalState))
+    }
     @Test func contactOutboxesAreIsolatedByPeer() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -30,6 +30,7 @@ public sealed partial class DiagnosticsPage : Page
 
     private void Page_Unloaded(object sender, RoutedEventArgs args)
     {
+        ClearCompanionHealthForPrivacy();
         _loaded = false;
         _scanCancellation?.Cancel();
         _crashCancellation?.Cancel();
@@ -41,6 +42,8 @@ public sealed partial class DiagnosticsPage : Page
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs args) => await ScanAsync();
+
+    public void ClearCompanionHealthForPrivacy() => CompanionHealthText.Text = "No companion health snapshot displayed.";
 
     private async void CrashImportButton_Click(object sender, RoutedEventArgs args)
     {
@@ -108,6 +111,7 @@ public sealed partial class DiagnosticsPage : Page
         ScanProgress.IsActive = true;
         StatusBar.IsOpen = false;
         _report = null;
+        ClearCompanionHealthForPrivacy();
         Findings.Clear();
         try
         {
@@ -125,6 +129,16 @@ public sealed partial class DiagnosticsPage : Page
                     TrustedCompanions = trusted.Length,
                     ConnectedCompanions = trusted.Count(device => server.IsConnected(device.Id)),
                 };
+                if (_loaded && !App.IsLocked && !cancellation.IsCancellationRequested)
+                {
+                    var healthSummaries = trusted.Select(device => server.TryGetSessionId(device.Id, out var sessionId)
+                        ? (Device: device.Id, Report: AppServices.Current.GetCompanionHealth(device.Id, sessionId))
+                        : (Device: device.Id, Report: (ReceivedCompanionHealth?)null))
+                        .Where(item => item.Report is not null)
+                        .Select(item => $"Companion identity {item.Device.Value.ToString("D")[..8]} (short label):\n{item.Report!.ToDisplayText()}");
+                    var text = string.Join("\n\n", healthSummaries);
+                    CompanionHealthText.Text = text.Length > 0 ? text : "No accepted health snapshot from an active trusted session in the last five minutes. Send one explicitly from the iPhone companion, then run checks again.";
+                }
             }
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
             catch (Exception exception) when (exception is not OutOfMemoryException)

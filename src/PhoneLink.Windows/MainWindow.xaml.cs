@@ -49,6 +49,8 @@ public sealed partial class MainWindow : Window
 
     public void SetLocked(bool isLocked)
     {
+        AppServices.Current.SetCompanionHealthPrivacyLocked(isLocked);
+        if (isLocked && NavFrame.Content is DiagnosticsPage diagnosticsPage) diagnosticsPage.ClearCompanionHealthForPrivacy();
         if (isLocked && NavFrame.Content is NotificationsPage notificationsPage) notificationsPage.CancelPendingActionsForPrivacy();
         if (isLocked && NavFrame.Content is MediaPage mediaPage) mediaPage.StopForPrivacy();
         if (isLocked && NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();

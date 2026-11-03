@@ -44,6 +44,10 @@
             <TextBlock Text="Background maintenance checks for missing app discovery every 30 seconds while eligible. After three failed recovery attempts, automatic retries pause until a network-address change, successful manual check, or app restart. Healthy registrations and sessions are not restarted. Local registration recovery does not prove an iPhone connection."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="Companion health snapshots" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="On iPhone, open Health checks, capture and review a snapshot, then explicitly send it to this PC. Run connection checks here to read the latest receipt. These values are separate from USB probes and are not in the copied connection report."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="CompanionHealthText" Text="No snapshot read in this scan." TextWrapping="Wrap" />
             <TextBlock x:Name="SnapshotText" Text="Checks run locally. No serial numbers, device names, or IP addresses are included in the report."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>

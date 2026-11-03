@@ -29,6 +29,8 @@ public static class ProtocolConstants
             "contacts.reconciled",
             "command.request",
             "command.result",
+            "diagnostics.health.snapshot",
+            "diagnostics.health.receipt",
             "attachment.offer",
             "attachment.accept",
             "attachment.complete",

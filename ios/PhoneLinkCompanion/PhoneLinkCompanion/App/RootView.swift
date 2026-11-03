@@ -20,6 +20,8 @@ struct RootView: View {
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
+            HealthView()
+                .tabItem { Label("Health checks", systemImage: "stethoscope") }
         }
         .tint(.indigo)
         .onOpenURL { url in

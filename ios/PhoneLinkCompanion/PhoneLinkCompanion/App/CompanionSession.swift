@@ -323,6 +323,16 @@ final class CompanionSession: ObservableObject {
         )
     }
 
+    func sendHealthSnapshot(_ snapshot: CompanionHealthSnapshot, expected: ConnectedWindowsSession) async throws {
+        guard isForeground, connectedSession == expected, deviceSessionClient.connection == expected,
+              let captured = parseTimestamp(snapshot.capturedAt),
+              Date().timeIntervalSince(captured) >= 0, Date().timeIntervalSince(captured) <= 120 else {
+            throw DeviceSessionError.notConnected
+        }
+        try await deviceSessionClient.sendHealthSnapshot(snapshot)
+        guard isForeground, connectedSession == expected else { throw DeviceSessionError.notConnected }
+    }
+
     private func handleCommandRequest(
         _ request: ProtocolEnvelope<CommandRequestPayload>
     ) {

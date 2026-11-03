@@ -333,6 +333,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                             "contacts.sync.v2",
                             "photos.import",
                             "command.call.start.confirmed",
+                            "diagnostics.health.v1",
                         ],
                         MaximumBatchEvents = 200,
                         MaximumAttachmentBytes = 25 * 1024 * 1024,
