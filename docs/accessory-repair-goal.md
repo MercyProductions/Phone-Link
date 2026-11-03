@@ -93,6 +93,14 @@ Run [41611855305](https://github.com/MercyProductions/Phone-Link/actions/runs/41
 
 Packaging fixture checks were rerun: 10 passed, no trust/install. The repository-knowledge skill produced concise root AGENTS.md with verified source paths, commands, runtime-lock pitfalls and evidence boundaries, separate from this temporary checkpoint. The owner was asked whether a Mac with Xcode is available to get the companion signed/installed; answer remains pending. The full goal remains active and incomplete; native validation is a milestone, not majority accessory parity, automatic phone repair, authenticated SSH or arbitrary runtime dumping.
 
+## November 3 real simulator-to-Windows runtime roundtrip
+
+Native run [41615285145](https://github.com/MercyProductions/Phone-Link/actions/runs/41615285145), source `2c2ab35`, passed all 18 tests and exported only the simulator's own image and capture. The first export (41613795674) was correctly rejected on Windows because a test-module marker thunk selected a different binary. Both lookups now share an app-side anchor and the exporter validates UUID/CPU/text layout before writing. Both artifacts remain local; the rejected one is not positive evidence. No CI/watch job is pending for these runs.
+
+The actual Windows CLI and WinUI now match the corrected native snapshot to its 4,321,808-byte ARM64 binary and both marker records. A new exact case-sensitive symbol filter runs before the bounded mapping preview, fixing omission of late symbols from a 19,589-entry image without increasing limits. Editing the UI filter was observed clearing stale rows. The reusable `tools/Test-CompanionRuntimeFixture.ps1` verifies marker address/offset equality, unchanged input hashes and false origin/live flags. Full build zero warnings/errors; all 399 .NET tests passed. See [commands, hash and remaining gates](companion-runtime-image.md).
+
+This supersedes the earlier open simulator-roundtrip notes, not the physical-device gates. Signed companion installation, phone pairing/permissions, physical outputs, actual repairs, accessory parity, SSH authentication and other-process/kernel access remain open. Existing package/trust/audio approval questions were not inferred. The full goal remains active; the companion signing/install route still needs the owner's Mac/Xcode availability answer.
+
 ## Primary research
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.

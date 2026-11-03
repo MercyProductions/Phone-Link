@@ -65,6 +65,8 @@
                     <TextBlock Text="Import only a snapshot you intend to inspect. It contains sensitive process addresses. UUID/layout matching is not authentication or proof that addresses are still live. Switching images, leaving this page or locking clears the displayed mapping. Static JSON export excludes it."
                         TextWrapping="Wrap" />
                     <Button x:Name="RuntimeImportButton" Content="Import reviewed runtime JSON" Click="RuntimeImportButton_Click" IsEnabled="False" />
+                    <TextBox x:Name="RuntimeSymbolFilter" Header="Optional exact symbol name (case-sensitive)" PlaceholderText="Blank = bounded preview; example: _phonelink_runtime_probe_marker" MaxLength="4096" TextChanged="RuntimeSymbolFilter_TextChanged" />
+                    <TextBlock Text="Set the filter before importing. Changing it clears the old mapping; import the reviewed JSON again to apply it." TextWrapping="Wrap" />
                     <TextBlock x:Name="RuntimeSummary" Text="No runtime snapshot displayed. Static JSON export never includes imported runtime addresses." TextWrapping="Wrap" />
                     <ListView Height="220" ItemsSource="{x:Bind RuntimeRows}" SelectionMode="None">
                         <ListView.ItemTemplate>

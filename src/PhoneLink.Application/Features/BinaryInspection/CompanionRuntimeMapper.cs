@@ -6,7 +6,10 @@ namespace PhoneLink.Application.Features.BinaryInspection;
 public sealed record SnapshotMappedOffset(MachOOffsetEntry StaticEntry, string SnapshotDerivedAddress);
 public sealed record CompanionRuntimeMapping(DateTimeOffset ReportedCaptureTime, string ImageUuid,
     string Architecture, bool SnapshotOriginAuthenticated, bool LiveProcessVerified, bool EntriesTruncated,
-    IReadOnlyList<SnapshotMappedOffset> TextEntries, string Warning);
+    IReadOnlyList<SnapshotMappedOffset> TextEntries, string Warning)
+{
+    public string? ExactSymbolName { get; init; }
+}
 
 public static class CompanionRuntimeMapper
 {
@@ -17,9 +20,11 @@ public static class CompanionRuntimeMapper
         "loadedHeaderAddress", "textVirtualSize", "slide", "markerRuntimeAddress", "markerImageOffset",
     };
 
-    public static CompanionRuntimeMapping Map(MachOInspection inspection, ReadOnlyMemory<byte> json)
+    public static CompanionRuntimeMapping Map(MachOInspection inspection, ReadOnlyMemory<byte> json, string? exactSymbolName = null)
     {
         ArgumentNullException.ThrowIfNull(inspection);
+        if (exactSymbolName is not null && (exactSymbolName.Length is 0 or > 4096 || exactSymbolName.Any(char.IsControl)))
+            throw new InvalidDataException("Choose an exact symbol name up to 4,096 characters without control characters.");
         if (json.Length > MaximumSnapshotBytes) throw new InvalidDataException("Runtime snapshot exceeds 8 KiB.");
         try
         {
@@ -66,6 +71,7 @@ public static class CompanionRuntimeMapper
             var truncated = image.EntriesTruncated;
             foreach (var entry in image.Entries)
             {
+                if (exactSymbolName is not null && !string.Equals(entry.Name, exactSymbolName, StringComparison.Ordinal)) continue;
                 if (entry.VirtualAddress is null) continue;
                 var address = Hex(entry.VirtualAddress);
                 if (address < preferred || address - preferred >= size) continue;
@@ -73,7 +79,8 @@ public static class CompanionRuntimeMapper
                 entries.Add(new(entry, Format(checked(loaded + (address - preferred)))));
             }
             return new(capturedAt, uuid.ToString("D"), architecture, false, false, truncated, entries,
-                "Addresses are derived from a user-supplied snapshot, not authenticated or verified live. UUID/layout matching does not establish origin or freshness. Only this image's text range is mapped; restart/reload invalidates addresses. No memory was read or written, and no address was executed.");
+                "Addresses are derived from a user-supplied snapshot, not authenticated or verified live. UUID/layout matching does not establish origin or freshness. Only this image's text range is mapped; restart/reload invalidates addresses. No memory was read or written, and no address was executed.")
+                { ExactSymbolName = exactSymbolName };
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException or FormatException or OverflowException)
         { throw Invalid(); }

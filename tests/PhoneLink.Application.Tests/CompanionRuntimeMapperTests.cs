@@ -99,4 +99,26 @@ public sealed class CompanionRuntimeMapperTests
         Assert.True(report.EntriesTruncated);
         Assert.True(CompanionRuntimeMapper.Map(Inspection with { Images = [Image with { EntriesTruncated = true }] }, Bytes(Snapshot)).EntriesTruncated);
     }
+
+    [Fact]
+    public void ExactFilterFindsLateSymbolsBeforeApplyingPreviewLimit()
+    {
+        var noise = Image.Entries[0] with { Name = "_noise" };
+        var image = Image with { Entries = [.. Enumerable.Repeat(noise, 5000), Image.Entries[0]] };
+        var report = CompanionRuntimeMapper.Map(Inspection with { Images = [image] }, Bytes(Snapshot), "_marker");
+        Assert.Single(report.TextEntries);
+        Assert.Equal("_marker", report.ExactSymbolName);
+        Assert.False(report.EntriesTruncated);
+        Assert.Empty(CompanionRuntimeMapper.Map(Inspection with { Images = [image] }, Bytes(Snapshot), "_MARKER").TextEntries);
+        Assert.True(CompanionRuntimeMapper.Map(Inspection with { Images = [image with { EntriesTruncated = true }] }, Bytes(Snapshot), "_marker").EntriesTruncated);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("_marker\n")]
+    public void RejectsAmbiguousFilterInput(string name)
+    {
+        Assert.Throws<InvalidDataException>(() => CompanionRuntimeMapper.Map(Inspection, Bytes(Snapshot), name));
+        Assert.Throws<InvalidDataException>(() => CompanionRuntimeMapper.Map(Inspection, Bytes(Snapshot), new string('x', 4097)));
+    }
 }

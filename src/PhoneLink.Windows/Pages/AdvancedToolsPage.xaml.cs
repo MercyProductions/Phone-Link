@@ -195,9 +195,11 @@ public sealed partial class AdvancedToolsPage : Page
 
     public void SetRuntimePrivacyLocked(bool locked)
     {
-        if (locked) ClearRuntimeForPrivacy();
+        if (locked) { RuntimeSymbolFilter.Text = string.Empty; ClearRuntimeForPrivacy(); }
         RuntimeImportButton.IsEnabled = !locked && !_busy && _inspection is not null;
     }
+
+    private void RuntimeSymbolFilter_TextChanged(object sender, TextChangedEventArgs args) => ClearRuntimeForPrivacy();
 
     private async void RuntimeImportButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
@@ -207,6 +209,7 @@ public sealed partial class AdvancedToolsPage : Page
         ClearRuntimeForPrivacy();
         var epoch = _runtimeEpoch;
         var selectedImage = inspection.Images[index];
+        var symbol = RuntimeSymbolFilter.Text.Length == 0 ? null : RuntimeSymbolFilter.Text;
         var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(App.MainWindow.AppWindow.Id);
         picker.FileTypeFilter.Add(".json");
         var file = await picker.PickSingleFileAsync();
@@ -219,9 +222,10 @@ public sealed partial class AdvancedToolsPage : Page
             throw new InvalidDataException("Runtime snapshot exceeds 8 KiB.");
         var bytes = new byte[checked((int)stream.Length)];
         await stream.ReadExactlyAsync(bytes, deadline.Token);
-        var mapping = await Task.Run(() => CompanionRuntimeMapper.Map(inspection with { Images = [selectedImage] }, bytes), deadline.Token);
+        var mapping = await Task.Run(() => CompanionRuntimeMapper.Map(inspection with { Images = [selectedImage] }, bytes, symbol), deadline.Token);
         if (deadline.IsCancellationRequested || !_loaded || App.IsLocked || epoch != _runtimeEpoch) return;
         RuntimeSummary.Text = $"Reported capture: {mapping.ReportedCaptureTime:O}\nMatched {mapping.Architecture} · UUID {mapping.ImageUuid}. " +
+            (mapping.ExactSymbolName is null ? "No symbol filter. " : "Exact symbol filter applied (case-sensitive). ") +
             $"Showing up to 500 of {mapping.TextEntries.Count} mapped text entries. Partial output: {mapping.EntriesTruncated}.\n" +
             "Snapshot origin authenticated: false. Live process verified: false.\n" + mapping.Warning;
         foreach (var entry in mapping.TextEntries.Take(500)) RuntimeRows.Add(new(entry));
@@ -281,6 +285,7 @@ public sealed partial class AdvancedToolsPage : Page
         ExportButton.IsEnabled = !_busy && _inspection is not null;
         RuntimeImportButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
         ImageSelector.IsEnabled = !_busy;
+        RuntimeSymbolFilter.IsEnabled = !_busy;
     }
 
     private void ShowStatus(string message, InfoBarSeverity severity)

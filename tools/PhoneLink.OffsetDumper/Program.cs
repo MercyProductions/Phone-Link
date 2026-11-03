@@ -1,9 +1,10 @@
 using System.Text.Json;
 using PhoneLink.Application.Features.BinaryInspection;
 
-if (args.Length != 1 && !(args.Length == 3 && args[1] == "--runtime"))
+if (args.Length != 1 && !(args.Length == 3 && args[1] == "--runtime") &&
+    !(args.Length == 5 && args[1] == "--runtime" && args[3] == "--symbol"))
 {
-    Console.Error.WriteLine("Usage: PhoneLink.OffsetDumper <local-Mach-O-file> [--runtime <reviewed-companion-JSON>]. Optional text mapping is snapshot-derived, not verified live. No device memory is read and no binary is executed.");
+    Console.Error.WriteLine("Usage: PhoneLink.OffsetDumper <local-Mach-O-file> [--runtime <reviewed-companion-JSON> [--symbol <exact-name>]]. Optional text mapping is snapshot-derived, not verified live. No device memory is read and no binary is executed.");
     return 2;
 }
 using var cancellation = new CancellationTokenSource();
@@ -15,7 +16,7 @@ try
         64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
     var report = await MachOInspector.InspectAsync(stream, cancellation.Token);
     object output = report;
-    if (args.Length == 3)
+    if (args.Length >= 3)
     {
         await using var snapshot = new FileStream(args[2], FileMode.Open, FileAccess.Read, FileShare.Read,
             8192, FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -23,7 +24,7 @@ try
             throw new InvalidDataException("Runtime snapshot exceeds 8 KiB.");
         var bytes = new byte[checked((int)snapshot.Length)];
         await snapshot.ReadExactlyAsync(bytes, cancellation.Token);
-        var mapping = CompanionRuntimeMapper.Map(report, bytes);
+        var mapping = CompanionRuntimeMapper.Map(report, bytes, args.Length == 5 ? args[4] : null);
         output = new { StaticInspection = report, RuntimeTextMapping = mapping };
     }
     Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
