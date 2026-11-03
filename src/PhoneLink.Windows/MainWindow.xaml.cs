@@ -56,6 +56,7 @@ public sealed partial class MainWindow : Window
         if (isLocked && NavFrame.Content is MediaPage mediaPage) mediaPage.StopForPrivacy();
         if (isLocked && NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
         if (NavFrame.Content is CallTransportSetupPage callSetupPage) callSetupPage.SetPrivacyLocked(isLocked);
+        if (NavFrame.Content is CallsPage callsPage) callsPage.SetPrivacyLocked(isLocked);
         LockOverlay.Visibility = isLocked ? Visibility.Visible : Visibility.Collapsed;
         NavView.IsEnabled = !isLocked;
     }

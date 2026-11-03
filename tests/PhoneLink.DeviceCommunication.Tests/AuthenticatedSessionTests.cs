@@ -180,9 +180,21 @@ public sealed class AuthenticatedSessionTests
                 RequiresUserConfirmation = true,
             }),
         };
-        await server.SendAsync(clientDeviceId, command, CancellationToken.None);
+        // A stale selection must fail closed rather than falling back to a live peer.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.SendAsync(
+            DeviceId.New(), command, timeout.Token).AsTask());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.SendAsync(
+            clientDeviceId, command with { SessionId = Guid.NewGuid() }, timeout.Token).AsTask());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.SendAsync(
+            clientDeviceId, command with { OriginDeviceId = Guid.NewGuid() }, timeout.Token).AsTask());
+        await server.SendAsync(clientDeviceId, command, timeout.Token);
         var receivedCommand = ProtocolEnvelopeSerializer.Parse(await ReceiveAsync(socket));
         Assert.Equal(command.MessageId, receivedCommand.MessageId);
+        Assert.Equal(challenge.SessionId, receivedCommand.SessionId);
+        var dial = receivedCommand.Payload.Deserialize<CommandRequestPayload>();
+        Assert.NotNull(dial);
+        Assert.True(dial.RequiresUserConfirmation);
+        Assert.Equal("+13125550198", dial.Arguments["phoneNumber"]);
 
         var commandResult = new ProtocolEnvelope
         {

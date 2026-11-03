@@ -29,13 +29,16 @@
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Text="The iPhone will show the exact number and require confirmation before opening the system Phone app."
                         TextWrapping="Wrap" />
+                    <ComboBox x:Name="DialTargetSelector" Header="Authenticated iPhone" PlaceholderText="Select an iPhone explicitly" DisplayMemberPath="SelectionLabel" SelectionChanged="DialTargetSelector_SelectionChanged" MinWidth="300" />
+                    <Button x:Name="RefreshTargetsButton" Content="Refresh connected iPhones" Click="RefreshTargetsButton_Click" />
+                    <TextBlock x:Name="DialTargetStatus" Text="No iPhone selected. USB or Bluetooth presence alone is not companion authentication." TextWrapping="Wrap" />
                     <Grid MaxWidth="620" HorizontalAlignment="Left" ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="360" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="PhoneNumberBox" PlaceholderText="Phone number" InputScope="TelephoneNumber" />
-                        <Button x:Name="CallButton" Grid.Column="1" Click="CallButton_Click" Content="Send to iPhone" Style="{StaticResource AccentButtonStyle}" />
+                        <Button x:Name="CallButton" Grid.Column="1" IsEnabled="False" Click="CallButton_Click" Content="Send to selected iPhone" Style="{StaticResource AccentButtonStyle}" />
                     </Grid>
                     <InfoBar x:Name="CallResultBar" IsClosable="True" IsOpen="False" />
                 </StackPanel>

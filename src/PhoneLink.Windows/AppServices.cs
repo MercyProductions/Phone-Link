@@ -205,20 +205,35 @@ public sealed class AppServices : IAsyncDisposable
         CancellationToken cancellationToken) =>
         AppleBluetoothCapabilityProbe.ProbeAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<CompanionDialTarget>> ListConnectedDialTargetsAsync(
+        CancellationToken cancellationToken)
+    {
+        var server = await GetPairingServerAsync(cancellationToken).ConfigureAwait(false);
+        var devices = await _deviceStore!.ListAsync(cancellationToken).ConfigureAwait(false);
+        var targets = new List<CompanionDialTarget>();
+        foreach (var device in devices)
+        {
+            if (!server.TryGetSessionId(device.Id, out var sessionId)) continue;
+            var target = new CompanionDialTarget(device.Id, sessionId, device.DisplayName);
+            if (target.Matches(device, sessionId)) targets.Add(target);
+        }
+        return targets;
+    }
+
     public async Task<CommandResultPayload> RequestDialAsync(
+        CompanionDialTarget target,
         string phoneNumber,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(target);
         var normalized = TelephoneDialString.Normalize(phoneNumber);
         var server = await GetPairingServerAsync(cancellationToken).ConfigureAwait(false);
         var devices = await _deviceStore!.ListAsync(cancellationToken).ConfigureAwait(false);
-        var target = devices.FirstOrDefault(device =>
-            device.Platform == DevicePlatform.Ios &&
-            device.TrustState == DeviceTrustState.Trusted &&
-            server.TryGetSessionId(device.Id, out _));
-        if (target is null || !server.TryGetSessionId(target.Id, out var sessionId))
+        var device = devices.FirstOrDefault(candidate => candidate.Id == target.DeviceId);
+        if (!server.TryGetSessionId(target.DeviceId, out var sessionId) ||
+            !target.Matches(device, sessionId))
         {
-            throw new InvalidOperationException("Connect a trusted iPhone before requesting a call.");
+            throw new InvalidOperationException("The selected iPhone session is no longer authorized. Refresh and select it again.");
         }
 
         var commandId = Guid.NewGuid();
@@ -226,7 +241,7 @@ public sealed class AppServices : IAsyncDisposable
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(2);
         var completion = new TaskCompletionSource<CommandResultPayload>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var pending = new PendingCommand(target.Id, commandId, completion);
+        var pending = new PendingCommand(target.DeviceId, sessionId, commandId, completion);
         if (!_pendingCommands.TryAdd(messageId, pending))
         {
             throw new InvalidOperationException("A command correlation identifier was reused.");
@@ -257,7 +272,8 @@ public sealed class AppServices : IAsyncDisposable
                 RequiresAck = true,
                 Payload = JsonSerializer.SerializeToElement(payload, WebJsonOptions),
             };
-            await server.SendAsync(target.Id, envelope, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            await server.SendAsync(target.DeviceId, envelope, cancellationToken).ConfigureAwait(false);
             return await completion.Task
                 .WaitAsync(expiresAt - DateTimeOffset.UtcNow, cancellationToken)
                 .ConfigureAwait(false);
@@ -590,7 +606,13 @@ public sealed class AppServices : IAsyncDisposable
     private async void PairingServer_SessionChanged(object? sender, DeviceSessionChangedEventArgs args)
     {
         _companionHealth.Remove(args.DeviceId.Value);
-        if (sender is not LocalPairingServer server || _attachmentManager is not { } manager) return;
+        if (sender is not LocalPairingServer server) return;
+        foreach (var pending in _pendingCommands.Values.Where(pending => pending.DeviceId == args.DeviceId))
+        {
+            if (!server.TryGetSessionId(pending.DeviceId, out var active) || active != pending.SessionId)
+                pending.Completion.TrySetException(new InvalidOperationException("The selected iPhone session ended. No automatic retry was performed."));
+        }
+        if (_attachmentManager is not { } manager) return;
         try
         {
             await manager.PruneSessionsAsync((deviceId, sessionId) =>
@@ -723,7 +745,7 @@ public sealed class AppServices : IAsyncDisposable
         if (received.Envelope.Kind != "command.result" ||
             received.Envelope.CorrelationId is not Guid correlationId ||
             !_pendingCommands.TryGetValue(correlationId, out var pending) ||
-            pending.DeviceId != received.DeviceId)
+            pending.DeviceId != received.DeviceId || pending.SessionId != received.SessionId)
         {
             return false;
         }
@@ -740,6 +762,7 @@ public sealed class AppServices : IAsyncDisposable
 
     private sealed record PendingCommand(
         DeviceId DeviceId,
+        Guid SessionId,
         Guid CommandId,
         TaskCompletionSource<CommandResultPayload> Completion);
 }
