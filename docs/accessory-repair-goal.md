@@ -121,6 +121,12 @@ Independent Windows download/hash/static inspection exposed and fixed legitimate
 
 The registration-only Windows call-transport test question remains unanswered; automatic continuation is not approval. Existing Windows package trust/install, audio playback and Mac/Xcode availability questions are also unanswered. The full goal remains active and unproven; build artifacts are not substitutes for signed physical pairing, actual accessory behavior, repair effectiveness or SSH authentication.
 
+## November 3 deployment alternative research and current handoff
+
+Read-only primary/vendor documentation establishes Windows signing candidates rather than assuming a Mac is the only possibility: Sideloadly documents direct IPA/personal-account signing, and AltStore documents its Windows helper/app route. Neither was downloaded, installed, security-audited or tested with this companion. The current IPA hash is unchanged. [Candidates, sources, credential/privacy cautions and exact owner gates](ios-device-build.md). Owner route choice, account authentication, phone Developer Mode/developer trust/permissions, installation decisions and the separately pending persistent Windows registration test are not implied by automatic goal continuation.
+
+The preceding native-build/parser turn was concrete progress. The next turn revalidated the clean worktree, terminal-success CI, unchanged old MSIX selector and SSH port-22 transport rejection code 3, but could not proceed to signed physical testing without owner input. This turn exhausted a safe read-only deployment alternative and narrowed the next choice; no physical pairing, call/audio, phone repair or authenticated SSH outcome is now claimed. No job is live or waiting. Continue from the owner-selected signing/control path, not by rerunning completed builds or treating unanswered questions as permission. The full goal remains active and incomplete.
+
 ## Primary research
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.

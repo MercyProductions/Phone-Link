@@ -28,9 +28,27 @@ Apple requires signing and provisioning before a device app can launch. An unsig
 
 - With access to a Mac/Xcode, open the project, choose your own development team and physical device, resolve bundle-identifier availability in your account and use Xcode's normal signing/run workflow. Keep credentials and signing keys in your own tools, never chat or this public repository.
 - TestFlight/registered-device distribution is another owner-managed path with the corresponding Apple account/program and signing requirements. No enrollment, fees, device registration or upload is initiated here.
-- If only Windows is available, the unsigned artifact removes the local compilation requirement but does not establish a supported signing/install route. A specific route and its account/security implications still need owner choice and current verification before any software installation or credential use. No third-party signing service has been selected or trusted.
+- If only Windows is available, the unsigned artifact removes the local compilation requirement. Third-party Windows candidates are documented below, but none has been selected, installed or verified with this app. Owner choice and review of account/security implications are still required before software installation or credential use.
 
 After signed installation, verify launch, Keychain identity persistence, foreground QR scan/review, six-word comparison, local-network permission, authenticated reconnect and real health delivery. Then test Contacts/Photos and guided checks separately with user approval. Physical Camera-link recognition, accessory call/audio behavior and hardware repair remain separate requirements; an installed companion alone does not prove them.
+
+## Windows-only candidates researched November 3
+
+This is read-only vendor-documentation research, not an endorsement, security audit, Apple approval or a successful install. The unsigned artifact's hash was rechecked and is unchanged. No installer was downloaded/run, no account used and no device/settings/software changes were made.
+
+| Route | Documented path | Owner-controlled gate |
+|---|---|---|
+| Mac/Xcode | Apple's personal-device signing/run workflow; a free Personal Team is available with periodic reprovisioning. | Mac access and the owner's account/signing decisions. |
+| Windows/Sideloadly | Vendor documents Windows, direct IPA loading and free/paid Apple accounts; its FAQ lists iOS 26 among claimed supported versions. | Approve the third-party tool/dependencies, handle account login and required phone Developer Mode/developer trust. Actual compatibility with our IPA is unverified. |
+| Windows/AltStore Classic | Vendor documents AltServer/AltStore installation on Windows with Apple desktop iTunes/iCloud components and owner authentication. | Adds the vendor helper/app installation path, phone trust/Developer Mode and ongoing refresh requirements; not tested here. |
+
+Sources: [Apple account/Personal Team requirements](https://developer.apple.com/help/account/basics/about-your-developer-account), [Sideloadly product/dependency documentation](https://sideloadly.io/), [Sideloadly FAQ](https://sideloadly.io/faq), and [AltStore's Windows installation instructions](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows). Free personal provisioning expires after seven days according to Apple's documentation; a Windows signer does not remove provisioning limits.
+
+Both vendor Windows paths document desktop Apple components rather than simply assuming Apple Devices is sufficient. Do not uninstall working Apple software, replace drivers, change firewall/privacy controls or enable background refresh automatically. Assess the actual chosen installer/dependency state before proposing any changes. Phone Link must never collect an Apple password, OTP or signing key, and those values must not enter chat, logs, public CI secrets or repository files.
+
+Sideloadly's [privacy policy](https://sideloadly.io/privacy) says credentials go to Apple, while its optional remote anisette service sees IP address, OS and tool version. That is a vendor statement, not independently verified behavior. Selecting a route does not authorize remote anisette, credential saving, tweak injection, minimum-OS overrides, restriction removal or security bypasses. This app does not need those modification/bypass features. Preserve bundle/account continuity when refreshing an existing install; changes may affect app identity and paired-PC trust, which must be verified rather than silently reset.
+
+Next action requires the owner to choose Mac/Xcode or a reviewed Windows candidate. Owner handling of authentication, phone permission/developer trust and any security-setting change remains mandatory. The separate Windows phone-transport registration-only question is still pending and is not answered by choosing an iOS deployment route.
 
 ## Primary references
 
