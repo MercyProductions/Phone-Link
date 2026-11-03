@@ -41,6 +41,14 @@
                 </StackPanel>
             </Border>
             <InfoBar x:Name="ErrorBar" IsClosable="True" IsOpen="False" Severity="Error" Title="Bluetooth capability check failed" />
+            <Border Padding="18" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12">
+                <StackPanel Spacing="10">
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="Windows Bluetooth call transport" />
+                    <TextBlock Text="Inspect endpoint visibility, this app's registration and reported audio routing. This read-only check does not request permission, register the app, connect, or place a call." TextWrapping="Wrap" />
+                    <Button x:Name="TransportCheckButton" Content="Inspect call transport" Click="TransportCheckButton_Click" />
+                    <TextBlock x:Name="TransportCheckText" Text="Not inspected. A discovered service alone does not establish working cellular calling." TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
             <ProgressRing x:Name="LoadingRing" Width="32" Height="32" HorizontalAlignment="Left" />
             <ListView ItemsSource="{x:Bind Capabilities}" SelectionMode="None">
                 <ListView.ItemTemplate>

@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PhoneLink.DeviceCommunication/PhoneLink.DeviceCommunication.csproj" />
+    <ProjectReference Include="../../src/PhoneLink.Integrations.AppleBluetooth/PhoneLink.Integrations.AppleBluetooth.csproj" />
   </ItemGroup>
 </Project>

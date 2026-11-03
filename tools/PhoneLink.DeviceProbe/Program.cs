@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PhoneLink.Application.Features.Diagnostics;
+using PhoneLink.Integrations.AppleBluetooth.Calling;
 using PhoneLink.DeviceCommunication.Diagnostics;
 using PhoneLink.DeviceCommunication.Tunnels;
 
@@ -28,9 +29,9 @@ if (args.Length == 2 && args[0] == "--forward" && ushort.TryParse(args[1], out v
     finally { Console.CancelKeyPress -= cancel; }
 }
 
-if (args.Length != 1 || args[0] is not ("--inventory" or "--info" or "--ssh-check" or "--verify-tunnel" or "--developer-mode-status" or "--connection-check"))
+if (args.Length != 1 || args[0] is not ("--inventory" or "--info" or "--ssh-check" or "--verify-tunnel" or "--developer-mode-status" or "--connection-check" or "--call-transport"))
 {
-    Console.Error.WriteLine("Probes: --inventory, --info, --ssh-check, --verify-tunnel, --developer-mode-status, --connection-check. Managed transport: --forward <device-port>. No logins or state-changing phone commands are sent automatically.");
+    Console.Error.WriteLine("Probes: --inventory, --info, --ssh-check, --verify-tunnel, --developer-mode-status, --connection-check, --call-transport. Managed transport: --forward <device-port>. No logins or state-changing phone commands are sent automatically.");
     return 2;
 }
 using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -39,6 +40,7 @@ try
     object result = args[0] switch
     {
         "--inventory" => await ExperimentalUsbMuxProbe.ProbeAsync(cancellation.Token),
+        "--call-transport" => (await WindowsCallTransportProbe.CaptureAsync(cancellation.Token)).ToDisplayText(),
         "--info" => await ExperimentalIphoneInformationProbe.ProbeAsync(cancellation.Token),
         "--ssh-check" => await ExperimentalSshAvailabilityProbe.ProbeAsync(cancellation.Token),
         "--developer-mode-status" => await ExperimentalIphoneInformationProbe.ProbeDeveloperModeAsync(cancellation.Token),

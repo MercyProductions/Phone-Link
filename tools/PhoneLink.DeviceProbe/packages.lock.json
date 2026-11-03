@@ -25,6 +25,13 @@
       "phonelink.domain": {
         "type": "Project"
       },
+      "phonelink.integrations.applebluetooth": {
+        "type": "Project",
+        "dependencies": {
+          "PhoneLink.Application": "[1.0.0, )",
+          "PhoneLink.Domain": "[1.0.0, )"
+        }
+      },
       "phonelink.protocol": {
         "type": "Project"
       },
