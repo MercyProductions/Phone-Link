@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using PhoneLink.Application.Features.Diagnostics;
 using PhoneLink.DeviceCommunication.Diagnostics;
 using PhoneLink.Domain.Devices;
+using PhoneLink.Security.Storage;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Management.Deployment;
 
@@ -51,6 +52,9 @@ public sealed partial class DiagnosticsPage : Page
         try
         {
             var snapshot = await WindowsConnectionDiagnosticProbe.CaptureAsync(cancellation.Token);
+            try { snapshot = snapshot with { HasPackageIdentity = LocalAppStorage.HasPackageIdentity }; }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            { snapshot = snapshot with { UnavailableProbes = [.. snapshot.UnavailableProbes, "app-identity-unavailable"] }; }
             try
             {
                 var server = await AppServices.Current.GetPairingServerAsync(cancellation.Token);

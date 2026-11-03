@@ -14,6 +14,7 @@ $temporaryDirectory = Join-Path $temporaryRoot ("PhoneLinkMsix\" + [Guid]::NewGu
 $packageOutputDirectory = Join-Path $temporaryDirectory 'Packages'
 $buildLog = Join-Path $temporaryDirectory 'package-build.log'
 $certificate = $null
+Import-Module (Join-Path $PSScriptRoot 'PackageArtifacts.psm1') -Force
 
 if (-not (Test-Path -LiteralPath $msbuildPath -PathType Leaf)) {
     throw "MSBuild was not found at $msbuildPath. Install Visual Studio with .NET desktop and Windows app development workloads."
@@ -41,7 +42,7 @@ try {
 
     Export-Certificate `
         -Cert $certificate `
-        -FilePath (Join-Path $artifactDirectory 'PhoneLink-Development.cer') `
+        -FilePath (Join-Path $temporaryDirectory 'PhoneLink-Development.cer') `
         -Force | Out-Null
 
     $arguments = @(
@@ -49,6 +50,8 @@ try {
         '/restore',
         '/t:Build',
         '/p:Configuration=Release',
+        '/p:UseArtifactsOutput=true',
+        "/p:ArtifactsPath=$(Join-Path $temporaryDirectory 'Build')",
         "/p:Platform=$Architecture",
         "/p:RuntimeIdentifier=win-$Architecture",
         '/p:GenerateAppxPackageOnBuild=true',
@@ -76,11 +79,12 @@ try {
     if ($packages.Count -ne 1) {
         throw "Expected one MSIX package but found $($packages.Count)."
     }
-    $destination = Join-Path $artifactDirectory "PhoneLink-$Architecture.msix"
-    Copy-Item -LiteralPath $packages[0].FullName -Destination $destination -Force
-    Copy-Item -LiteralPath $buildLog -Destination (Join-Path $artifactDirectory 'package-build.log') -Force
-
-    Write-Output $destination
+    $revision = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+    $dirty = [bool](& git -C $repoRoot status --porcelain 2>$null)
+    $published = Publish-PhoneLinkArtifact -ArtifactRoot $artifactDirectory -PackagePath $packages[0].FullName `
+        -CertificatePath (Join-Path $temporaryDirectory 'PhoneLink-Development.cer') -LogPath $buildLog `
+        -SourceRevision "$revision" -SourceDirty $dirty
+    Write-Output (Join-Path $published 'PhoneLink-x64.msix')
 }
 finally {
     if ($certificate) {

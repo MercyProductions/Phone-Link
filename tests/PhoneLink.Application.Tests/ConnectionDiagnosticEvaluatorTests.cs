@@ -4,6 +4,19 @@ namespace PhoneLink.Application.Tests;
 
 public sealed class ConnectionDiagnosticEvaluatorTests
 {
+    [Theory]
+    [InlineData(true, "has Windows package identity")]
+    [InlineData(false, "without Windows package identity")]
+    [InlineData(null, "unknown")]
+    public void IdentityModeIsEvidenceNotAnAccessDiagnosis(bool? packaged, string expected)
+    {
+        var finding = ConnectionDiagnosticEvaluator.Evaluate(Snapshot with { HasPackageIdentity = packaged })
+            .Findings.Single(item => item.Id == "app-identity");
+        Assert.Equal(DiagnosticOutcome.Guidance, finding.Outcome);
+        Assert.Contains(expected, finding.Evidence);
+        Assert.Contains("Identity alone does not explain", finding.NextStep);
+    }
+
     private static ConnectionDiagnosticSnapshot Snapshot => new(DateTimeOffset.UtcNow,
         2, 0, 0, true, "1.2.3.4", 2, 1, 1, []);
 
@@ -11,7 +24,7 @@ public sealed class ConnectionDiagnosticEvaluatorTests
     public void HealthyWindowsEvidenceDoesNotClaimPhoneHardwareOrTrustHealth()
     {
         var report = ConnectionDiagnosticEvaluator.Evaluate(Snapshot);
-        Assert.Equal(6, report.Findings.Count);
+        Assert.Equal(7, report.Findings.Count);
         Assert.Equal(DiagnosticOutcome.Passed, report.Findings.Single(finding => finding.Id == "usb").Outcome);
         Assert.Contains("not necessarily iPhones", report.Findings.Single(finding => finding.Id == "usb").Evidence);
         Assert.Contains("does not prove iOS trust", report.Findings.Single(finding => finding.Id == "driver").Evidence);
@@ -36,7 +49,7 @@ public sealed class ConnectionDiagnosticEvaluatorTests
             AppleDevicesInstalled = null, LocalEndpointCount = null,
             TrustedCompanions = null, ConnectedCompanions = null,
         });
-        Assert.All(report.Findings.Where(finding => finding.Id != "recovery"),
+        Assert.All(report.Findings.Where(finding => finding.Id is not ("recovery" or "app-identity")),
             finding => Assert.Equal(DiagnosticOutcome.Unknown, finding.Outcome));
     }
 

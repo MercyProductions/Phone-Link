@@ -4,7 +4,7 @@ A local-first Windows + iPhone integration project, with supported platform inte
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX is available at `artifacts/windows/msix/PhoneLink-x64.msix`, but predates the current changes. On October 20, all 80 .NET tests passed and the companion compiled with all 8 tests passing in [native Xcode 26.3/iOS 26.2 simulator CI](https://github.com/MercyProductions/Phone-Link/actions/runs/39374852047). Physical-iPhone and signed-device verification remain open.
+The Windows app builds and launches on this Windows 11 workstation. A current signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It has not been trusted or installed. All 262 .NET tests and 10 packaging-artifact checks passed. On October 20, the companion compiled with all 8 tests passing in [native Xcode 26.3/iOS 26.2 simulator CI](https://github.com/MercyProductions/Phone-Link/actions/runs/39374852047). Physical-iPhone companion installation and signed-device verification remain open.
 
 Implemented:
 
@@ -43,9 +43,9 @@ Important limits:
 
 See the detailed [feature feasibility matrix](docs/phase-1-feature-feasibility.md), [architecture](docs/phase-2-architecture.md), [protocol](docs/protocol-v1.md), [database schema](docs/database-schema.md), and [threat model](docs/security-threat-model.md).
 
-The [iPhone toolbox expansion map](docs/iphone-toolbox.md) covers diagnostics, backup/migration, user-shared crash reports, hardware checks, official recovery, repair assistance, and the broader Windows integration tracks. USB information checks are verified on the attached phone; automatic phone repair is not. The latest Debug build passed with all 259 .NET tests. See [experimental USB diagnostics](docs/experimental-usb-diagnostics.md), [app-discovery recovery](docs/app-discovery-recovery.md), [ANCS actions](docs/ancs-actions.md), [AMS media controls](docs/ams-media-controls.md), [USB forwarding and static offsets](docs/usb-tunnels-and-static-offsets.md), and the [active goal checkpoint](docs/accessory-repair-goal.md). Both ANCS and AMS characteristic enumeration return AccessDenied after service access returns Allowed; no real notification action or playback command has been verified. Local registration recovery is not proof of phone reconnection, forwarding is not authenticated SSH, and static inspection is not a runtime dump. The signed MSIX still needs rebuilding to include these changes.
+The [iPhone toolbox expansion map](docs/iphone-toolbox.md) covers diagnostics, backup/migration, user-shared crash reports, hardware checks, official recovery, repair assistance, and the broader Windows integration tracks. USB information checks are verified on the attached phone; automatic phone repair is not. See [experimental USB diagnostics](docs/experimental-usb-diagnostics.md), [app-discovery recovery](docs/app-discovery-recovery.md), [ANCS actions](docs/ancs-actions.md), [AMS media controls](docs/ams-media-controls.md), [USB forwarding and static offsets](docs/usb-tunnels-and-static-offsets.md), and the [active goal checkpoint](docs/accessory-repair-goal.md). Both ANCS and AMS characteristic enumeration return AccessDenied after service access returns Allowed; no real notification action or playback command has been verified. The Troubleshooter now records the current process's Windows package identity to support a packaged-versus-standalone comparison, not to declare a cause. Local registration recovery is not proof of phone reconnection, forwarding is not authenticated SSH, and static inspection is not a runtime dump.
 
-The [expanded-vision roadmap](docs/expanded-vision-roadmap.md) tracks the October requirements, current gaps, and verification evidence. The existing installer predates the current discovery changes. Direct executable launches now use `%LOCALAPPDATA%/MercyProductions/PhoneLink` for protected local data; installed packages retain their package-local storage. Scoped link-local IPv6 addresses are displayed as interface metadata but excluded from QR offers because Windows interface scope IDs cannot be reused on iPhone.
+The [expanded-vision roadmap](docs/expanded-vision-roadmap.md) tracks the October requirements, current gaps, and verification evidence. Direct executable launches use `%LOCALAPPDATA%/MercyProductions/PhoneLink` for protected local data; installed packages retain their package-local storage. Installing a package does not migrate companion trust. Scoped link-local IPv6 addresses are displayed as interface metadata but excluded from QR offers because Windows interface scope IDs cannot be reused on iPhone.
 
 ## Build and test Windows
 
@@ -63,10 +63,15 @@ The self-contained Debug executable is under `src/PhoneLink.Windows/bin/Debug/ne
 
 ```powershell
 .\packaging\Build-LocalMsix.ps1
+.\packaging\Test-PackageArtifacts.ps1
+.\packaging\Install-LocalMsix.ps1 -WhatIf
+# Only after reviewing and approving certificate trust and installation:
 .\packaging\Install-LocalMsix.ps1
 ```
 
-The installer prompts before trusting the local public certificate and before installing the package. The build script creates a temporary private key in the current-user certificate store, signs the MSIX, exports only the public `.cer`, and removes the private certificate. This development certificate is for local sideload testing only; public distribution requires Microsoft Store signing or a production code-signing identity.
+Each successful build publishes a separate `artifacts/windows/msix/builds/<BuildId>/` set containing the MSIX, public certificate, build log, and `build.json` with source revision/dirty status and SHA-256 hashes. Only a complete successful set replaces `latest.json`; earlier sets and legacy root artifacts are preserved. The installer selects `latest.json` by default, or an explicit `-BuildId <BuildId>`, and rejects mismatched hashes and package/certificate signers. These local hashes detect accidental changes, not independently authenticated provenance.
+
+The installer prompts before trusting the local public certificate and before installing the package. `-WhatIf` performs selection and validation without either change. The build script uses isolated output, creates a temporary private key in the current-user certificate store, signs the MSIX, exports only the public `.cer`, and removes the private certificate. Building alone does not trust or install it. Trusting a development certificate trusts code signed by it; review its thumbprint first. Windows signature policy must validate before installation. This development certificate is for local sideload testing only; public distribution requires Microsoft Store signing or a production code-signing identity.
 
 ## Build the iPhone companion
 

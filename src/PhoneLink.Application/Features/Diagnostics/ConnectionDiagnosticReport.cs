@@ -22,11 +22,14 @@ public sealed class DiagnosticFinding(string id, string title, DiagnosticOutcome
     };
 }
 
-// Counts only: no USB instance IDs, serials, names, IP addresses, or pairing secrets.
+// Counts and a deployment-mode flag only: no device IDs, names, addresses or secrets.
 public sealed record ConnectionDiagnosticSnapshot(DateTimeOffset CapturedAt,
     int? AppleUsbNodes, int? UsbNodesWithProblems, int? UsbNodesWithUnknownStatus,
     bool? AppleDevicesInstalled, string? AppleDevicesVersion, int? LocalEndpointCount,
-    int? TrustedCompanions, int? ConnectedCompanions, IReadOnlyList<string> UnavailableProbes);
+    int? TrustedCompanions, int? ConnectedCompanions, IReadOnlyList<string> UnavailableProbes)
+{
+    public bool? HasPackageIdentity { get; init; }
+}
 
 public sealed record ConnectionDiagnosticReport(ConnectionDiagnosticSnapshot Snapshot,
     IReadOnlyList<DiagnosticFinding> Findings)
@@ -48,6 +51,15 @@ public static class ConnectionDiagnosticEvaluator
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         List<DiagnosticFinding> findings = [];
+        findings.Add(new("app-identity", "Windows app identity", DiagnosticOutcome.Guidance,
+            snapshot.HasPackageIdentity switch
+            {
+                true => "This process has Windows package identity.",
+                false => "This process is running without Windows package identity (standalone executable).",
+                _ => "Package identity was not captured; deployment mode is unknown.",
+            },
+            "Identity alone does not explain Bluetooth AccessDenied. Compare the same source in a current signed package without disabling security. Packaged and standalone protected data locations differ; this scan does not install a package, trust a certificate, or migrate pairing data.",
+            new Uri("https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getcurrentpackagefullname")));
         findings.Add(new("usb", "Apple USB presence",
             snapshot.AppleUsbNodes is null ? DiagnosticOutcome.Unknown :
                 snapshot.AppleUsbNodes > 0 ? DiagnosticOutcome.Passed : DiagnosticOutcome.Attention,
