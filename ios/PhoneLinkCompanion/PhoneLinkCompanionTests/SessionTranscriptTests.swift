@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import Darwin
 @testable import PhoneLinkCompanion
 
 struct SessionTranscriptTests {
@@ -19,7 +20,36 @@ struct SessionTranscriptTests {
         let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any])
         #expect(Set(json.keys) == ["schemaVersion", "capturedAt", "scope", "imageUUID", "cpuType", "cpuSubtype",
             "preferredTextAddress", "loadedHeaderAddress", "textVirtualSize", "slide", "markerRuntimeAddress", "markerImageOffset"])
+        #if targetEnvironment(simulator)
+        try exportOwnSimulatorFixture(result)
+        #endif
     }
+
+    #if targetEnvironment(simulator)
+    // Test-only interoperability fixture. Never compiled into the production app or exported on a phone.
+    private func exportOwnSimulatorFixture(_ snapshot: RuntimeImageSnapshot) throws {
+        let marker: @convention(c) () -> Int32 = phoneLinkRuntimeProbeMarker
+        let address = unsafeBitCast(marker, to: UnsafeRawPointer.self)
+        var info = Dl_info()
+        #expect(dladdr(address, &info) != 0)
+        let imagePath = String(cString: try #require(info.dli_fname))
+        let image = URL(fileURLWithPath: imagePath).resolvingSymlinksInPath().standardizedFileURL
+        let bundle = Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL
+        try #require(image.path.hasPrefix(bundle.path + "/"), "Only this test host's app-bundle image may be copied.")
+        let attributes = try FileManager.default.attributesOfItem(atPath: image.path)
+        let size = try #require(attributes[.size] as? NSNumber).int64Value
+        try #require(size > 0 && size <= 128 * 1024 * 1024, "Own-image fixture exceeds its bound.")
+        let directory = URL.cachesDirectory.appendingPathComponent("PhoneLinkRuntimeFixture", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let json = try encoder.encode(snapshot)
+        try #require(json.count <= 8192)
+        let binary = try Data(contentsOf: image, options: .mappedIfSafe)
+        try #require(binary.count == size)
+        try binary.write(to: directory.appendingPathComponent("image.macho"), options: .atomic)
+        try json.write(to: directory.appendingPathComponent("runtime.json"), options: .atomic)
+    }
+    #endif
 
     @Test func runtimeParserHandlesNegativeSlideAndRejectsMalformedMetadata() throws {
         let fixture = runtimeHeaderFixture()

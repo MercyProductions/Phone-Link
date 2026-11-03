@@ -56,6 +56,28 @@ jobs:
             -resultBundlePath artifacts/ios-tests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             test
+      - name: Collect the test host's own runtime interoperability fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl help get_app_container
+          container="$(xcrun simctl get_app_container '${{ steps.simulator.outputs.id }}' com.gabri.PhoneLinkCompanion data)"
+          fixture="$container/Library/Caches/PhoneLinkRuntimeFixture"
+          test -f "$fixture/runtime.json"
+          test -f "$fixture/image.macho"
+          mkdir -p artifacts/companion-runtime
+          cp "$fixture/runtime.json" artifacts/companion-runtime/runtime.json
+          cp "$fixture/image.macho" artifacts/companion-runtime/image.macho
+          shasum -a 256 artifacts/companion-runtime/image.macho
+          xcrun dwarfdump --uuid artifacts/companion-runtime/image.macho
+          xcrun nm artifacts/companion-runtime/image.macho | awk '$NF == "_phonelink_runtime_probe_marker" { print; found=1 } END { exit !found }'
+      - name: Preserve own-image runtime fixture
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-runtime-fixture
+          path: artifacts/companion-runtime/
+          if-no-files-found: error
+          retention-days: 7
       - name: Preserve test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
