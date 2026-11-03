@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/macho
           for arch in arm64 x86_64; do
-            xcrun clang -arch "$arch" -dynamiclib -nostdlib tests/Fixtures/MachO/sample.c -o "artifacts/macho/fixture-$arch.dylib"
+            xcrun clang -arch "$arch" -dynamiclib tests/Fixtures/MachO/sample.c -o "artifacts/macho/fixture-$arch.dylib"
             dotnet run --no-build --project tools/PhoneLink.OffsetDumper/PhoneLink.OffsetDumper.csproj -- "artifacts/macho/fixture-$arch.dylib" > "artifacts/macho/fixture-$arch.json"
           done
           xcrun lipo -create artifacts/macho/fixture-arm64.dylib artifacts/macho/fixture-x86_64.dylib -output artifacts/macho/fixture-universal.dylib
