@@ -29,6 +29,7 @@ public sealed partial class DiagnosticsPage : Page
         _loaded = false;
         _scanCancellation?.Cancel();
         PhoneInfoText.Text = string.Empty;
+        RecoveryText.Text = string.Empty;
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs args) => await ScanAsync();
@@ -40,6 +41,7 @@ public sealed partial class DiagnosticsPage : Page
         _scanCancellation = cancellation;
         ScanButton.IsEnabled = CopyButton.IsEnabled = ExperimentalButton.IsEnabled = false;
         PhoneInfoButton.IsEnabled = false;
+        RecoveryButton.IsEnabled = false;
         PhoneInfoText.Text = string.Empty;
         ScanProgress.Visibility = Visibility.Visible;
         ScanProgress.IsActive = true;
@@ -70,6 +72,8 @@ public sealed partial class DiagnosticsPage : Page
             _report = ConnectionDiagnosticEvaluator.Evaluate(snapshot);
             foreach (var finding in _report.Findings) Findings.Add(finding);
             SnapshotText.Text = $"Snapshot: {snapshot.CapturedAt.LocalDateTime:g}. {snapshot.UnavailableProbes.Count} unavailable probe(s). No phone changes made.";
+            if (AppServices.Current.LastDiscoveryRecovery is { } recovery)
+                RecoveryText.Text = $"Last app discovery recovery this run: {recovery.Outcome}. {recovery.Summary} This is separate from the copied read-only snapshot.";
             CopyButton.IsEnabled = true;
         }
         catch (OperationCanceledException)
@@ -88,6 +92,7 @@ public sealed partial class DiagnosticsPage : Page
                 ScanButton.IsEnabled = true;
                 ExperimentalButton.IsEnabled = true;
                 PhoneInfoButton.IsEnabled = true;
+                RecoveryButton.IsEnabled = true;
                 ScanProgress.IsActive = false;
                 ScanProgress.Visibility = Visibility.Collapsed;
             }
@@ -101,6 +106,7 @@ public sealed partial class DiagnosticsPage : Page
         _scanCancellation = cancellation;
         ScanButton.IsEnabled = CopyButton.IsEnabled = ExperimentalButton.IsEnabled = false;
         PhoneInfoButton.IsEnabled = false;
+        RecoveryButton.IsEnabled = false;
         ScanProgress.IsActive = true;
         ScanProgress.Visibility = Visibility.Visible;
         DiagnosticFinding finding;
@@ -131,6 +137,7 @@ public sealed partial class DiagnosticsPage : Page
             {
                 ScanButton.IsEnabled = ExperimentalButton.IsEnabled = true;
                 PhoneInfoButton.IsEnabled = true;
+                RecoveryButton.IsEnabled = true;
                 ScanProgress.IsActive = false;
                 ScanProgress.Visibility = Visibility.Collapsed;
             }
@@ -150,6 +157,7 @@ public sealed partial class DiagnosticsPage : Page
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         _scanCancellation = cancellation;
         ScanButton.IsEnabled = CopyButton.IsEnabled = ExperimentalButton.IsEnabled = PhoneInfoButton.IsEnabled = false;
+        RecoveryButton.IsEnabled = false;
         ScanProgress.IsActive = true;
         ScanProgress.Visibility = Visibility.Visible;
         PhoneInfoText.Text = "Reading allowlisted information from one USB-connected device…";
@@ -161,7 +169,10 @@ public sealed partial class DiagnosticsPage : Page
             var batteryText = information.BatteryPercentage is { } level ? $"{level}%" : "unknown";
             PhoneInfoText.Text = $"Read at {DateTimeOffset.Now:t}: {information.DeviceClass ?? "unknown class"} · {information.ProductType ?? "unknown hardware identifier"} · iOS {information.IosVersion ?? "unknown"} · build {information.BuildVersion ?? "unknown"}. " +
                 $"Battery: {batteryText} · charging: {Flag(information.IsCharging)} · external power: {Flag(information.ExternalPowerConnected)}. " +
-                $"{information.UnavailableFields} unavailable field(s). No pairing credentials were read and no phone changes were made. These values are not included in the copied report.";
+                $"{information.UnavailableFields} unavailable field(s). No pairing credentials were read and no phone changes were made. These values are not included in the copied report.\n" +
+                string.Join("\n", information.Fields.Where(field => field.Status != IphoneInformationFieldStatus.Available)
+                    .Select(field => $"{field.Key}: {field.Status}" + (field.DeviceErrorCode is null ? "." : $" ({field.DeviceErrorCode})."))) +
+                "\nAn unavailable value is not a battery-health or hardware-failure diagnosis.";
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -173,6 +184,42 @@ public sealed partial class DiagnosticsPage : Page
             if (_loaded)
             {
                 ScanButton.IsEnabled = ExperimentalButton.IsEnabled = PhoneInfoButton.IsEnabled = true;
+                RecoveryButton.IsEnabled = true;
+                CopyButton.IsEnabled = _report is not null;
+                ScanProgress.IsActive = false;
+                ScanProgress.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+
+    private async void RecoveryButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || _scanCancellation is not null || App.IsLocked) return;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        _scanCancellation = cancellation;
+        ScanButton.IsEnabled = CopyButton.IsEnabled = ExperimentalButton.IsEnabled = PhoneInfoButton.IsEnabled = RecoveryButton.IsEnabled = false;
+        ScanProgress.IsActive = true;
+        ScanProgress.Visibility = Visibility.Visible;
+        RecoveryText.Text = "Checking app discovery prerequisites before attempting recovery…";
+        try
+        {
+            var result = await AppServices.Current.RecoverDiscoveryAsync(cancellation.Token);
+            if (!_loaded || cancellation.IsCancellationRequested || App.IsLocked) return;
+            RecoveryText.Text = $"{result.Outcome}: {result.Summary} " +
+                $"Before: {result.Before.TrustedCompanions} trusted companion(s), {result.Before.EligibleAddresses} local address(es), registered={result.Before.AdvertisementRegistered}. " +
+                (result.After is { } after ? $"After: {after.TrustedCompanions} trusted companion(s), {after.EligibleAddresses} local address(es), registered={after.AdvertisementRegistered}. " : "No after-state recorded. ") +
+                $"Recovery attempted={result.ActionAttempted}. This separate action is not included in the read-only scan report.";
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (_loaded) RecoveryText.Text = "Discovery recovery stopped, timed out, or could not be verified. No successful repair is claimed. Existing trust, phone data and drivers were not reset.";
+        }
+        finally
+        {
+            _scanCancellation = null;
+            if (_loaded)
+            {
+                ScanButton.IsEnabled = ExperimentalButton.IsEnabled = PhoneInfoButton.IsEnabled = RecoveryButton.IsEnabled = true;
                 CopyButton.IsEnabled = _report is not null;
                 ScanProgress.IsActive = false;
                 ScanProgress.Visibility = Visibility.Collapsed;

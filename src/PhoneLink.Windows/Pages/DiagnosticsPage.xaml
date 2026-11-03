@@ -29,6 +29,11 @@
                 HorizontalAlignment="Left" ToolTipService.ToolTip="Read-only local Apple service query. No pairing records or phone commands are requested." />
             <Button x:Name="PhoneInfoButton" Content="Experimental: read connected iPhone information" Click="PhoneInfoButton_Click"
                 HorizontalAlignment="Left" ToolTipService.ToolTip="Use with one owned iPhone connected by USB. Reads model, OS and available battery observations; no settings or firmware changes." />
+            <Button x:Name="RecoveryButton" Content="Repair missing app discovery" Click="RecoveryButton_Click" HorizontalAlignment="Left"
+                ToolTipService.ToolTip="Checks before and after restoring only Phone Link's missing Bonjour advertisement. Does not reset pairing, disconnect healthy sessions, change drivers, or repair phone hardware." />
+            <TextBlock x:Name="RecoveryText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="Background maintenance checks for missing app discovery every 30 seconds while eligible. After three failed recovery attempts, automatic retries pause until a network-address change, successful manual check, or app restart. Healthy registrations and sessions are not restarted. Local registration recovery does not prove an iPhone connection."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="SnapshotText" Text="Checks run locally. No serial numbers, device names, or IP addresses are included in the report."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

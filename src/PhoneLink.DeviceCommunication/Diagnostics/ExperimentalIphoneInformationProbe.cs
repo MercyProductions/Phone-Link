@@ -10,7 +10,15 @@ namespace PhoneLink.DeviceCommunication.Diagnostics;
 
 public sealed record IphoneBasicInformation(string? DeviceClass, string? ProductType,
     string? IosVersion, string? BuildVersion, int? BatteryPercentage, bool? IsCharging,
-    bool? ExternalPowerConnected, int UnavailableFields);
+    bool? ExternalPowerConnected, int UnavailableFields)
+{
+    public IReadOnlyList<IphoneInformationField> Fields { get; init; } = [];
+}
+
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<IphoneInformationFieldStatus>))]
+public enum IphoneInformationFieldStatus { Available, DeviceReportedError, MissingValue, UnexpectedValue }
+public sealed record IphoneInformationField(string Key, string? Domain,
+    IphoneInformationFieldStatus Status, string? DeviceErrorCode);
 
 public static class ExperimentalIphoneInformationProbe
 {
@@ -26,12 +34,14 @@ public static class ExperimentalIphoneInformationProbe
         var stream = connection.GetStream();
 
         var values = new string?[Keys.Length];
+        List<IphoneInformationField> fields = [];
         for (var index = 0; index < Keys.Length; index++)
         {
             var payload = await ReadValuePayloadAsync(stream, Keys[index], null, timeout.Token).ConfigureAwait(false);
             try
             {
                 values[index] = ParseReadResponse(payload);
+                fields.Add(ParseFieldResponse(payload, Keys[index]));
             }
             finally { CryptographicOperations.ZeroMemory(payload); }
         }
@@ -39,14 +49,19 @@ public static class ExperimentalIphoneInformationProbe
         for (var index = 0; index < BatteryKeys.Length; index++)
         {
             var payload = await ReadValuePayloadAsync(stream, BatteryKeys[index], "com.apple.mobile.battery", timeout.Token).ConfigureAwait(false);
-            try { battery[index] = GetReadValue(payload); }
+            try
+            {
+                battery[index] = ParseResponse(payload).Value;
+                fields.Add(ParseFieldResponse(payload, BatteryKeys[index], "com.apple.mobile.battery"));
+            }
             finally { CryptographicOperations.ZeroMemory(payload); }
         }
         var percentage = ParseBatteryPercentage(battery[0]);
         var charging = ParseFlag(battery[1]);
         var external = ParseFlag(battery[2]);
         return new(values[0], values[1], values[2], values[3], percentage, charging, external,
-            values.Count(value => value is null) + (percentage is null ? 1 : 0) + (charging is null ? 1 : 0) + (external is null ? 1 : 0));
+            fields.Count(field => field.Status != IphoneInformationFieldStatus.Available))
+            { Fields = fields.AsReadOnly() };
     }
 
     internal static async Task<TcpClient> OpenSingleUsbChannelAsync(ushort port, CancellationToken cancellationToken)
@@ -78,8 +93,7 @@ public static class ExperimentalIphoneInformationProbe
 
     public static byte[] BuildReadRequest(string key, string? domain = null)
     {
-        if (!(domain is null && Keys.Contains(key, StringComparer.Ordinal) ||
-            domain == "com.apple.mobile.battery" && BatteryKeys.Contains(key, StringComparer.Ordinal)))
+        if (!IsAllowed(key, domain))
             throw new ArgumentException("This information domain/key is not allowlisted.", nameof(key));
         return Encode([new XElement("key", "Label"), new XElement("string", "PhoneLink-Experimental"),
             new XElement("key", "Request"), new XElement("string", "GetValue"),
@@ -89,20 +103,53 @@ public static class ExperimentalIphoneInformationProbe
 
     public static string? ParseReadResponse(byte[] payload)
     {
-        var value = GetReadValue(payload);
+        return ParseInformationString(ParseResponse(payload).Value);
+    }
+
+    private static string? ParseInformationString(XElement? value)
+    {
         if (value is null || value.Name != "string" || value.HasElements ||
             value.Value.Length is 0 or > 64 || !value.Value.All(character => char.IsAsciiLetterOrDigit(character) || character is ',' or '.' or '-'))
             return null;
         return value.Value;
     }
 
-    private static XElement? GetReadValue(byte[] payload)
+    public static IphoneInformationField ParseFieldResponse(byte[] payload, string key, string? domain = null)
+    {
+        if (!IsAllowed(key, domain)) throw new ArgumentException("This information domain/key is not allowlisted.", nameof(key));
+        var result = ParseResponse(payload);
+        var valid = domain is null ? ParseInformationString(result.Value) is not null :
+            key == "BatteryCurrentCapacity" ? ParseBatteryPercentage(result.Value) is not null : ParseFlag(result.Value) is not null;
+        return new(key, domain, result.Status == IphoneInformationFieldStatus.Available && !valid
+            ? IphoneInformationFieldStatus.UnexpectedValue : result.Status, result.ErrorCode);
+    }
+
+    private static bool IsAllowed(string key, string? domain) =>
+        domain is null && Keys.Contains(key, StringComparer.Ordinal) ||
+        domain == "com.apple.mobile.battery" && BatteryKeys.Contains(key, StringComparer.Ordinal);
+
+    private static (XElement? Value, IphoneInformationFieldStatus Status, string? ErrorCode) ParseResponse(byte[] payload)
     {
         var response = ExperimentalUsbMuxProbe.ParseDictionary(payload);
         if (!response.TryGetValue("Request", out var request) || request.Name != "string" || request.HasElements || request.Value != "GetValue")
             throw new InvalidDataException("The information response is not correlated to GetValue.");
-        if (response.ContainsKey("Error")) return null;
-        return response.GetValueOrDefault("Value");
+        if (response.TryGetValue("Error", out var error))
+        {
+            // Never retain arbitrary device-provided strings as report/log content.
+            var code = error.Name == "string" && !error.HasElements ? error.Value switch
+            {
+                "MissingKey" => "MissingKey", "MissingValue" => "MissingValue",
+                "GetProhibited" => "GetProhibited", "PasswordProtected" => "PasswordProtected",
+                "SessionInactive" => "SessionInactive", "InvalidHostID" => "InvalidHostID",
+                _ => "OtherDeviceError",
+            } : "OtherDeviceError";
+            return (null, IphoneInformationFieldStatus.DeviceReportedError, code);
+        }
+        if (response.TryGetValue("Result", out var result) &&
+            (result.Name != "string" || result.HasElements || result.Value != "Success"))
+            return (null, IphoneInformationFieldStatus.DeviceReportedError, "OtherDeviceError");
+        var value = response.GetValueOrDefault("Value");
+        return (value, value is null ? IphoneInformationFieldStatus.MissingValue : IphoneInformationFieldStatus.Available, null);
     }
 
     public static int? ParseBatteryPercentage(XElement? value) =>

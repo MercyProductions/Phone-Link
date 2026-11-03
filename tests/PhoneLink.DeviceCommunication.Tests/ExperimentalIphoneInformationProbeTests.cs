@@ -69,4 +69,54 @@ public sealed class ExperimentalIphoneInformationProbeTests
     private static byte[] Response(XElement value) => Encoding.UTF8.GetBytes(
         new XElement("plist", new XElement("dict", new XElement("key", "Request"), new XElement("string", "GetValue"),
             new XElement("key", "Value"), value)).ToString());
+
+    [Theory]
+    [InlineData("PasswordProtected")]
+    [InlineData("GetProhibited")]
+    [InlineData("MissingKey")]
+    [InlineData("MissingValue")]
+    [InlineData("SessionInactive")]
+    [InlineData("InvalidHostID")]
+    public void RetainsOnlyAllowlistedDeviceErrorNames(string code)
+    {
+        var payload = Encoding.UTF8.GetBytes($"<plist><dict><key>Request</key><string>GetValue</string><key>Error</key><string>{code}</string><key>Value</key><integer>90</integer></dict></plist>");
+        var field = ExperimentalIphoneInformationProbe.ParseFieldResponse(payload, "BatteryCurrentCapacity", "com.apple.mobile.battery");
+        Assert.Equal(IphoneInformationFieldStatus.DeviceReportedError, field.Status);
+        Assert.Equal(code, field.DeviceErrorCode);
+        Assert.Null(ExperimentalIphoneInformationProbe.ParseReadResponse(payload));
+    }
+
+    [Fact]
+    public void DoesNotPublishUnrecognizedDeviceErrorContent()
+    {
+        var payload = Encoding.UTF8.GetBytes("<plist><dict><key>Request</key><string>GetValue</string><key>Error</key><string>private serial device-name</string></dict></plist>");
+        var field = ExperimentalIphoneInformationProbe.ParseFieldResponse(payload, "ProductType");
+        Assert.Equal("OtherDeviceError", field.DeviceErrorCode);
+        Assert.DoesNotContain("private", field.ToString());
+    }
+
+    [Fact]
+    public void DistinguishesOmittedValueFromInvalidValueAndReportedError()
+    {
+        var omitted = Encoding.UTF8.GetBytes("<plist><dict><key>Request</key><string>GetValue</string></dict></plist>");
+        var invalid = Response(new XElement("integer", "101"));
+        Assert.Equal(IphoneInformationFieldStatus.MissingValue,
+            ExperimentalIphoneInformationProbe.ParseFieldResponse(omitted, "ProductType").Status);
+        Assert.Equal(IphoneInformationFieldStatus.UnexpectedValue,
+            ExperimentalIphoneInformationProbe.ParseFieldResponse(invalid, "BatteryCurrentCapacity", "com.apple.mobile.battery").Status);
+        Assert.Equal(IphoneInformationFieldStatus.Available,
+            ExperimentalIphoneInformationProbe.ParseFieldResponse(Response(new XElement("false")), "BatteryIsCharging", "com.apple.mobile.battery").Status);
+        Assert.Throws<ArgumentException>(() => ExperimentalIphoneInformationProbe.ParseFieldResponse(omitted, "SerialNumber"));
+    }
+
+    [Fact]
+    public void FailureResultAndIncorrectRequestDoNotBecomeSuccessfulInformation()
+    {
+        var failed = Encoding.UTF8.GetBytes("<plist><dict><key>Request</key><string>GetValue</string><key>Result</key><string>Failure</string><key>Value</key><string>26.0</string></dict></plist>");
+        Assert.Equal(IphoneInformationFieldStatus.DeviceReportedError,
+            ExperimentalIphoneInformationProbe.ParseFieldResponse(failed, "ProductVersion").Status);
+        Assert.Null(ExperimentalIphoneInformationProbe.ParseReadResponse(failed));
+        var unrelated = Encoding.UTF8.GetBytes("<plist><dict><key>Request</key><string>SetValue</string><key>Value</key><string>26.0</string></dict></plist>");
+        Assert.Throws<InvalidDataException>(() => ExperimentalIphoneInformationProbe.ParseFieldResponse(unrelated, "ProductVersion"));
+    }
 }

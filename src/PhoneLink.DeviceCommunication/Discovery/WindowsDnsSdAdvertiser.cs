@@ -20,6 +20,8 @@ public sealed class WindowsDnsSdAdvertiser : IAsyncDisposable
     private bool _registrationSubmitted;
     private volatile bool _isDeregistering;
 
+    public bool IsRegistered => _registered.Task.IsCompletedSuccessfully && !_isDeregistering && _disposeTask is null;
+
     private WindowsDnsSdAdvertiser()
     {
         _callback = OnRegistrationCompleted;

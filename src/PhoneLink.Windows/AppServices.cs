@@ -6,6 +6,7 @@ using PhoneLink.DeviceCommunication.Sessions;
 using PhoneLink.Application.Features.Attachments;
 using PhoneLink.Application.Features.Calling;
 using PhoneLink.Application.Features.Contacts;
+using PhoneLink.Application.Features.Diagnostics;
 using PhoneLink.Protocol.Commands;
 using PhoneLink.Protocol;
 using PhoneLink.Protocol.Messages;
@@ -40,6 +41,9 @@ public sealed class AppServices : IAsyncDisposable
     private InboundAttachmentManager? _attachmentManager;
     private CancellationTokenSource? _backgroundCancellation;
     private Task? _syncProcessorTask;
+    private Task? _discoveryRecoveryTask;
+    private DiscoveryRecoveryResult? _lastDiscoveryRecovery;
+    private readonly DiscoveryRecoveryRetryBudget _discoveryRecoveryBudget = new();
     private WindowsDnsSdAdvertiser? _dnsSdAdvertiser;
     private Task? _discoveryStartTask;
     private bool _discoveryRunnerActive;
@@ -54,6 +58,8 @@ public sealed class AppServices : IAsyncDisposable
     }
 
     public static AppServices Current => LazyCurrent.Value;
+
+    public DiscoveryRecoveryResult? LastDiscoveryRecovery => Volatile.Read(ref _lastDiscoveryRecovery);
 
     public async Task<LocalPairingServer> GetPairingServerAsync(CancellationToken cancellationToken)
     {
@@ -119,6 +125,7 @@ public sealed class AppServices : IAsyncDisposable
                 {
                     QueueDiscoveryStart(server);
                 }
+                _discoveryRecoveryTask = MaintainDiscoveryAsync(_backgroundCancellation.Token);
                 return server;
             }
             catch
@@ -336,14 +343,24 @@ public sealed class AppServices : IAsyncDisposable
         }
         _pendingCommands.Clear();
         await StopAncsSessionAsync().ConfigureAwait(false);
-        if (_dnsSdAdvertiser is not null)
+        await _discoveryLock.WaitAsync().ConfigureAwait(false);
+        try
         {
-            await _dnsSdAdvertiser.DisposeAsync().ConfigureAwait(false);
-            _dnsSdAdvertiser = null;
+            if (_dnsSdAdvertiser is not null)
+            {
+                await _dnsSdAdvertiser.DisposeAsync().ConfigureAwait(false);
+                _dnsSdAdvertiser = null;
+            }
         }
+        finally { _discoveryLock.Release(); }
         if (_backgroundCancellation is not null)
         {
             await _backgroundCancellation.CancelAsync().ConfigureAwait(false);
+            if (_discoveryRecoveryTask is not null)
+            {
+                await _discoveryRecoveryTask.ConfigureAwait(false);
+                _discoveryRecoveryTask = null;
+            }
             if (_syncProcessorTask is not null)
             {
                 try
@@ -382,6 +399,79 @@ public sealed class AppServices : IAsyncDisposable
         _initializationLock.Dispose();
         _discoveryLock.Dispose();
         _ancsLock.Dispose();
+    }
+
+    public async Task<DiscoveryRecoveryResult> RecoverDiscoveryAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var server = await GetPairingServerAsync(cancellationToken).ConfigureAwait(false);
+        await _discoveryLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var result = await DiscoveryRecovery.RunAsync(async token =>
+            {
+                var trusted = (await _deviceStore!.ListAsync(token).ConfigureAwait(false))
+                    .Count(device => device.TrustState == DeviceTrustState.Trusted);
+                var addresses = LocalNetworkCatalog.SelectPairingAddresses(LocalNetworkCatalog.Capture()).Length;
+                return new DiscoveryRecoverySnapshot(App.IsLocked, trusted, addresses, _dnsSdAdvertiser?.IsRegistered == true);
+            }, async token =>
+            {
+                token.ThrowIfCancellationRequested();
+                if (App.IsLocked || _disposed) throw new OperationCanceledException("Discovery recovery is no longer allowed.");
+                if (_dnsSdAdvertiser is not null)
+                {
+                    await _dnsSdAdvertiser.DisposeAsync().ConfigureAwait(false);
+                    _dnsSdAdvertiser = null;
+                }
+                var advertiser = await WindowsDnsSdAdvertiser.StartAsync(
+                    $"Phone Link on {Environment.MachineName}", server.BoundPort, token).ConfigureAwait(false);
+                if (token.IsCancellationRequested || App.IsLocked || _disposed)
+                {
+                    await advertiser.DisposeAsync().ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
+                    throw new OperationCanceledException("Discovery recovery stopped before publishing its result.");
+                }
+                _dnsSdAdvertiser = advertiser;
+            }, cancellationToken).ConfigureAwait(false);
+            if (result.ActionAttempted && result.After is { } after &&
+                (after.IsLocked || after.TrustedCompanions <= 0 || after.EligibleAddresses <= 0))
+            {
+                if (_dnsSdAdvertiser is not null)
+                {
+                    await _dnsSdAdvertiser.DisposeAsync().ConfigureAwait(false);
+                    _dnsSdAdvertiser = null;
+                }
+                result = result with { After = after with { AdvertisementRegistered = false } };
+            }
+            if (result.ActionAttempted) Volatile.Write(ref _lastDiscoveryRecovery, result);
+            _discoveryRecoveryBudget.Record(result);
+            return result;
+        }
+        finally { _discoveryLock.Release(); }
+    }
+
+    private async Task MaintainDiscoveryAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (_disposed) return;
+                if (!_discoveryRecoveryBudget.CanRetry) continue;
+                using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                attempt.CancelAfter(TimeSpan.FromSeconds(25));
+                try { await RecoverDiscoveryAsync(attempt.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    _discoveryRecoveryBudget.RecordFailure();
+                    System.Diagnostics.Debug.WriteLine($"App discovery maintenance unavailable ({exception.GetType().Name}).");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
     }
 
     private async Task StartDiscoverySafelyAsync(LocalPairingServer server, bool restart)
@@ -442,6 +532,7 @@ public sealed class AppServices : IAsyncDisposable
 
     private void Network_AddressChanged(object? sender, EventArgs args)
     {
+        _discoveryRecoveryBudget.Reset();
         if (_pairingServer is LocalPairingServer server)
         {
             QueueDiscoveryStart(server, restart: true);
