@@ -19,9 +19,15 @@ Each recovery attempt has a 25-second cancellation deadline; native teardown can
 ## Verification and remaining gates
 
 - Eighteen application tests cover recovery, before/after evidence, healthy no-op, locked/unpaired/offline refusal, action failure, missing after-probe, prerequisite changes, cancellation, retry limits, concurrent failure accounting and rearming.
-- Full solution Debug build: zero warnings/errors. Full .NET suite: 185 passed.
+- Original policy checkpoint: full solution Debug build with zero warnings/errors; 185 .NET tests passed at that point.
 - Runtime Windows UI: four healthy Apple USB nodes, two eligible addresses, zero trusted/authenticated companions. Manual recovery returned `NotApplicable`, `ActionAttempted=False`; it did not create trust or claim repair.
 - Runtime phone-information CLI/UI: four basic metadata fields available; all three battery-domain fields returned `GetProhibited`. No phone change was sent. Personal metadata values are excluded from these public notes.
 - Successful native registration recovery with a real trusted companion, actual iPhone rediscovery/authentication afterward, forced native callback failure, and physical lock/network-change/exit races still require integration/hardware tests. Controlled policy tests do not prove those end-to-end cases.
+
+### November 3 native recovery check
+
+`NativeDiscoveryRecoveryTests` exercises the production recovery policy with real Windows DNS-SD registration and browsing. It uses a unique temporary service name, an ephemeral reserved loopback port, and synthetic trust held only in test memory; it never adds a peer to the owner's database. The test observes the unique name absent, restores the missing registration, observes the matching name/port through the Windows browser, verifies a healthy no-op, disposes only its fixture registration, and restores it again. Final cleanup disposes the fixture and closes its listener.
+
+The focused native test and full 355-test .NET suite passed; full solution Debug build had zero warnings/errors. This proves callback-confirmed local recovery and a Windows browser observation, not fresh on-wire multicast, remote iPhone visibility, identity authentication, or end-to-end reconnection. The second recovery is callback-checked rather than independently browsed again. Disposal clears tracked registration immediately; native teardown may finish later under the existing bounded-wait policy. The synthetic trusted peer only exercises eligibility and is not evidence of a real paired companion.
 
 This implements one bounded automatic app-owned recovery. Battery health, charging hardware, boot failures, service/driver repair, deeper authorized diagnostics, and the full accessory/SSH/runtime-dumper goal remain open.

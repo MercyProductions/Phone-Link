@@ -57,6 +57,10 @@ Extracted the production Windows health handler and added real loopback authenti
 
 Rechecked the actual phone path: one USB transport connection, standard SSH port 22 rejected with code 3. Added a separately invoked, allowlisted no-session GetValue query for DeveloperModeStatus, exposed in CLI and USB/binary tools. Both real CLI and UI returned GetProhibited, leaving the flag unknown rather than disabled. Eight new request/parser cases bring the full suite to 354 passing tests; build zero warnings/errors. The checked independent reference uses an authenticated handshake before this query, but we did not read pairing material or start a trusted session, enable/reveal the mode, restart, mount a developer image, or start services. Owner was asked to inspect the existing phone setting without changing it; response is pending. This does not establish an SSH endpoint, debugger access or runtime-dump capability, nor explain Bluetooth denials. See [scope, pinned reference and evidence](experimental-usb-diagnostics.md). The full goal remains active; trust/install and audio approval questions are still unanswered.
 
+## November 3 native discovery-repair checkpoint
+
+Added a real Windows DNS-SD recovery integration test using isolated synthetic in-memory trust and a unique temporary advertisement. Verified missing-to-registered recovery, an independent Windows browser observation of the matching name/port, healthy no-op without restart, and another callback-confirmed recovery after fixture disposal. No owner trust/database or phone setting changed. The focused native test passed; remote iPhone discovery/authentication, fresh multicast visibility, native failure injection and physical lifecycle races remain open. See [precise scope](app-discovery-recovery.md). The full goal remains active; pending trust/install, playback and phone-setting answers were not inferred.
+
 ## Primary research
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.
