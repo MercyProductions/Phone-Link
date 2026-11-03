@@ -44,6 +44,7 @@ public sealed partial class MainWindow : Window
 
     public void SetLocked(bool isLocked)
     {
+        if (isLocked && NavFrame.Content is NotificationsPage notificationsPage) notificationsPage.CancelPendingActionsForPrivacy();
         LockOverlay.Visibility = isLocked ? Visibility.Visible : Visibility.Collapsed;
         NavView.IsEnabled = !isLocked;
     }

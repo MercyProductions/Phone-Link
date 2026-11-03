@@ -266,7 +266,11 @@ public sealed class AppServices : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await _ancsLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (!App.MainWindow.DispatcherQueue.HasThreadAccess)
+            throw new InvalidOperationException("Start an ANCS session from the app's UI thread.");
+        // BluetoothLEDevice.FromIdAsync requires the UI thread, including retries
+        // after waiting for lifecycle serialization or disposing an old session.
+        await _ancsLock.WaitAsync(cancellationToken);
         try
         {
             if (_ancsSession is { IsConnected: true })
@@ -277,11 +281,10 @@ public sealed class AppServices : IAsyncDisposable
             {
                 _ancsSession.NotificationChanged -= AncsSession_NotificationChanged;
                 _ancsSession.SessionEnded -= AncsSession_SessionEnded;
-                await _ancsSession.DisposeAsync().ConfigureAwait(false);
+                await _ancsSession.DisposeAsync();
             }
             _ancsSession = await AncsNotificationSession
-                .StartAsync(cancellationToken)
-                .ConfigureAwait(false);
+                .StartAsync(cancellationToken);
             _ancsSession.NotificationChanged += AncsSession_NotificationChanged;
             _ancsSession.SessionEnded += AncsSession_SessionEnded;
             return _ancsSession;
@@ -293,6 +296,11 @@ public sealed class AppServices : IAsyncDisposable
     }
 
     public AncsNotificationSession? GetAncsSession() => _ancsSession;
+
+    public Task<AncsActionResult> PerformAncsActionAsync(AncsNotificationSession session,
+        AncsNotification notification, AncsNotificationAction action, CancellationToken cancellationToken) =>
+        session.PerformActionAsync(notification, action,
+            () => !_disposed && !App.IsLocked && ReferenceEquals(session, _ancsSession), cancellationToken);
 
     public async Task StopAncsSessionAsync()
     {

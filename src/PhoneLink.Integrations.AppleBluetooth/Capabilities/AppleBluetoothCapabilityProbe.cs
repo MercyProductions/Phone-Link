@@ -2,6 +2,7 @@ using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Bluetooth.Rfcomm;
 using Windows.Devices.Enumeration;
+using PhoneLink.Integrations.AppleBluetooth.Ancs;
 
 namespace PhoneLink.Integrations.AppleBluetooth.Capabilities;
 
@@ -24,7 +25,7 @@ public static class AppleBluetoothCapabilityProbe
             BluetoothDevice.GetDeviceSelectorFromPairingState(true)).AsTask(cancellationToken);
         var hasAnyPairedDevice = pairedLeDevices.Count > 0 || pairedClassicDevices.Count > 0;
 
-        var ancsReady = await HasAncsServiceAsync(pairedLeDevices, cancellationToken).ConfigureAwait(false);
+        var ancs = await ProbeAncsServiceAsync(pairedLeDevices, cancellationToken).ConfigureAwait(false);
         var pbapReady = await HasRfcommServiceAsync(
             PbapPhonebookAccessServerUuid,
             cancellationToken).ConfigureAwait(false);
@@ -34,8 +35,8 @@ public static class AppleBluetoothCapabilityProbe
 
         return
         [
-            Report(AppleBluetoothCapability.AncsNotifications, ancsReady, hasAnyPairedDevice, observedAt, "ancs"),
-            Report(AppleBluetoothCapability.AncsActions, ancsReady, hasAnyPairedDevice, observedAt, "ancs-actions"),
+            Report(AppleBluetoothCapability.AncsNotifications, ancs.Notifications, hasAnyPairedDevice, observedAt, ancs.AccessDenied ? "ancs-access-denied" : "ancs"),
+            Report(AppleBluetoothCapability.AncsActions, ancs.Actions, hasAnyPairedDevice, observedAt, ancs.AccessDenied ? "ancs-access-denied" : "ancs-actions-control-point"),
             Report(AppleBluetoothCapability.PbapContacts, pbapReady, hasAnyPairedDevice, observedAt, "pbap"),
             Report(AppleBluetoothCapability.PbapCallHistory, pbapReady, hasAnyPairedDevice, observedAt, "pbap-call-history"),
             Report(AppleBluetoothCapability.MapObserveMessages, mapReady, hasAnyPairedDevice, observedAt, "map"),
@@ -44,7 +45,7 @@ public static class AppleBluetoothCapabilityProbe
         ];
     }
 
-    private static async Task<bool> HasAncsServiceAsync(
+    private static async Task<AncsCharacteristicSupport> ProbeAncsServiceAsync(
         DeviceInformationCollection pairedDevices,
         CancellationToken cancellationToken)
     {
@@ -64,18 +65,22 @@ public static class AppleBluetoothCapabilityProbe
                 .AsTask(cancellationToken);
             if (result.Status == GattCommunicationStatus.Success && result.Services.Count > 0)
             {
-                foreach (var service in result.Services)
+                try
                 {
-                    service.Dispose();
+                    var characteristics = await result.Services[0].GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(cancellationToken);
+                    return AncsCharacteristicSupport.Evaluate(characteristics.Status,
+                        characteristics.Characteristics.GroupBy(characteristic => characteristic.Uuid)
+                            .ToDictionary(group => group.Key, group => group.Aggregate(GattCharacteristicProperties.None,
+                                (properties, characteristic) => properties | characteristic.CharacteristicProperties)));
                 }
-                return true;
+                finally { foreach (var service in result.Services) service.Dispose(); }
             }
             foreach (var service in result.Services)
             {
                 service.Dispose();
             }
         }
-        return false;
+        return new(false, false, false);
     }
 
     private static async Task<bool> HasRfcommServiceAsync(

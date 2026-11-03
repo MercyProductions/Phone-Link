@@ -10,6 +10,10 @@ public sealed partial class NotificationsPage : Page, IDisposable
 {
     private CancellationTokenSource? _probeCancellation;
     private AncsNotificationSession? _ancsSession;
+    private bool _loaded;
+    private CancellationTokenSource? _actionCancellation;
+    private ContentDialog? _actionDialog;
+    private CancellationTokenSource? _startCancellation;
 
     public NotificationsPage()
     {
@@ -22,6 +26,7 @@ public sealed partial class NotificationsPage : Page, IDisposable
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
+        _loaded = true;
         AttachSession(AppServices.Current.GetAncsSession());
         await RefreshAsync();
     }
@@ -30,11 +35,15 @@ public sealed partial class NotificationsPage : Page, IDisposable
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!_loaded || App.IsLocked || _startCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        _startCancellation = cancellation;
         StartButton.IsEnabled = false;
         SessionStatusBar.IsOpen = false;
         try
         {
-            var session = await AppServices.Current.StartAncsSessionAsync(CancellationToken.None);
+            var session = await AppServices.Current.StartAncsSessionAsync(cancellation.Token);
+            if (!_loaded || App.IsLocked) return;
             AttachSession(session);
             SessionStatusBar.Severity = InfoBarSeverity.Success;
             SessionStatusBar.Title = $"Connected to {session.DeviceName}";
@@ -50,8 +59,12 @@ public sealed partial class NotificationsPage : Page, IDisposable
         }
         finally
         {
-            StartButton.IsEnabled = _ancsSession is null;
-            StopButton.IsEnabled = _ancsSession is not null;
+            _startCancellation = null;
+            if (_loaded)
+            {
+                StartButton.IsEnabled = _ancsSession is null;
+                StopButton.IsEnabled = _ancsSession is not null;
+            }
         }
     }
 
@@ -73,11 +86,21 @@ public sealed partial class NotificationsPage : Page, IDisposable
 
     public void Dispose()
     {
+        _loaded = false;
+        CancelPendingActionsForPrivacy();
         DetachSession();
+        Notifications.Clear();
         _probeCancellation?.Cancel();
         _probeCancellation?.Dispose();
         _probeCancellation = null;
         GC.SuppressFinalize(this);
+    }
+
+    public void CancelPendingActionsForPrivacy()
+    {
+        _startCancellation?.Cancel();
+        _actionCancellation?.Cancel();
+        _actionDialog?.Hide();
     }
 
     private void AttachSession(AncsNotificationSession? session)
@@ -121,31 +144,82 @@ public sealed partial class NotificationsPage : Page, IDisposable
         AncsNotificationChangedEventArgs args) =>
         DispatcherQueue.TryEnqueue(() =>
         {
-            var existing = Notifications.FirstOrDefault(item => item.NotificationUid == args.NotificationUid);
-            if (existing is not null)
-            {
-                Notifications.Remove(existing);
-            }
-            if (args.Notification is not null)
-            {
-                Notifications.Insert(0, AncsNotificationListItem.FromNotification(args.Notification));
-            }
+            if (!_loaded || App.IsLocked || !ReferenceEquals(sender, _ancsSession)) return;
+            Notifications.Clear();
+            foreach (var notification in _ancsSession!.ActiveNotifications)
+                Notifications.Add(AncsNotificationListItem.FromNotification(notification));
             UpdateEmptyState();
         });
 
     private void AncsSession_SessionEnded(object? sender, EventArgs args) =>
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (!_loaded || !ReferenceEquals(sender, _ancsSession)) return;
+            _actionDialog?.Hide();
+            _actionCancellation?.Cancel();
             DetachSession();
             Notifications.Clear();
             UpdateEmptyState();
             StartButton.IsEnabled = true;
             StopButton.IsEnabled = false;
             SessionStatusBar.Severity = InfoBarSeverity.Warning;
-            SessionStatusBar.Title = "iPhone disconnected";
-            SessionStatusBar.Message = "ANCS identifiers and notification contents were cleared as required for the ended session.";
+            SessionStatusBar.Title = "Notification session ended";
+            SessionStatusBar.Message = "The connection or GATT services changed. ANCS identifiers, contents and pending actions were cleared; start a fresh session to continue.";
             SessionStatusBar.IsOpen = true;
         });
+
+    private async void PositiveAction_Click(object sender, RoutedEventArgs args) =>
+        await ConfirmActionAsync((sender as Button)?.Tag as AncsNotificationListItem, AncsNotificationAction.Positive);
+
+    private async void NegativeAction_Click(object sender, RoutedEventArgs args) =>
+        await ConfirmActionAsync((sender as Button)?.Tag as AncsNotificationListItem, AncsNotificationAction.Negative);
+
+    private async Task ConfirmActionAsync(AncsNotificationListItem? item, AncsNotificationAction action)
+    {
+        if (!_loaded || App.IsLocked || _actionCancellation is not null || item?.Notification is not { } notification ||
+            _ancsSession is not { } session || !session.IsCurrentNotification(notification)) return;
+        var label = AncsActionSender.GetLabel(notification, action);
+        if (label.Length == 0) return;
+        using var cancellation = new CancellationTokenSource();
+        _actionCancellation = cancellation;
+        try
+        {
+            _actionDialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "Confirm iPhone notification action",
+                Content = $"Device: {session.DeviceName}\nNotification: {item.Title}\n\niPhone-provided action: {label}\n\nThe iPhone determines this action's effect. It may change or dismiss the notification or affect a call. This is not a text reply. Continue only if you intend this action.",
+                PrimaryButtonText = "Send action", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
+            };
+            var decision = await _actionDialog.ShowAsync();
+            _actionDialog = null;
+            if (decision != ContentDialogResult.Primary || cancellation.IsCancellationRequested || !_loaded || App.IsLocked ||
+                !ReferenceEquals(session, _ancsSession)) return;
+            var result = await AppServices.Current.PerformAncsActionAsync(session, notification, action, cancellation.Token);
+            if (!_loaded || App.IsLocked || !ReferenceEquals(session, _ancsSession)) return;
+            SessionStatusBar.Title = "Notification action";
+            SessionStatusBar.Severity = result.Outcome == AncsActionOutcome.WriteAccepted ? InfoBarSeverity.Informational : InfoBarSeverity.Warning;
+            SessionStatusBar.Message = result.Outcome switch
+            {
+                AncsActionOutcome.WriteAccepted => "The Bluetooth write was accepted. ANCS provides no action-effect response, so completion is not verified. Check the iPhone; no retry will be sent.",
+                AncsActionOutcome.DeviceRejected => $"The device rejected the write (protocol error 0x{result.ProtocolError:X2}). No retry was sent.",
+                AncsActionOutcome.OutcomeUnknown => "The write may have reached the iPhone, but its result is unknown. Check the phone before doing anything else. No retry was sent.",
+                _ => "No write was sent: the action was unavailable, stale, already attempted, blocked, or cancelled before submission.",
+            };
+            SessionStatusBar.IsOpen = true;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (_loaded)
+            {
+                SessionStatusBar.Title = "Notification action unavailable";
+                SessionStatusBar.Message = "The confirmation or request could not complete. No automatic retry is made. Check the iPhone before trying another action.";
+                SessionStatusBar.Severity = InfoBarSeverity.Warning;
+                SessionStatusBar.IsOpen = true;
+            }
+        }
+        finally { _actionDialog = null; _actionCancellation = null; }
+    }
 
     private void UpdateEmptyState()
     {
@@ -192,6 +266,11 @@ public sealed partial class NotificationsPage : Page, IDisposable
 
 public sealed class AncsNotificationListItem
 {
+    public AncsNotification? Notification { get; set; }
+    public string PositiveActionLabel => Notification is null ? string.Empty : AncsActionSender.GetLabel(Notification, AncsNotificationAction.Positive);
+    public string NegativeActionLabel => Notification is null ? string.Empty : AncsActionSender.GetLabel(Notification, AncsNotificationAction.Negative);
+    public Visibility PositiveActionVisibility => PositiveActionLabel.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility NegativeActionVisibility => NegativeActionLabel.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     public uint NotificationUid { get; set; }
 
     public string Title { get; set; } = string.Empty;
@@ -205,6 +284,7 @@ public sealed class AncsNotificationListItem
     public static AncsNotificationListItem FromNotification(AncsNotification notification) =>
         new()
         {
+            Notification = notification,
             NotificationUid = notification.NotificationUid,
             Title = string.IsNullOrWhiteSpace(notification.Title)
                 ? "iPhone notification"

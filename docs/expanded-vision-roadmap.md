@@ -17,7 +17,7 @@ Known gaps found during inspection:
 - Contacts originally used installation-wide outboxes/sequences. Per-PC state, checkpoint recovery, and permission-subset reconciliation are now implemented; simulator regression tests pass, while hardware verification remains tracked below.
 - iPhone Photos still loads bounded photo payloads. Windows now encrypts incoming chunks immediately and exports with bounded buffers. Arbitrary files, large videos, bidirectional delivery, resume, thumbnails, and duplicate-media detection are missing.
 - The DNS-SD advertiser now retains callback/request lifetime through late native completion and serializes disposal. A never-completing native callback retains its rooted request until process exit instead of freeing memory still owned by Windows.
-- Messages displays capabilities rather than conversation synchronization. MAP/PBAP transport implementations and ANCS actions are absent.
+- Messages displays capabilities rather than conversation synchronization. MAP/PBAP transports remain absent. ANCS action commands, confirmation UI and stale-state protection are now implemented, but physical operation is not verified; current characteristic access is denied. See [ANCS action evidence](ancs-actions.md).
 
 ## Prioritized milestones
 

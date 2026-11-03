@@ -5,7 +5,19 @@ namespace PhoneLink.Integrations.AppleBluetooth.Ancs;
 
 public static class AncsProtocolParser
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     public static readonly byte[] RequestedAttributeIds = [0, 1, 2, 3, 5, 6, 7];
+
+    public static byte[] CreatePerformNotificationActionCommand(uint notificationUid, AncsNotificationAction action)
+    {
+        if (action is not (AncsNotificationAction.Positive or AncsNotificationAction.Negative))
+            throw new ArgumentOutOfRangeException(nameof(action));
+        var command = new byte[6];
+        command[0] = 2;
+        BinaryPrimitives.WriteUInt32LittleEndian(command.AsSpan(1, 4), notificationUid);
+        command[5] = (byte)action;
+        return command;
+    }
 
     public static AncsNotificationEvent ParseNotificationSource(ReadOnlySpan<byte> value)
     {
@@ -76,7 +88,8 @@ public static class AncsProtocolParser
             {
                 return false;
             }
-            parsed[attributeId] = Encoding.UTF8.GetString(value.Slice(offset, length));
+            try { parsed[attributeId] = StrictUtf8.GetString(value.Slice(offset, length)); }
+            catch (DecoderFallbackException) { throw new InvalidDataException("The ANCS attribute is not valid UTF-8."); }
             offset += length;
         }
 

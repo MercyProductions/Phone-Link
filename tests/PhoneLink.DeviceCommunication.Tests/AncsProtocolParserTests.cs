@@ -76,4 +76,12 @@ public sealed class AncsProtocolParserTests
         }
         return output.ToArray();
     }
+
+    [Fact]
+    public void InvalidUtf8CannotBecomeAnActionLabelOrNotificationText()
+    {
+        var response = CreateAttributeResponse(42, "x", "", "", "", "", "", "");
+        response[8] = 0xFF;
+        Assert.Throws<InvalidDataException>(() => AncsProtocolParser.TryParseNotificationAttributes(response, out _, out _, out _));
+    }
 }

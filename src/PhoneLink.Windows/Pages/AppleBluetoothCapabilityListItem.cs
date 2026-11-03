@@ -14,7 +14,7 @@ public sealed class AppleBluetoothCapabilityListItem
         new()
         {
             Name = GetName(report.Capability),
-            Status = GetStatus(report.Status),
+            Status = report.ReasonCode.StartsWith("ancs-access-denied.", StringComparison.Ordinal) ? "Access denied" : GetStatus(report.Status),
             Detail = GetDetail(report),
         };
 
@@ -39,7 +39,10 @@ public sealed class AppleBluetoothCapabilityListItem
         _ => "Unavailable",
     };
 
-    private static string GetDetail(AppleBluetoothCapabilityReport report) => report.Status switch
+    private static string GetDetail(AppleBluetoothCapabilityReport report) =>
+        report.ReasonCode.StartsWith("ancs-access-denied.", StringComparison.Ordinal)
+        ? "Windows found ANCS but denied access to its characteristics. Service discovery is not usable notification/action access. Start a session to request access explicitly; any permission decision remains yours. A system restriction may still prevent access."
+        : report.Status switch
     {
         AppleBluetoothCapabilityStatus.Ready =>
             "Windows discovered the public Bluetooth service. Runtime access may still require an iPhone permission prompt.",

@@ -50,6 +50,8 @@
                 </ListView.ItemTemplate>
             </ListView>
             <TextBlock FontSize="22" FontWeight="SemiBold" Text="Live ANCS session" />
+            <TextBlock Text="When the iPhone supplies an action flag and label, an action button appears below that notification. Every action requires confirmation. A successful Bluetooth write does not verify the action's effect; actions are never automatically retried."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <InfoBar x:Name="SessionStatusBar" IsClosable="False" IsOpen="False" />
             <ListView x:Name="NotificationsList" ItemsSource="{x:Bind Notifications}" SelectionMode="None" Visibility="Collapsed">
                 <ListView.ItemTemplate>
@@ -66,6 +68,10 @@
                                 </Grid>
                                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Source}" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Text="{x:Bind Body}" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Content="{x:Bind PositiveActionLabel}" Tag="{x:Bind}" Visibility="{x:Bind PositiveActionVisibility}" Click="PositiveAction_Click" />
+                                    <Button Content="{x:Bind NegativeActionLabel}" Tag="{x:Bind}" Visibility="{x:Bind NegativeActionVisibility}" Click="NegativeAction_Click" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </DataTemplate>
