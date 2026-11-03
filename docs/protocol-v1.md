@@ -6,6 +6,8 @@ Encoding: UTF-8 JSON for control/events; binary WebSocket messages for attachmen
 
 ## Protocol goals
 
+Optional implementation extension: `diagnostics.health.v1` advertises explicit phone-originated health snapshots. `diagnostics.health.snapshot` requires acknowledgement and no correlation ID; Windows answers `diagnostics.health.receipt` with `{ "accepted": true|false }`, correlated to the snapshot message in the same authenticated session. Payload schema, consent, bounds, privacy and expiry are specified in [companion health snapshots](companion-health-snapshots.md). This does not permit Windows to silently request readings and does not change protocol version 1.
+
 - Authenticate both paired devices without an Apple Account, Microsoft account, or cloud relay.
 - Work offline on a trusted local network.
 - Survive disconnects, duplicate delivery, process termination, and clock skew.

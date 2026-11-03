@@ -4,7 +4,7 @@ A local-first Windows + iPhone integration project, with supported platform inte
 
 ## Current status
 
-The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates crash analysis and the audio receiver, and has not been trusted or installed. All 317 .NET tests and 10 packaging-artifact checks passed. On October 20, the companion compiled with all 8 tests passing in [native Xcode 26.3/iOS 26.2 simulator CI](https://github.com/MercyProductions/Phone-Link/actions/runs/39374852047). Physical-iPhone companion installation and signed-device verification remain open.
+The Windows app builds and launches on this Windows 11 workstation. A signed x64 development MSIX was built on November 3; `artifacts/windows/msix/latest.json` selects its versioned artifact set. It includes app-identity diagnostics but predates crash analysis, the audio receiver and companion health snapshots, and has not been trusted or installed. All 331 .NET tests and 10 packaging-artifact checks passed. The companion, including the new health checks, passed [native Xcode/iOS simulator CI on November 3](https://github.com/MercyProductions/Phone-Link/actions/runs/41598539264). Physical-iPhone companion installation and signed-device verification remain open.
 
 Implemented:
 
@@ -27,6 +27,7 @@ Implemented:
 - modern WinUI pages for Messages, Contacts, Photos, Calls, Notifications, Devices, Settings, and About;
 - a live iPhone Troubleshooter for Apple USB presence, Windows problem flags, Apple Devices installation, local pairing paths, and authenticated companion sessions, with a minimal shareable report;
 - local analysis of user-selected type-309 JSON crash reports, with allowlisted signatures and a separately copied redacted summary; real UI import/display/copy verified with the synthetic fixture, not yet with owner reports; see [scope and verification](docs/crash-report-analysis.md);
+- explicit iPhone-side health capture and per-snapshot confirmed sharing to the connected PC, with a bounded/session-bound Windows inbox; storage stays on iPhone, no permission prompts or repairs run; see [verification and physical-device gates](docs/companion-health-snapshots.md);
 - explicit experimental USB transport and read-only iPhone-information probes, without an iOS companion prerequisite for those probes;
 - per-field phone-query outcomes and bounded automatic/manual recovery of a missing app discovery advertisement, with before/after checks;
 - managed loopback-only USB forwarding with target rechecks, Stop controls, byte statistics, and a read-only round-trip verifier;
