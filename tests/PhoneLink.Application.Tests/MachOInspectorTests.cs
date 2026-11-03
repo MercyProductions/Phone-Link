@@ -160,6 +160,60 @@ public sealed class MachOInspectorTests
         return bytes;
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecognizesPieExecutableHeaderWithoutCallingItASectionOrFunction(bool universal)
+    {
+        var bytes = PieHeader();
+        if (universal) bytes = Fat(bytes, Thin(cpu: 0x1000007, subtype: 3), false);
+        using var stream = new MemoryStream(bytes);
+        var report = await MachOInspector.InspectAsync(stream);
+        var header = Assert.Single(report.Images[0].Entries, item => item.Name == "__mh_execute_header");
+        Assert.Equal("image-header", header.Kind);
+        Assert.Equal("0x100000000", header.VirtualAddress);
+        Assert.Equal("0x0", header.ImageRelativeOffset);
+        Assert.Equal(universal ? "0x1000" : "0x0", header.FileOffset);
+        Assert.False(report.RuntimeAddressesAvailable);
+    }
+
+    [Theory]
+    [InlineData("not-header-base")]
+    [InlineData("wrong-file-type")]
+    [InlineData("not-pie")]
+    [InlineData("wrong-section")]
+    [InlineData("ordinary-name")]
+    [InlineData("zero-fill")]
+    [InlineData("outside-section-end")]
+    public async Task HeaderRecognitionDoesNotRelaxOrdinarySectionBounds(string mutation)
+    {
+        var bytes = PieHeader();
+        switch (mutation)
+        {
+            case "not-header-base": W64(bytes, 0x308, BaseAddress + 8); break;
+            case "wrong-file-type": W32(bytes, 12, 6); break;
+            case "not-pie": W32(bytes, 24, 0); break;
+            case "wrong-section": bytes[0x305] = 2; break;
+            case "ordinary-name": bytes.AsSpan(0x330, 32).Clear(); Encoding.UTF8.GetBytes("\0_probe\0").CopyTo(bytes, 0x330); break;
+            case "zero-fill": W32(bytes, 168, 1); break;
+            case "outside-section-end": W64(bytes, 0x308, BaseAddress + 0x221); break;
+        }
+        using var stream = new MemoryStream(bytes);
+        await Assert.ThrowsAsync<InvalidDataException>(() => MachOInspector.InspectAsync(stream));
+    }
+
+    private static byte[] PieHeader()
+    {
+        var bytes = Thin();
+        W32(bytes, 12, 2); W32(bytes, 24, 0x200000);
+        bytes.AsSpan(0x330, 32).Clear();
+        var name = Encoding.UTF8.GetBytes("\0__mh_execute_header\0");
+        name.CopyTo(bytes, 0x330); W32(bytes, 380, (uint)name.Length);
+        Symbol(bytes, 0x300, 1, 0xf, 1, BaseAddress);
+        W32(bytes, 0x310, 0); W32(bytes, 0x320, 0);
+        return bytes;
+    }
+
     private static byte[] ManySymbols(int count, uint cpu, uint subtype)
     {
         var stringsOffset = 0x300 + count * 16;

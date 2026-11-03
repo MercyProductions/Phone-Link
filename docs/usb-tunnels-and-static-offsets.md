@@ -21,6 +21,16 @@ Physical proof: CLI and Windows UI verification both returned success with 189 b
 
 ## Static Mach-O offset inspector
 
+### Release iPhone executable compatibility, November 3
+
+The real unsigned Release/iPhoneOS companion archive from [native run 41622905442](https://github.com/MercyProductions/Phone-Link/actions/runs/41622905442) exposed a valid linker convention the original parser rejected: an external `__mh_execute_header` N_SECT symbol assigned to the first text section but pointing at the earlier Mach-O header. The parser now labels that exact case `image-header`, not a section function. Recognition requires MH_EXECUTE+MH_PIE, section one named __TEXT/__text, a non-zero-fill section, the exact preferred image base and a unique file-backed __TEXT mapping at slice offset zero. It does not skip arbitrary invalid symbols, relax ordinary ranges or treat non-PIE absolute symbols as file addresses.
+
+Nine synthetic regression cases cover thin/universal header offsets and rejection of wrong address, file type, PIE flag, section, name, zero-fill and past-end symbols. The actual Windows CLI now parses this 1,049,480-byte ARM64 executable, finds 4,043 entries, agrees with the native UUID/SHA-256 and maps its header to file offset zero. Runtime addresses remain false; inputs are unchanged. Full build zero warnings/errors; all 440 .NET tests passed. This device image has not been loaded on the owner phone or separately imported through Windows UI. [Artifact metadata and signing gates](ios-device-build.md).
+
+Primary corroboration: [LLVM 21.1.0 header-symbol construction](https://github.com/llvm/llvm-project/blob/llvmorg-21.1.0/lld/MachO/SyntheticSections.cpp#L2088) and [Apple linker symbol encoding](https://github.com/apple-oss-distributions/ld64/blob/main/src/ld/LinkEditClassic.hpp). These explain the convention; our observed Xcode 26.3-produced device executable is the version-specific compatibility evidence, not a claim that Xcode uses that LLVM release.
+
+### Supported static inspection
+
 Choose a local unpacked little-endian 64-bit Mach-O image or supported universal FAT32/FAT64 container. The file is read, never executed, modified, uploaded, decrypted, or obtained from phone memory. The report records SHA-256, architecture/subtype, UUID, sections, segments, symbol records, function starts, and exports. The UI shows at most 500 entries per image; JSON retains all parsed entries up to explicit aggregate limits.
 
 Addresses are hexadecimal strings. File offsets refer to the outer file, including a universal slice's base. Image-relative offsets, unslid virtual addresses, constants, and unavailable mappings remain distinct. Undefined and absolute symbols are not invented file addresses. `RuntimeAddressesAvailable` is always false: no ASLR slide, kernel address, process memory, or private API offset is guessed.

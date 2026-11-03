@@ -6,7 +6,7 @@ public static partial class MachOInspector
 {
     private sealed partial class ImageReader
     {
-        private void ReadSymbols(uint offset, uint count, uint stringOffset, uint stringBytes)
+        private void ReadSymbols(uint offset, uint count, uint stringOffset, uint stringBytes, bool pieExecutable)
         {
             if (count > 2_000_000 || stringBytes > 64 * 1024 * 1024)
                 throw new InvalidDataException("The symbol/string table exceeds inspection limits.");
@@ -31,12 +31,23 @@ public static partial class MachOInspector
                     if (sectionIndex == 0 || sectionIndex > _sections.Count)
                         throw new InvalidDataException("A symbol references an invalid section ordinal.");
                     var section = _sections[sectionIndex - 1];
-                    if (value < section.Address || value - section.Address > section.Size)
-                        throw new InvalidDataException("A section symbol escaped its declared virtual range.");
-                    var file = section.ZeroFill || value - section.Address == section.Size ? null
-                        : Hex((ulong)sliceOffset + section.FileOffset + value - section.Address);
-                    result = new(name, "LC_SYMTAB", (type & 1) != 0 ? "section/external" : "section/local", Hex(value),
-                        value >= _imageBase ? Hex(value - _imageBase) : null, file, null);
+                    // Linkers assign this PIE header symbol N_SECT/section 1 even though the header precedes __text.
+                    // Recognize only the exact header at a unique file-backed __TEXT base; do not relax normal symbols.
+                    if (pieExecutable && type == 0x0f && name == "__mh_execute_header" && sectionIndex == 1 &&
+                        section is { Segment: "__TEXT", Name: "__text", ZeroFill: false } && value == _imageBase && value < section.Address &&
+                        _segments.Count(segment => segment.Name == "__TEXT" && segment.FileOffset == 0 && segment.Address == value &&
+                            segment.FileSize >= 32 && segment.Size >= 32) == 1 &&
+                        _segments.Count(segment => value >= segment.Address && value - segment.Address < segment.FileSize) == 1)
+                        result = AddressEntry(name, "LC_SYMTAB", "image-header", value);
+                    else
+                    {
+                        if (value < section.Address || value - section.Address > section.Size)
+                            throw new InvalidDataException("A section symbol escaped its declared virtual range.");
+                        var file = section.ZeroFill || value - section.Address == section.Size ? null
+                            : Hex((ulong)sliceOffset + section.FileOffset + value - section.Address);
+                        result = new(name, "LC_SYMTAB", (type & 1) != 0 ? "section/external" : "section/local", Hex(value),
+                            value >= _imageBase ? Hex(value - _imageBase) : null, file, null);
+                    }
                 }
                 else result = new(name, "LC_SYMTAB", kind switch { 0 => "undefined", 2 => "absolute", 0x0a => "indirect", _ => "unclassified" },
                     null, null, null, kind == 2 ? Hex(value) : null);

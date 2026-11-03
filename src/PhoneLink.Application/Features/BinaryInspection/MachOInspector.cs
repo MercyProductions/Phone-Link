@@ -151,7 +151,8 @@ public static partial class MachOInspector
             _imageBase = _segments.Where(segment => segment.FileSize > 0 && segment.FileOffset == 0)
                 .Select(segment => segment.Address).DefaultIfEmpty(_segments.Where(segment => segment.FileSize > 0)
                     .Select(segment => segment.Address).DefaultIfEmpty().Min()).Min();
-            if (symbols is { } table) ReadSymbols(table.Offset, table.Count, table.Strings, table.StringBytes);
+            if (symbols is { } table) ReadSymbols(table.Offset, table.Count, table.Strings, table.StringBytes,
+                fileType == 2 && (U32(header, 24) & 0x200000) != 0); // MH_EXECUTE + MH_PIE
             if (functions is { Bytes: > 0 } starts) ReadFunctionStarts(starts.Offset, starts.Bytes);
             if (exports is { Bytes: > 0 } trie) ReadExports(trie.Offset, trie.Bytes);
             if (uuid is null) _warnings.Add("No LC_UUID is present; do not assume this image matches a runtime binary or dSYM.");
