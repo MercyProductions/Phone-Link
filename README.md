@@ -24,6 +24,8 @@ Implemented:
 - modern WinUI pages for Messages, Contacts, Photos, Calls, Notifications, Devices, Settings, and About;
 - a live iPhone Troubleshooter for Apple USB presence, Windows problem flags, Apple Devices installation, local pairing paths, and authenticated companion sessions, with a minimal shareable report;
 - explicit experimental USB transport and read-only iPhone-information probes, without an iOS companion prerequisite for those probes;
+- managed loopback-only USB forwarding with target rechecks, Stop controls, byte statistics, and a read-only round-trip verifier;
+- bounded static Mach-O symbol/offset inspection with architecture/UUID/hash identity, a Windows table, JSON export, and portable CLI;
 - a reproducible signed development MSIX build.
 
 Important limits:
@@ -38,7 +40,7 @@ Important limits:
 
 See the detailed [feature feasibility matrix](docs/phase-1-feature-feasibility.md), [architecture](docs/phase-2-architecture.md), [protocol](docs/protocol-v1.md), [database schema](docs/database-schema.md), and [threat model](docs/security-threat-model.md).
 
-The [iPhone toolbox expansion map](docs/iphone-toolbox.md) covers diagnostics, backup/migration, user-shared crash reports, hardware checks, official recovery, repair assistance, and the broader Windows integration tracks. The Troubleshooter and explicit USB information checks are implemented and verified on the attached phone; automatic phone repair is not. The November 2 Debug build passed with all 130 .NET tests. See [experimental USB diagnostics](docs/experimental-usb-diagnostics.md) for the allowlisted CLI probes and evidence, and the [active accessory/repair/tunnel/dumper checkpoint](docs/accessory-repair-goal.md) for remaining work. The signed MSIX still needs rebuilding to include these changes.
+The [iPhone toolbox expansion map](docs/iphone-toolbox.md) covers diagnostics, backup/migration, user-shared crash reports, hardware checks, official recovery, repair assistance, and the broader Windows integration tracks. The Troubleshooter and explicit USB information checks are implemented and verified on the attached phone; automatic phone repair is not. The November 2 Debug build passed with all 158 .NET tests. See [experimental USB diagnostics](docs/experimental-usb-diagnostics.md), [USB forwarding and static offsets](docs/usb-tunnels-and-static-offsets.md), and the [active goal checkpoint](docs/accessory-repair-goal.md) for evidence and remaining work. Forwarding is not authenticated SSH, and static file inspection is not a runtime kernel/process dump. The signed MSIX still needs rebuilding to include these changes.
 
 The [expanded-vision roadmap](docs/expanded-vision-roadmap.md) tracks the October requirements, current gaps, and verification evidence. The existing installer predates the current discovery changes. Direct executable launches now use `%LOCALAPPDATA%/MercyProductions/PhoneLink` for protected local data; installed packages retain their package-local storage. Scoped link-local IPv6 addresses are displayed as interface metadata but excluded from QR offers because Windows interface scope IDs cannot be reused on iPhone.
 

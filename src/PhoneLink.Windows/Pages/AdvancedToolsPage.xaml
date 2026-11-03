@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page x:Class="PhoneLink.Windows.Pages.AdvancedToolsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PhoneLink.Windows.Pages"
+    Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="32" Spacing="18">
+            <TextBlock Text="USB &amp; binary tools" FontSize="32" FontWeight="SemiBold" />
+            <TextBlock Text="Advanced tools for your own devices and images. Forwarding does not install an SSH server. Static file offsets are not live process or kernel addresses."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" />
+            <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Pinned USB forwarder" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="Connect exactly one owned device to select it. Each new connection rechecks the selected USB identity; a different phone is not silently substituted. The listener is loopback-only, but other local processes can use it while active."
+                        TextWrapping="Wrap" />
+                    <NumberBox x:Name="RemotePortBox" Header="Existing service port on the device" Value="22" Minimum="1" Maximum="65535"
+                        SpinButtonPlacementMode="Compact" Width="250" HorizontalAlignment="Left" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button x:Name="StartButton" Content="Start loopback forwarder" Click="StartButton_Click" />
+                        <Button x:Name="StopButton" Content="Stop" Click="StopButton_Click" IsEnabled="False" />
+                    </StackPanel>
+                    <TextBlock x:Name="TunnelText" Text="Stopped. No ports are listening." TextWrapping="Wrap" FontFamily="Consolas" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button x:Name="VerifyButton" Content="Verify read-only USB round-trip" Click="VerifyButton_Click" />
+                        <Button x:Name="SshButton" Content="Check SSH endpoint" Click="SshButton_Click" />
+                    </StackPanel>
+                    <TextBlock Text="No login or command is sent by the SSH check. Use a normal SSH client with host-key verification when a server is available. Forwarding alone adds no encryption or device permissions. The forwarder stops when you leave this page, lock Phone Link, stop it, or exit the app."
+                        TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+            <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Static Mach-O offset inspector" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="Inspect a local unpacked 64-bit or universal Mach-O image. Nothing is executed, decrypted, uploaded, or read from device memory. The JSON report distinguishes file offsets, unslid virtual addresses, constants and missing mappings."
+                        TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button x:Name="InspectButton" Content="Choose image to inspect" Click="InspectButton_Click" />
+                        <Button x:Name="ExportButton" Content="Save JSON report" Click="ExportButton_Click" IsEnabled="False" />
+                        <ProgressRing x:Name="BusyRing" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
+                    </StackPanel>
+                    <TextBlock x:Name="ImageSummary" Text="No image selected." TextWrapping="Wrap" FontFamily="Consolas" />
+                    <ComboBox x:Name="ImageSelector" Header="Architecture / image UUID" SelectionChanged="ImageSelector_SelectionChanged" HorizontalAlignment="Stretch" />
+                    <TextBlock x:Name="EntrySummary" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <ListView Height="360" ItemsSource="{x:Bind Rows}" SelectionMode="None">
+                        <ListView.Header>
+                            <TextBlock Text="Name / source     ·     unslid VA     ·     image-relative offset     ·     outer-file offset" TextWrapping="Wrap" />
+                        </ListView.Header>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:OffsetEntryRow">
+                                <StackPanel Spacing="4" Padding="8">
+                                    <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{x:Bind Mapping}" FontFamily="Consolas" TextWrapping="Wrap" />
+                                    <TextBlock Text="{x:Bind Kind}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -152,7 +152,7 @@ public static class ExperimentalIphoneInformationProbe
         return ids[0];
     }
 
-    private static async Task<Dictionary<string, XElement>> QueryMuxAsync(Stream stream,
+    internal static async Task<Dictionary<string, XElement>> QueryMuxAsync(Stream stream,
         XElement[] fields, CancellationToken cancellationToken)
     {
         var payload = await ExperimentalUsbMuxProbe.ExchangePayloadAsync(stream, Encode(fields), cancellationToken).ConfigureAwait(false);
