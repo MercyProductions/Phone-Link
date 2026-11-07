@@ -48,6 +48,7 @@ public sealed partial class AdvancedToolsPage : Page
     {
         _loaded = false;
         _sshCancellation?.Cancel();
+        ClearSshClientCommand();
         SshProbeText.Text = "No current forwarded SSH observation.";
         ClearRuntimeForPrivacy();
         _timer.Stop();
@@ -105,15 +106,12 @@ public sealed partial class AdvancedToolsPage : Page
 
     private async void StartButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
-        var value = RemotePortBox.Value;
-        if (double.IsNaN(value) || value != Math.Truncate(value) || value is < 1 or > 65535)
-            throw new InvalidOperationException("Choose a whole-number device port between 1 and 65535.");
+        var port = ReadRemotePort();
         using var setup = CancellationTokenSource.CreateLinkedTokenSource(token);
         setup.CancelAfter(TimeSpan.FromSeconds(10));
         var connector = await PinnedUsbDeviceConnector.SelectSingleAsync(setup.Token);
         token.ThrowIfCancellationRequested();
         if (!_loaded || App.IsLocked) return;
-        var port = (ushort)value;
         _tunnel = LoopbackDeviceTunnel.Start(ct => connector.OpenChannelAsync(port, ct), cancellationToken: _pageLifetime.Token);
         _forwardedPort = port;
         SshProbeText.Text = "This forwarder's target service has not been checked. Identification will not establish host-key trust or login.";
@@ -130,6 +128,7 @@ public sealed partial class AdvancedToolsPage : Page
     private async Task StopTunnelAsync()
     {
         _sshCancellation?.Cancel();
+        ClearSshClientCommand();
         SshProbeText.Text = "No current forwarded SSH observation. Stopping invalidates earlier results.";
         var tunnel = Interlocked.Exchange(ref _tunnel, null);
         if (tunnel is not null) await tunnel.DisposeAsync();
@@ -152,16 +151,53 @@ public sealed partial class AdvancedToolsPage : Page
         if (tunnel is null || !tunnel.IsRunning) return;
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         _sshCancellation = cancellation;
+        ClearSshClientCommand();
         SshProbeText.Text = "Checking identification through this active forwarder only…";
         try
         {
             var result = await ForwardedSshAvailabilityProbe.ProbeAsync(tunnel, cancellation.Token);
             if (!cancellation.IsCancellationRequested && _loaded && !App.IsLocked &&
                 ReferenceEquals(_tunnel, tunnel) && tunnel.IsRunning)
+            {
                 SshProbeText.Text = $"Forwarded USB port {_forwardedPort}: {result.Status}";
+                if (result.ServerIdentified)
+                {
+                    SshClientText.Text = "Optional: in your own terminal, replace YOUR_USER and VERIFIED_ALIAS. " +
+                        "Use an alias that already has this server's independently verified key in known_hosts. " +
+                        "Phone Link does not enroll or verify the key.\n" + FormattableString.Invariant(
+                            $"ssh -F none -o StrictHostKeyChecking=yes -o UpdateHostKeys=no -o ForwardAgent=no -o HostKeyAlias=VERIFIED_ALIAS -p {tunnel.LocalPort} -l YOUR_USER 127.0.0.1");
+                    SshClientText.Visibility = Visibility.Visible;
+                }
+            }
         }
         finally { _sshCancellation = null; }
     });
+
+    private async void DirectSshButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
+    {
+        if (_tunnel is not null) return;
+        var port = ReadRemotePort();
+        ClearSshClientCommand();
+        SshProbeText.Text = $"Checking USB port {port}; no listener will be opened…";
+        var result = await ExperimentalSshAvailabilityProbe.ProbeAsync(port, token);
+        if (!_loaded || App.IsLocked || token.IsCancellationRequested) return;
+        var code = result.TransportResponseCode is { } response ? $" Transport response: {response}." : string.Empty;
+        SshProbeText.Text = $"USB port {port}: {result.Status}{code}";
+    });
+
+    private ushort ReadRemotePort()
+    {
+        var value = RemotePortBox.Value;
+        if (double.IsNaN(value) || value != Math.Truncate(value) || value is < 1 or > 65535)
+            throw new InvalidOperationException("Choose a whole-number device port between 1 and 65535.");
+        return (ushort)value;
+    }
+
+    private void ClearSshClientCommand()
+    {
+        SshClientText.Text = string.Empty;
+        SshClientText.Visibility = Visibility.Collapsed;
+    }
 
     private async void InspectButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
@@ -315,6 +351,7 @@ public sealed partial class AdvancedToolsPage : Page
         RemotePortBox.IsEnabled = !_busy && _tunnel is null;
         VerifyButton.IsEnabled = InspectButton.IsEnabled = DeveloperModeButton.IsEnabled = !_busy && !App.IsLocked;
         SshButton.IsEnabled = !_busy && !App.IsLocked && _tunnel?.IsRunning == true;
+        DirectSshButton.IsEnabled = !_busy && !App.IsLocked && _tunnel is null;
         ExportButton.IsEnabled = !_busy && _inspection is not null;
         RuntimeImportButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
         ImageSelector.IsEnabled = !_busy;

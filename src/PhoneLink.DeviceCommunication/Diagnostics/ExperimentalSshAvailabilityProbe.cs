@@ -1,4 +1,5 @@
 using System.Text;
+using PhoneLink.DeviceCommunication.Tunnels;
 
 namespace PhoneLink.DeviceCommunication.Diagnostics;
 
@@ -6,20 +7,36 @@ public sealed record SshAvailability(bool ServerIdentified, string Status, strin
 
 public static class ExperimentalSshAvailabilityProbe
 {
-    public static async Task<SshAvailability> ProbeAsync(CancellationToken cancellationToken)
+    public static Task<SshAvailability> ProbeAsync(CancellationToken cancellationToken) => ProbeAsync(22, cancellationToken);
+
+    public static Task<SshAvailability> ProbeAsync(ushort remotePort, CancellationToken cancellationToken) =>
+        ProbeAsync(remotePort, static async (port, token) =>
+        {
+            var connector = await PinnedUsbDeviceConnector.SelectSingleAsync(token).ConfigureAwait(false);
+            return await connector.OpenChannelAsync(port, token).ConfigureAwait(false);
+        }, cancellationToken);
+
+    internal static async Task<SshAvailability> ProbeAsync(ushort remotePort,
+        Func<ushort, CancellationToken, Task<TunnelConnection>> connect, CancellationToken cancellationToken)
     {
+        ArgumentOutOfRangeException.ThrowIfZero(remotePort);
+        ArgumentNullException.ThrowIfNull(connect);
+        cancellationToken.ThrowIfCancellationRequested();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(6));
         try
         {
-            using var connection = await ExperimentalIphoneInformationProbe.OpenSingleUsbChannelAsync(22, timeout.Token).ConfigureAwait(false);
-            var stream = connection.GetStream();
+            await using var connection = await connect(remotePort, timeout.Token).ConfigureAwait(false);
+            var stream = connection.Stream;
             await stream.WriteAsync("SSH-2.0-PhoneLinkProbe_1\r\n"u8.ToArray(), timeout.Token).ConfigureAwait(false);
-            return await ReadIdentificationAsync(stream, timeout.Token).ConfigureAwait(false);
+            var result = await ReadIdentificationAsync(stream, timeout.Token).ConfigureAwait(false);
+            timeout.Token.ThrowIfCancellationRequested();
+            return result;
         }
         catch (UsbMuxChannelUnavailableException exception)
         {
-            return new(false, "Standard SSH port was not available through the USB transport. No login was attempted.", null, exception.ResponseCode);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new(false, "The selected SSH port was rejected by the USB transport. No login was attempted.", null, exception.ResponseCode);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

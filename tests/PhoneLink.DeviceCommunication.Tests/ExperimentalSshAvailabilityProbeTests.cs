@@ -5,6 +5,34 @@ namespace PhoneLink.DeviceCommunication.Tests;
 
 public sealed class ExperimentalSshAvailabilityProbeTests
 {
+    [Fact]
+    public async Task ProbesOnlyTheSelectedPortAndPreservesTransportRejection()
+    {
+        List<ushort> ports = [];
+        var result = await ExperimentalSshAvailabilityProbe.ProbeAsync(2222, (port, _) =>
+        {
+            ports.Add(port);
+            throw new UsbMuxChannelUnavailableException(3);
+        }, CancellationToken.None);
+        Assert.Equal(new ushort[] { 2222 }, ports);
+        Assert.False(result.ServerIdentified);
+        Assert.Equal(3, result.TransportResponseCode);
+    }
+
+    [Fact]
+    public async Task InvalidPortNeverOpensAChannel()
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => ExperimentalSshAvailabilityProbe.ProbeAsync(0,
+            static (_, _) => throw new InvalidOperationException("Must not connect."), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CancelledCheckNeverOpensAChannel()
+    {
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ExperimentalSshAvailabilityProbe.ProbeAsync(22,
+            static (_, _) => throw new InvalidOperationException("Must not connect."), new CancellationToken(true)));
+    }
+
     [Theory]
     [InlineData("SSH-2.0-test_server\r\n")]
     [InlineData("Service notice\r\nSSH-2.0-test_server\r\n")]

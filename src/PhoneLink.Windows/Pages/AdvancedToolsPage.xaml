@@ -28,7 +28,9 @@
                             ToolTipService.ToolTip="One experimental read-only flag query. Does not enable/reveal Developer Mode, reboot, mount an image, start a service or read pairing credentials." />
                     </StackPanel>
                     <Button x:Name="SshButton" Content="Check active forwarder's SSH identification" Click="SshButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
+                    <Button x:Name="DirectSshButton" Content="Check selected USB port without forwarding" Click="DirectSshButton_Click" HorizontalAlignment="Left" />
                     <TextBlock x:Name="SshProbeText" Text="No current forwarded SSH observation. Start a pinned forwarder to an existing service first." TextWrapping="Wrap" />
+                    <TextBlock x:Name="SshClientText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
                     <TextBlock Text="No login or command is sent by the SSH check. Use a normal SSH client with host-key verification when a server is available. Forwarding alone adds no encryption or device permissions. The forwarder stops when you leave this page, lock Phone Link, stop it, or exit the app."
                         TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock Text="Developer Mode is only one development/debugging prerequisite. Its reported status does not establish SSH, debugger access, signing, device trust, or permission to inspect other apps or kernel memory. This app does not enable it; doing so is a separate user decision with security implications."
