@@ -21,6 +21,39 @@ public sealed class DiscoveryRecoveryTests
         Assert.True(budget.CanRetry);
     }
 
+    [Fact]
+    public void AutomaticRetryResumesAfterCooldownWithoutRestoringTheBurst()
+    {
+        var clock = new RecoveryClock();
+        var budget = new DiscoveryRecoveryRetryBudget(clock);
+        for (var failure = 0; failure < 3; failure++) budget.RecordFailure();
+
+        clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromTicks(1));
+        Assert.False(budget.CanRetry);
+        clock.Advance(TimeSpan.FromTicks(1));
+        Assert.True(budget.CanRetry);
+
+        budget.Record(new(DiscoveryRecoveryOutcome.NotApplicable, Missing, null, false, "fixture"));
+        Assert.True(budget.CanRetry); // A prerequisite check did not attempt a repair.
+        budget.RecordFailure();
+        Assert.False(budget.CanRetry);
+        clock.Advance(TimeSpan.FromMinutes(5));
+        Assert.True(budget.CanRetry);
+
+        budget.Record(new(DiscoveryRecoveryOutcome.RecoveredLocally, Missing, null, true, "fixture"));
+        budget.RecordFailure();
+        budget.RecordFailure();
+        Assert.True(budget.CanRetry); // Verified health restores the initial burst.
+    }
+
+    private sealed class RecoveryClock : TimeProvider
+    {
+        private long _timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _timestamp;
+        public void Advance(TimeSpan duration) => _timestamp += duration.Ticks;
+    }
+
     [Theory]
     [InlineData(DiscoveryRecoveryOutcome.RecoveredLocally, true, true)]
     [InlineData(DiscoveryRecoveryOutcome.NoActionRequired, false, true)]

@@ -191,6 +191,12 @@ Downloaded the 1,849,050-byte artifact container without executing its contents,
 
 This closes native compilation/test uncertainty for the motion source; it does not prove actual sensor delivery, permission/lifecycle/export UI behavior on the owned phone, physical pairing, accessory parity, effective repair, SSH authentication or device/kernel runtime offsets. The full goal remains active and incomplete. The phone is still reported disconnected and signed installation still requires owner action.
 
+## November 7 discovery and pairing checkpoint
+
+Windows automatic discovery recovery now retries after a five-minute cooldown instead of staying disabled indefinitely after three failures. Further failures keep the slower cadence. The existing trusted-peer, unlocked-app, eligible-network and after-state checks still apply; no settings or trust are reset. The elapsed-time test advances an injected clock through the exact boundary and verifies that an ineligible check does not count as a failed repair. See [discovery recovery](app-discovery-recovery.md).
+
+Physical-device gates remain separate: the selected phone previously refused Bluetooth inbox access with OBEX `0xC3`; `e2023fc` identifies the operation on the next attempt. Camera-free pairing source `006609b` produced a hash-verified unsigned iPhone archive. [The native workflow](https://github.com/MercyProductions/Phone-Link/actions/runs/42383887582) timed out waiting for the simulator to boot before tests on its first attempt, so only the failed job was retried. Neither archive output nor a simulator result verifies physical pairing, Bluetooth feeds, or SSH login.
+
 ## Primary research references
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.

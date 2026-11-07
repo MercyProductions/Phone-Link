@@ -9,16 +9,36 @@ public sealed record DiscoveryRecoveryResult(DiscoveryRecoveryOutcome Outcome,
     DiscoveryRecoverySnapshot Before, DiscoveryRecoverySnapshot? After, bool ActionAttempted,
     string Summary);
 
-public sealed class DiscoveryRecoveryRetryBudget
+public sealed class DiscoveryRecoveryRetryBudget(TimeProvider? timeProvider = null)
 {
+    private const int BurstLimit = 3;
+    private static readonly TimeSpan RetryCooldown = TimeSpan.FromMinutes(5);
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+    private readonly Lock _gate = new();
     private int _failures;
-    public bool CanRetry => Volatile.Read(ref _failures) < 3;
-    public void Reset() => Interlocked.Exchange(ref _failures, 0);
+    private long _lastFailure;
+
+    public bool CanRetry
+    {
+        get
+        {
+            lock (_gate)
+                return _failures < BurstLimit || _clock.GetElapsedTime(_lastFailure) >= RetryCooldown;
+        }
+    }
+
+    public void Reset()
+    {
+        lock (_gate) _failures = 0;
+    }
+
     public void RecordFailure()
     {
-        int observed;
-        do { observed = Volatile.Read(ref _failures); if (observed >= 3) return; }
-        while (Interlocked.CompareExchange(ref _failures, observed + 1, observed) != observed);
+        lock (_gate)
+        {
+            if (_failures < BurstLimit) _failures++;
+            _lastFailure = _clock.GetTimestamp();
+        }
     }
     public void Record(DiscoveryRecoveryResult result)
     {
