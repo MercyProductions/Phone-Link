@@ -12,6 +12,7 @@ The forwarder permits four simultaneous connections by default, uses bounded 64 
 
 ```powershell
 dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --verify-tunnel
+dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --verify-ssh-tunnel 22
 dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj -- --forward 22
 ```
 
@@ -19,7 +20,9 @@ dotnet run --project tools/PhoneLink.DeviceProbe/PhoneLink.DeviceProbe.csproj --
 
 To check one already configured SSH service without opening a local listener, use **Check selected USB port without forwarding** or `--ssh-check [device-port]` (defaults to 22). It uses the same pinned USB selection, bounds the check to six seconds, never scans for alternatives, and only exchanges SSH identification. A positive check through an active forwarder also shows a strict OpenSSH command template using the actual loopback port and an alias for a host key you independently verified and enrolled yourself. Phone Link does not run that command, enroll keys, or authenticate to a server. See the [OpenSSH host-key options](https://man.openbsd.org/ssh_config#HostKeyAlias).
 
-Physical proof: CLI and Windows UI verification both returned success with 189 bytes sent and 329 received, zero active connections after cleanup, and no phone changes. Standard SSH port 22 previously returned transport rejection code 3; no authenticated SSH session has been established. Automated tests cover duplex transfer, client half-close, cancellation, listener release, concurrency limits, connector failure, safe statistics, and identifier normalization. Physical unplug/replug, lock, and multi-phone identity substitution still need dedicated hardware validation.
+`--verify-ssh-tunnel [device-port]` (defaults to 22) runs the greeting exchange through a temporary, exclusively bound IPv4 loopback listener and the selected USB port. It returns a JSON result with the identification outcome and final counters after closing the listener and streams. It does not start a persistent forwarder or perform key exchange. A failed USB channel open is counted separately from a local client declined because all tunnel slots were occupied. Exclusive binding blocks a competing bind, not connections from other local processes.
+
+Physical proof: CLI and Windows UI information-port verification both returned success with 189 bytes sent and 329 received, zero active connections after cleanup, and no phone changes. A November 7 retest of the information port succeeded again; the new one-shot tunnel check on SSH port 22 instead recorded one USB channel rejection, zero forwarded bytes and zero remaining active connections. A separate direct probe returned transport response code 3. These observations do not establish an SSH login or rule out a configured SSH service on a different port. Automated tests cover duplex transfer, client half-close, cancellation, listener release, exclusive binding, concurrency limits, connector failure, safe statistics, and identifier normalization. Physical unplug/replug, lock, and multi-phone identity substitution still need dedicated hardware validation.
 
 ## Static Mach-O offset inspector
 

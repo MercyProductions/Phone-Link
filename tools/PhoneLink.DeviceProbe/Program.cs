@@ -31,11 +31,11 @@ if (args.Length == 2 && args[0] == "--forward" && ushort.TryParse(args[1], out v
 }
 
 ushort sshPort = 22;
-var explicitSshPort = args.Length == 2 && args[0] == "--ssh-check" &&
+var explicitSshPort = args.Length == 2 && args[0] is "--ssh-check" or "--verify-ssh-tunnel" &&
     ushort.TryParse(args[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out sshPort) && sshPort > 0;
-if (!explicitSshPort && (args.Length != 1 || args[0] is not ("--inventory" or "--info" or "--ssh-check" or "--verify-tunnel" or "--developer-mode-status" or "--connection-check" or "--call-transport" or "--bluetooth-profile-check")))
+if (!explicitSshPort && (args.Length != 1 || args[0] is not ("--inventory" or "--info" or "--ssh-check" or "--verify-ssh-tunnel" or "--verify-tunnel" or "--developer-mode-status" or "--connection-check" or "--call-transport" or "--bluetooth-profile-check")))
 {
-    Console.Error.WriteLine("Probes: --inventory, --info, --ssh-check [device-port], --verify-tunnel, --developer-mode-status, --connection-check, --call-transport, --bluetooth-profile-check. Managed transport: --forward <device-port>. No logins or state-changing phone commands are sent automatically.");
+    Console.Error.WriteLine("Probes: --inventory, --info, --ssh-check [device-port], --verify-ssh-tunnel [device-port], --verify-tunnel, --developer-mode-status, --connection-check, --call-transport, --bluetooth-profile-check. Managed transport: --forward <device-port>. No logins or state-changing phone commands are sent automatically.");
     return 2;
 }
 using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -48,6 +48,7 @@ try
         "--call-transport" => (await WindowsCallTransportProbe.CaptureAsync(cancellation.Token)).ToDisplayText(),
         "--info" => await ExperimentalIphoneInformationProbe.ProbeAsync(cancellation.Token),
         "--ssh-check" => await ExperimentalSshAvailabilityProbe.ProbeAsync(sshPort, cancellation.Token),
+        "--verify-ssh-tunnel" => await ForwardedSshAvailabilityProbe.VerifyUsbAsync(sshPort, cancellation.Token),
         "--developer-mode-status" => await ExperimentalIphoneInformationProbe.ProbeDeveloperModeAsync(cancellation.Token),
         "--connection-check" => ConnectionDiagnosticEvaluator.Evaluate(
             await WindowsConnectionDiagnosticProbe.CaptureAsync(cancellation.Token)).ToShareableText(),

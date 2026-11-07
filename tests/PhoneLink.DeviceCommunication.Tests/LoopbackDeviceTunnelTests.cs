@@ -104,6 +104,19 @@ public sealed class LoopbackDeviceTunnelTests
         Assert.Equal(0, await excess.GetStream().ReadAsync(new byte[1], deadline.Token));
         Assert.Equal(1, count);
         Assert.Equal(1, tunnel.CaptureStatistics().ActiveConnections);
+        Assert.Equal(1, tunnel.CaptureStatistics().RejectedAtCapacity);
+        Assert.Equal(0, tunnel.CaptureStatistics().FailedConnections);
+    }
+
+    [Fact]
+    public async Task AnotherLocalSocketCannotReuseTheListeningAddressOnWindows()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        await using var tunnel = LoopbackDeviceTunnel.Start(_ => throw new InvalidOperationException("No client expected"));
+        using var competitor = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        competitor.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+        var error = Assert.Throws<SocketException>(() => competitor.Bind(new IPEndPoint(IPAddress.Loopback, tunnel.LocalPort)));
+        Assert.True(error.SocketErrorCode is SocketError.AddressAlreadyInUse or SocketError.AccessDenied);
     }
 
     [Fact]

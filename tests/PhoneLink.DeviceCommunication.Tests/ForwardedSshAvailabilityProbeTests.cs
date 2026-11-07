@@ -8,6 +8,43 @@ namespace PhoneLink.DeviceCommunication.Tests;
 
 public sealed class ForwardedSshAvailabilityProbeTests
 {
+    [Fact]
+    public async Task OneShotCheckUsesOnlySelectedPortAndClosesTheTunnel()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var fixturePort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var fixture = ServeIdentificationAsync(listener, "SSH-2.0-Fixture_1\r\n", deadline.Token);
+        var connections = 0;
+        var result = await ForwardedSshAvailabilityProbe.VerifyUsbAsync(2222, (port, token) =>
+        {
+            Assert.Equal(2222, port);
+            Interlocked.Increment(ref connections);
+            return ConnectAsync(fixturePort, token);
+        }, deadline.Token);
+        await fixture.WaitAsync(deadline.Token);
+        Assert.Equal(2222, result.DevicePort);
+        Assert.True(result.Availability.ServerIdentified);
+        Assert.Equal(1, connections);
+        Assert.Equal(0, result.Statistics.ActiveConnections);
+        Assert.Equal(0, result.Statistics.FailedConnections);
+        Assert.Equal("SSH-2.0-PhoneLinkProbe_1\r\n"u8.Length, result.Statistics.BytesToDevice);
+    }
+
+    [Fact]
+    public async Task OneShotCheckDistinguishesUsbRejectionFromAnSshServer()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var result = await ForwardedSshAvailabilityProbe.VerifyUsbAsync(22,
+            (_, _) => throw new UsbMuxChannelUnavailableException(3), deadline.Token);
+        Assert.False(result.Availability.ServerIdentified);
+        Assert.Equal(nameof(UsbMuxChannelUnavailableException), result.Statistics.LastFailureCategory);
+        Assert.Equal(1, result.Statistics.FailedConnections);
+        Assert.Equal(0, result.Statistics.ActiveConnections);
+        Assert.Equal(0, result.Statistics.BytesToDevice);
+    }
+
     [Theory]
     [InlineData("SSH-2.0-Fixture_1\r\n", true)]
     [InlineData("HTTP/1.1 200 OK\r\n", false)]

@@ -353,7 +353,7 @@ public sealed partial class AdvancedToolsPage : Page
         }
         var stats = tunnel.CaptureStatistics();
         TunnelText.Text = $"127.0.0.1:{tunnel.LocalPort} → USB port {_forwardedPort} · {stats.ActiveConnections} active · " +
-            $"{stats.BytesToDevice:N0} bytes sent / {stats.BytesFromDevice:N0} received · {stats.FailedConnections} failed · {stats.LastFailureCategory ?? "no failure recorded"}. " +
+            $"{stats.BytesToDevice:N0} bytes sent / {stats.BytesFromDevice:N0} received · {stats.FailedConnections} failed · {stats.RejectedAtCapacity} declined at capacity · {stats.LastFailureCategory ?? "no failure recorded"}. " +
             "Forwarding active; remote service and SSH authentication are not verified.";
     }
 

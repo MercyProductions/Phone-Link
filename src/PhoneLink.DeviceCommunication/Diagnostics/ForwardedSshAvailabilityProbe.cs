@@ -4,9 +4,31 @@ using PhoneLink.DeviceCommunication.Tunnels;
 
 namespace PhoneLink.DeviceCommunication.Diagnostics;
 
+public sealed record UsbSshTunnelVerification(ushort DevicePort, SshAvailability Availability, TunnelStatistics Statistics);
+
 /// <summary>Identification only, through this exact forwarder. No credentials, keys or commands.</summary>
 public static class ForwardedSshAvailabilityProbe
 {
+    public static async Task<UsbSshTunnelVerification> VerifyUsbAsync(ushort devicePort, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(devicePort);
+        var connector = await PinnedUsbDeviceConnector.SelectSingleAsync(cancellationToken).ConfigureAwait(false);
+        return await VerifyUsbAsync(devicePort, connector.OpenChannelAsync, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<UsbSshTunnelVerification> VerifyUsbAsync(ushort devicePort,
+        Func<ushort, CancellationToken, Task<TunnelConnection>> connect, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(devicePort);
+        ArgumentNullException.ThrowIfNull(connect);
+        await using var tunnel = LoopbackDeviceTunnel.Start(token => connect(devicePort, token),
+            maximumConnections: 1, cancellationToken: cancellationToken);
+        var availability = await ProbeAsync(tunnel, cancellationToken).ConfigureAwait(false);
+        await tunnel.DisposeAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(devicePort, availability, tunnel.CaptureStatistics());
+    }
+
     public static async Task<SshAvailability> ProbeAsync(LoopbackDeviceTunnel tunnel, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(tunnel);

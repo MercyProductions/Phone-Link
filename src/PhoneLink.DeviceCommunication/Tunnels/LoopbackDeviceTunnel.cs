@@ -6,7 +6,10 @@ using System.Security.Cryptography;
 namespace PhoneLink.DeviceCommunication.Tunnels;
 
 public sealed record TunnelStatistics(int ActiveConnections, long BytesToDevice, long BytesFromDevice,
-    int FailedConnections, string? LastFailureCategory);
+    int FailedConnections, string? LastFailureCategory)
+{
+    public long RejectedAtCapacity { get; init; }
+}
 
 public sealed class TunnelConnection(Stream stream, IDisposable? owner = null, Action? completeWriting = null) : IAsyncDisposable
 {
@@ -29,7 +32,7 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
     private readonly object _disposeGate = new();
     private readonly Task _acceptTask;
     private Task? _disposeTask;
-    private long _connectionId, _sent, _received;
+    private long _connectionId, _sent, _received, _rejected;
     private int _active, _failed;
     private string? _lastFailure;
 
@@ -41,8 +44,12 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
         StoppingToken = _stop.Token;
         _slots = new SemaphoreSlim(maximumConnections, maximumConnections);
         _listener = new TcpListener(IPAddress.Loopback, localPort);
-        try { _listener.Start(maximumConnections); }
-        catch { _stop.Dispose(); _slots.Dispose(); throw; }
+        try
+        {
+            _listener.ExclusiveAddressUse = true;
+            _listener.Start(maximumConnections);
+        }
+        catch { _listener.Dispose(); _stop.Dispose(); _slots.Dispose(); throw; }
         LocalPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptTask = AcceptAsync();
     }
@@ -64,7 +71,8 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
     }
 
     public TunnelStatistics CaptureStatistics() => new(Volatile.Read(ref _active),
-        Interlocked.Read(ref _sent), Interlocked.Read(ref _received), Volatile.Read(ref _failed), Volatile.Read(ref _lastFailure));
+        Interlocked.Read(ref _sent), Interlocked.Read(ref _received), Volatile.Read(ref _failed), Volatile.Read(ref _lastFailure))
+        { RejectedAtCapacity = Interlocked.Read(ref _rejected) };
 
     public ValueTask DisposeAsync()
     {
@@ -78,7 +86,7 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
             while (!_stop.IsCancellationRequested)
             {
                 var local = await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false);
-                if (!_slots.Wait(0)) { local.Dispose(); continue; }
+                if (!_slots.Wait(0)) { Interlocked.Increment(ref _rejected); local.Dispose(); continue; }
                 var id = Interlocked.Increment(ref _connectionId);
                 var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 _connections[id] = completion.Task;
