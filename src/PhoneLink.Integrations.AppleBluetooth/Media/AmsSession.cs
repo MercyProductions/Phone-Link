@@ -57,6 +57,7 @@ public sealed class AmsSession : IAsyncDisposable
     public string EndReason { get; private set; } = "Not ended";
     public IReadOnlyList<string> SetupIssues => _issues.AsReadOnly();
     public AmsSnapshot Capture() => _state.Capture();
+    public bool CanSend(AmsRemoteCommand command) => IsConnected && _state.CanSend(command);
     public AmsCommandRequest CreateRequest(AmsRemoteCommand command) => _state.CreateRequest(command);
     public Task<AmsCommandResult> SendAsync(AmsCommandRequest request, Func<bool> isAuthorized, CancellationToken cancellationToken) =>
         _sender.SendAsync(request, isAuthorized, cancellationToken);
@@ -139,9 +140,19 @@ public sealed class AmsSession : IAsyncDisposable
         var opened = await _service.OpenAsync(GattSharingMode.SharedReadAndWrite).AsTask(cancellationToken);
         if (opened is not (GattOpenStatus.Success or GattOpenStatus.AlreadyOpened))
             throw new InvalidOperationException($"Windows did not open the AMS service in shared mode ({opened}). No characteristic write was attempted.");
-        var characteristics = await _service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(cancellationToken);
+        var (characteristics, retried) = await AmsSetupRecovery.ReadCharacteristicsAsync(
+            token => _service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(token),
+            result => result.Status, cancellationToken);
         if (characteristics.Status != GattCommunicationStatus.Success)
-            throw new InvalidOperationException($"AMS service access was allowed, but characteristic access failed ({characteristics.Status}).");
+        {
+            var detail = characteristics.Status == GattCommunicationStatus.AccessDenied
+                ? "Windows denied characteristic access. This is not proof of an iPhone fault; no permission was changed."
+                : $"Characteristic enumeration failed ({characteristics.Status}).";
+            throw new InvalidOperationException($"AMS service access was allowed. {detail} " +
+                (retried ? "One read-only retry was attempted. " : "The characteristic read was not retried. ") +
+                "No media command was sent.");
+        }
+        if (retried) _issues.Add("An initial unreachable characteristic read recovered on one read-only retry.");
         _remote = characteristics.Characteristics.FirstOrDefault(characteristic => characteristic.Uuid == RemoteUuid &&
             characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify) &&
             (characteristic.CharacteristicProperties & (GattCharacteristicProperties.Write | GattCharacteristicProperties.WriteWithoutResponse)) != 0);

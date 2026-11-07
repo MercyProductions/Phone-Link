@@ -57,6 +57,11 @@ public sealed class AmsSessionState
         }
     }
 
+    internal bool CanSend(AmsRemoteCommand command)
+    {
+        lock (_gate) return !_ended && _received && _commands.Contains(command);
+    }
+
     public bool IsCurrent(AmsCommandRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

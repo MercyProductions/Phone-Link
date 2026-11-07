@@ -1,10 +1,60 @@
 using System.Text;
 using PhoneLink.Integrations.AppleBluetooth.Media;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
 namespace PhoneLink.DeviceCommunication.Tests;
 
 public sealed class AmsTests
 {
+    [Theory]
+    [InlineData(GattCommunicationStatus.Success, GattCommunicationStatus.Success, 1)]
+    [InlineData(GattCommunicationStatus.AccessDenied, GattCommunicationStatus.AccessDenied, 1)]
+    [InlineData(GattCommunicationStatus.ProtocolError, GattCommunicationStatus.ProtocolError, 1)]
+    [InlineData(GattCommunicationStatus.Unreachable, GattCommunicationStatus.Success, 2)]
+    [InlineData(GattCommunicationStatus.Unreachable, GattCommunicationStatus.AccessDenied, 2)]
+    [InlineData(GattCommunicationStatus.Unreachable, GattCommunicationStatus.Unreachable, 2)]
+    public async Task CharacteristicRecoveryRetriesOnlyAnInitialUnreachable(
+        GattCommunicationStatus first, GattCommunicationStatus last, int expectedReads)
+    {
+        var reads = 0;
+        var result = await AmsSetupRecovery.ReadCharacteristicsAsync(
+            _ => Task.FromResult(++reads == 1 ? first : last), status => status, CancellationToken.None);
+        Assert.Equal(expectedReads, reads);
+        Assert.Equal(last, result.Result);
+        Assert.Equal(expectedReads == 2, result.Retried);
+    }
+
+    [Fact]
+    public async Task CancellationPreventsPendingCharacteristicRetry()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var reads = 0;
+        var operation = AmsSetupRecovery.ReadCharacteristicsAsync(
+            _ => { reads++; return Task.FromResult(GattCommunicationStatus.Unreachable); },
+            status => status, cancellation.Token);
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        Assert.Equal(1, reads);
+    }
+
+    [Fact]
+    public void PlaybackShortcutsRequireAnExactCurrentAdvertisement()
+    {
+        var state = new AmsSessionState();
+        Assert.False(state.CanSend(AmsRemoteCommand.Play));
+        state.UpdateCommands([(byte)AmsRemoteCommand.TogglePlayPause, (byte)AmsRemoteCommand.NextTrack]);
+        Assert.True(state.CanSend(AmsRemoteCommand.NextTrack));
+        Assert.False(state.CanSend(AmsRemoteCommand.Play));
+        Assert.False(state.CanSend(AmsRemoteCommand.Pause));
+        state.Invalidate();
+        Assert.False(state.CanSend(AmsRemoteCommand.NextTrack));
+        state.UpdateCommands([(byte)AmsRemoteCommand.Play]);
+        Assert.True(state.CanSend(AmsRemoteCommand.Play));
+        state.End();
+        state.UpdateCommands([(byte)AmsRemoteCommand.Play]);
+        Assert.False(state.CanSend(AmsRemoteCommand.Play));
+    }
+
     [Fact]
     public async Task EndedAndDisposedSessionLifetimeCannotSubmitANewCommand()
     {

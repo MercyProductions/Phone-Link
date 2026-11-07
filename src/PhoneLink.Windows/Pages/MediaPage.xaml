@@ -22,10 +22,16 @@
                 <StackPanel Spacing="12">
                     <TextBlock Text="Remote controls" FontSize="21" FontWeight="SemiBold" />
                     <TextBlock x:Name="SessionText" Text="No session. Scan and select your phone to begin." TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="PreviousButton" Content="Previous" Click="QuickCommand_Click" IsEnabled="False" />
+                        <Button x:Name="PlayButton" Content="Play" Click="QuickCommand_Click" IsEnabled="False" />
+                        <Button x:Name="PauseButton" Content="Pause" Click="QuickCommand_Click" IsEnabled="False" />
+                        <Button x:Name="NextButton" Content="Next" Click="QuickCommand_Click" IsEnabled="False" />
+                    </StackPanel>
                     <ComboBox x:Name="CommandSelector" Header="Commands currently advertised by the player" DisplayMemberPath="Label"
                         HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed" />
                     <Button x:Name="SendButton" Content="Review and send command" Click="SendButton_Click" IsEnabled="False" />
-                    <TextBlock Text="Every command needs confirmation. Commands can change playback, phone volume, or media preferences. An accepted write does not prove the player acted. No automatic retry is sent. The session stops on navigation away, Phone Link lock, or Stop."
+                    <TextBlock Text="Shortcuts are enabled only for commands currently advertised by the selected phone. Every command needs confirmation. An accepted write does not prove the player acted. Playback commands are never retried automatically. The session stops on navigation away, Phone Link lock, or Stop."
                         TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>

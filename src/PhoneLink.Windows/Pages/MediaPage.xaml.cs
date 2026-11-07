@@ -60,7 +60,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         StatusBar.IsOpen = false;
         try { await action(cancellation.Token); }
         catch (OperationCanceledException)
-        { if (_loaded && !App.IsLocked) ShowStatus("Operation cancelled or timed out. No automatic retry was sent.", InfoBarSeverity.Warning); }
+        { if (_loaded && !App.IsLocked) ShowStatus("Operation cancelled or timed out. No playback command was retried.", InfoBarSeverity.Warning); }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         { if (_loaded && !App.IsLocked) ShowStatus(exception.Message, InfoBarSeverity.Warning); }
         finally
@@ -159,9 +159,23 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         UpdateButtons();
     }
 
-    private async void SendButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
+    private async void SendButton_Click(object sender, RoutedEventArgs args)
     {
-        if (_session is not { IsConnected: true } session || CommandSelector.SelectedItem is not MediaCommandRow row) return;
+        if (CommandSelector.SelectedItem is MediaCommandRow row) await ConfirmCommandAsync(row);
+    }
+
+    private async void QuickCommand_Click(object sender, RoutedEventArgs args)
+    {
+        AmsRemoteCommand? command = ReferenceEquals(sender, PreviousButton) ? AmsRemoteCommand.PreviousTrack :
+            ReferenceEquals(sender, PlayButton) ? AmsRemoteCommand.Play :
+            ReferenceEquals(sender, PauseButton) ? AmsRemoteCommand.Pause :
+            ReferenceEquals(sender, NextButton) ? AmsRemoteCommand.NextTrack : null;
+        if (command is { } selected) await ConfirmCommandAsync(new MediaCommandRow(selected));
+    }
+
+    private Task ConfirmCommandAsync(MediaCommandRow row) => RunAsync(async token =>
+    {
+        if (_session is not { IsConnected: true } session || !session.CanSend(row.Command)) return;
         var request = session.CreateRequest(row.Command);
         _confirmation = new ContentDialog
         {
@@ -204,11 +218,20 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
     {
         if (ScanButton is null) return;
         var active = _session?.IsConnected == true;
+        bool CanSend(AmsRemoteCommand command) => _loaded && !_busy && !App.IsLocked && _session?.CanSend(command) == true;
         ScanButton.IsEnabled = !_busy && !active;
         DeviceSelector.IsEnabled = !_busy && !active;
         StartButton.IsEnabled = !_busy && !active && DeviceSelector.SelectedItem is AmsDeviceCandidate;
         StopButton.IsEnabled = _busy || _session is not null;
-        SendButton.IsEnabled = !_busy && active && CommandSelector.SelectedItem is MediaCommandRow;
+        if (SendButton is not null)
+            SendButton.IsEnabled = CommandSelector.SelectedItem is MediaCommandRow row && CanSend(row.Command);
+        if (NextButton is not null)
+        {
+            PreviousButton.IsEnabled = CanSend(AmsRemoteCommand.PreviousTrack);
+            PlayButton.IsEnabled = CanSend(AmsRemoteCommand.Play);
+            PauseButton.IsEnabled = CanSend(AmsRemoteCommand.Pause);
+            NextButton.IsEnabled = CanSend(AmsRemoteCommand.NextTrack);
+        }
         if (ExpandButton is not null && ObservationList is not null)
             ExpandButton.IsEnabled = !_busy && _session?.CanReadExtended == true &&
                 ObservationList.SelectedItem is MediaObservationRow { Observation: { IsTruncated: true, HasUnknownFlags: false } };
