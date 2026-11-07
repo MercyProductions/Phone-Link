@@ -11,6 +11,31 @@ public sealed class MapInboxItem(string sender, string preview, string time, str
     public string Type { get; } = type;
 }
 
+internal enum MapInboxStage { OpenSession, OpenTelecom, OpenMessages, ReadListing }
+
+internal sealed class MapInboxRejectedException(MapInboxStage stage, PhoneObexRejectedException cause)
+    : IOException("The Bluetooth message server rejected a MAP operation.", cause)
+{
+    public MapInboxStage Stage { get; } = stage;
+    public byte Code { get; } = cause.Code;
+
+    public string Describe()
+    {
+        var operation = Stage switch
+        {
+            MapInboxStage.OpenSession => "opening the message session",
+            MapInboxStage.OpenTelecom => "opening the telecom folder",
+            MapInboxStage.OpenMessages => "opening the message folder",
+            _ => "reading the inbox preview list",
+        };
+        var reason = Code == 0xC3 ? "forbade" : "rejected";
+        var guidance = Code == 0xC3
+            ? " On the iPhone, check Settings > Bluetooth > this PC > ⓘ for sharing options, if offered. Retry with the phone unlocked. USB trust does not grant Bluetooth message access."
+            : "";
+        return $"The phone {reason} {operation} (OBEX 0x{Code:X2}). No message was sent or changed.{guidance}";
+    }
+}
+
 internal static class MapInboxClient
 {
     private const int MaximumListing = 64 * 1024;
@@ -20,16 +45,23 @@ internal static class MapInboxClient
     internal static async Task<IReadOnlyList<MapInboxItem>> ReadAsync(Stream input, Stream output, bool sendSupportedFeatures, CancellationToken token)
     {
         var obex = new ObexPhoneClient(input, output);
-        await obex.ConnectAsync(Target, sendSupportedFeatures ? [0x29, 4, 0, 0, 0, 4] : [], token).ConfigureAwait(false);
+        var stage = MapInboxStage.OpenSession;
+        var connected = false;
         try
         {
+            await obex.ConnectAsync(Target, sendSupportedFeatures ? [0x29, 4, 0, 0, 0, 4] : [], token).ConfigureAwait(false);
+            connected = true;
+            stage = MapInboxStage.OpenTelecom;
             await obex.SetExistingFolderAsync("telecom", token).ConfigureAwait(false);
+            stage = MapInboxStage.OpenMessages;
             await obex.SetExistingFolderAsync("msg", token).ConfigureAwait(false);
+            stage = MapInboxStage.ReadListing;
             return await obex.ReadObjectAsync("inbox", "x-bt/MAP-msg-listing\0"u8.ToArray(),
                 [0x01, 2, 0, MaximumItems, 0x03, 1, 0x04, 0x10, 4, 0, 0, 0x10, 0x47, 0x13, 1, 128],
                 MaximumListing, Parse, token).ConfigureAwait(false);
         }
-        finally { await obex.DisconnectAsync(token).ConfigureAwait(false); }
+        catch (PhoneObexRejectedException cause) { throw new MapInboxRejectedException(stage, cause); }
+        finally { if (connected) await obex.DisconnectAsync(token).ConfigureAwait(false); }
     }
 
     internal static IReadOnlyList<MapInboxItem> Parse(Stream input)

@@ -97,9 +97,9 @@ public static class WindowsClassicPhoneProfiles
             }
             finally { foreach (var service in result.Services) service.Dispose(); }
         }
-        catch (PhoneObexRejectedException exception) when (!token.IsCancellationRequested)
+        catch (MapInboxRejectedException exception) when (!token.IsCancellationRequested)
         {
-            return Unavailable($"The Bluetooth message server rejected the read (OBEX 0x{exception.Code:X2}). No message was sent or changed.");
+            return Unavailable(exception.Describe());
         }
         catch (UnauthorizedAccessException) when (!token.IsCancellationRequested)
         { return Unavailable("Windows denied access to the selected Bluetooth device or MAP service."); }

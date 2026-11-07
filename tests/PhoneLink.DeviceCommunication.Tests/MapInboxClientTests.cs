@@ -31,10 +31,34 @@ public sealed class MapInboxClientTests
     {
         await using var input = new MemoryStream([0xC1, 0, 3]);
         await using var output = new MemoryStream();
-        var error = await Assert.ThrowsAsync<PhoneObexRejectedException>(() => MapInboxClient.ReadAsync(input, output, false, CancellationToken.None));
+        var error = await Assert.ThrowsAsync<MapInboxRejectedException>(() => MapInboxClient.ReadAsync(input, output, false, CancellationToken.None));
         Assert.Equal(0xC1, error.Code);
+        Assert.Equal(MapInboxStage.OpenSession, error.Stage);
         var wire = output.ToArray();
         Assert.Equal(wire.Length, (wire[1] << 8) + wire[2]);
+    }
+
+    [Theory]
+    [InlineData(0, "opening the telecom folder")]
+    [InlineData(1, "opening the message folder")]
+    [InlineData(2, "reading the inbox preview list")]
+    public async Task ForbiddenNamesTheRejectedStageAndStops(int successfulFolders, string operation)
+    {
+        byte[] successfulFolder = [0xA0, 0, 3];
+        await using var input = new MemoryStream([.. ConnectResponse,
+            .. Enumerable.Repeat(successfulFolder, successfulFolders).SelectMany(packet => packet),
+            0xC3, 0, 3, 0xA0, 0, 3]);
+        await using var output = new MemoryStream();
+        var error = await Assert.ThrowsAsync<MapInboxRejectedException>(() =>
+            MapInboxClient.ReadAsync(input, output, false, CancellationToken.None));
+        Assert.Contains($"forbade {operation} (OBEX 0xC3)", error.Describe());
+        Assert.Contains("USB trust does not grant Bluetooth message access", error.Describe());
+        var wire = output.ToArray();
+        List<byte> commands = [];
+        for (var offset = 0; offset < wire.Length; offset += (wire[offset + 1] << 8) + wire[offset + 2])
+            commands.Add(wire[offset]);
+        Assert.Equal(successfulFolders + 3, commands.Count);
+        Assert.Equal(0x81, commands[^1]);
     }
 
     [Fact]
