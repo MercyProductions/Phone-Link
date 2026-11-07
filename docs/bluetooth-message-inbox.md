@@ -14,4 +14,6 @@ The capability is exchanged on the pinned authenticated connection and scoped to
 
 The [unsigned device archive](https://github.com/MercyProductions/Phone-Link/actions/runs/42388260376) for `1c8983c` (before the replay guard) passed. The staged IPA and its executable matched the CI hashes; the ARM64 iOS executable links MessageUI, and the IPA has no embedded provisioning profile. This does not verify signing, installation, a physical composer presentation, or delivery.
 
+Windows smoke check of `35567b3`: expanding the draft panel and refreshing targets with no eligible authenticated companion kept **Review draft on iPhone** disabled and displayed a capability-specific empty state. No recipient or draft was entered. This covers the Windows unavailable path only; the negotiated positive flow still needs a physical companion.
+
 References: [Bluetooth SIG MAP](https://www.bluetooth.com/specifications/specs/message-access-profile/), [Windows RFCOMM](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/send-or-receive-files-with-rfcomm), and [Apple on CarPlay](https://developer.apple.com/documentation/carplay).
