@@ -30,6 +30,7 @@ struct PairingOfferArtifact: Equatable {
 
 enum PairingOfferCodec {
     private static let prefix = "phonelink://pair?data="
+    static let maximumFileBytes = 22_000
     private static let expectedRootKeys: Set<String> = [
         "version", "sessionId", "expiresAt", "endpoints", "tlsSpkiSha256",
         "serverIdentityKey", "offerNonce", "pairingSecret",
@@ -37,6 +38,7 @@ enum PairingOfferCodec {
     private static let expectedEndpointKeys: Set<String> = ["host", "port"]
 
     static func decode(_ qrPayload: String, now: Date = Date()) throws -> PairingOfferArtifact {
+        guard qrPayload.utf8.count <= maximumFileBytes else { throw PairingOfferError.offerTooLarge }
         guard qrPayload.hasPrefix(prefix) else { throw PairingOfferError.invalidURI }
         let encoded = String(qrPayload.dropFirst(prefix.count))
         guard !encoded.contains(where: { "?#&=".contains($0) }) else {
@@ -100,6 +102,26 @@ enum PairingOfferCodec {
             rawJSON: rawJSON,
             qrPayload: qrPayload
         )
+    }
+
+    static func readFile(at url: URL) throws -> String {
+        guard url.isFileURL, url.pathExtension.lowercased() == "plpair" else { throw PairingOfferError.invalidURI }
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else { throw PairingOfferError.invalidURI }
+        if let size = values.fileSize, size > maximumFileBytes { throw PairingOfferError.offerTooLarge }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        var bytes = Data()
+        while bytes.count <= maximumFileBytes,
+              let part = try file.read(upToCount: maximumFileBytes + 1 - bytes.count), !part.isEmpty {
+            bytes.append(part)
+        }
+        guard bytes.count <= maximumFileBytes else { throw PairingOfferError.offerTooLarge }
+        guard !bytes.isEmpty, bytes.allSatisfy({ (33...126).contains($0) }),
+              let payload = String(data: bytes, encoding: .utf8) else { throw PairingOfferError.invalidURI }
+        return payload
     }
 
     private static func validateProperties(_ data: Data) throws {

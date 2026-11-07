@@ -1,10 +1,13 @@
 import SwiftUI
 import VisionKit
+import UniformTypeIdentifiers
 
 struct PairingView: View {
     var pairingURL: URL? = nil
     @EnvironmentObject private var companionSession: CompanionSession
     @State private var isShowingScanner = false
+    @State private var isShowingFileImporter = false
+    @State private var fileImportID: UUID?
     @State private var scannedOffer: PairingOfferArtifact?
     @State private var pendingConnection: PendingPairingConnection?
     @State private var connectTask: Task<Void, Never>?
@@ -68,8 +71,25 @@ struct PairingView: View {
             }
         }
         .onDisappear {
+            fileImportID = nil
             connectTask?.cancel()
             pendingConnection?.cancel()
+        }
+        .fileImporter(isPresented: $isShowingFileImporter,
+            allowedContentTypes: [UTType(exportedAs: "com.mercyproductions.phonelink.pairing-offer", conformingTo: .plainText)]) { result in
+            let id = UUID()
+            fileImportID = id
+            Task { @MainActor in
+                defer { if fileImportID == id { fileImportID = nil } }
+                do {
+                    let url = try result.get()
+                    let payload = try await Task.detached(priority: .userInitiated) { try PairingOfferCodec.readFile(at: url) }.value
+                    guard fileImportID == id, scannedOffer == nil, pendingConnection == nil else { return }
+                    handleScan(.success(payload))
+                } catch {
+                    if fileImportID == id { errorMessage = "Could not open that pairing file. Use a fresh .plpair file saved by your own Windows PC." }
+                }
+            }
         }
     }
 
@@ -97,6 +117,13 @@ struct PairingView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .disabled(fileImportID != nil)
+
+            Button("Open pairing file") { errorMessage = nil; isShowingFileImporter = true }
+                .buttonStyle(.bordered)
+                .disabled(fileImportID != nil)
+            Text("Use a file transferred from your own Windows PC. Both devices still need the same local network.")
+                .font(.footnote).foregroundStyle(.secondary)
 
             Label("The QR code expires after two minutes and can be used only once.", systemImage: "lock.shield")
                 .font(.footnote)
@@ -124,9 +151,9 @@ struct PairingView: View {
             .disabled(isWorking)
 
             if isWorking { ProgressView("Authenticating Windows…") }
-            Button("Scan again") {
+            Button("Choose a different offer") {
                 scannedOffer = nil
-                isShowingScanner = true
+                errorMessage = nil
             }
             .buttonStyle(.borderless)
             .disabled(isWorking)

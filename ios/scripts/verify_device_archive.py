@@ -78,6 +78,11 @@ def verify(archive, ipa, commit):
         require(isinstance(value, str) and value.strip() and "$(" not in value, "Missing/unexpanded bundle metadata")
     schemes = [scheme for item in info.get("CFBundleURLTypes", []) for scheme in item.get("CFBundleURLSchemes", [])]
     require("phonelink" in schemes and "_phonelink._tcp" in info.get("NSBonjourServices", []), "Missing pairing handlers")
+    declarations = info.get("UTExportedTypeDeclarations", [])
+    require(info.get("UIFileSharingEnabled") is True and info.get("LSSupportsOpeningDocumentsInPlace") is True and any(
+        item.get("UTTypeIdentifier") == "com.mercyproductions.phonelink.pairing-offer" and
+        item.get("UTTypeTagSpecification", {}).get("public.filename-extension") == ["plpair"]
+        for item in declarations), "Missing pairing-file sharing metadata")
     require(not (app / "embedded.mobileprovision").exists(), "Unexpected provisioning profile in unsigned artifact")
     require(not list(app.rglob("*.xctest")), "Test bundle must not ship in device app")
     privacy_path = app / "PrivacyInfo.xcprivacy"

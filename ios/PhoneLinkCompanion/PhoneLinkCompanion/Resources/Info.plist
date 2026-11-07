@@ -33,6 +33,26 @@
     </array>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.mercyproductions.phonelink.pairing-offer</string>
+            <key>UTTypeDescription</key>
+            <string>Phone Link Pairing Offer</string>
+            <key>UTTypeConformsTo</key>
+            <array><string>public.plain-text</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array><string>plpair</string></array>
+            </dict>
+        </dict>
+    </array>
     <key>NSBonjourServices</key>
     <array>
         <string>_phonelink._tcp</string>

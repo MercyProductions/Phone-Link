@@ -61,7 +61,7 @@ The local network and radio are hostile. A paired peer is authenticated but stil
 | Device identity private keys | Critical | Keychain / Windows protected key store; non-exported where platform permits |
 | TLS private key | Critical | Windows certificate/key store; never included in diagnostics |
 | Database and attachment master keys | Critical | Current-user DPAPI (`DataProtectionProvider("LOCAL=user")`); the Windows Hello option gates the UI, not key unwrapping |
-| One-time QR pairing secret | Critical, short-lived | Memory only, 120-second TTL, atomically single-use |
+| One-time pairing secret | Critical, short-lived | 120-second TTL, atomically single-use. In memory unless the owner explicitly saves a pairing offer to a file. |
 | Authorized contacts | High | Encrypted database, source/permission tags, retention controls |
 | Messages and attachments | High | Pinned TLS in transit, encrypted database/files at rest, user deletion |
 | Notification/call metadata | High | Strict source retention; ANCS memory-only by default |
@@ -72,8 +72,8 @@ The local network and radio are hostile. A paired peer is authenticated but stil
 
 | ID | Threat | Primary controls | Residual limitation |
 |---|---|---|---|
-| T01 | Attacker on LAN impersonates Windows during first pairing | TLS SPKI pin in physical QR, one-time HMAC secret, Windows identity signature, two-device comparison phrase | A person who can view and use the live QR before the user can attempt pairing; Windows shows the requesting device and requires confirmation. |
-| T02 | QR photo reused later | 120-second expiry, random session ID/secret, atomic consume, session removed after success/cancel | Device clocks may differ; Windows is authoritative and allows only a small skew. |
+| T01 | Attacker on LAN impersonates Windows during first pairing | TLS SPKI pin in physical QR or privately transferred offer file, one-time HMAC secret, Windows identity signature, two-device comparison phrase | A person who can access a live offer can attempt pairing; Windows still requires the two-device confirmation. |
+| T02 | QR photo or exported offer file reused later | 120-second expiry, random session ID/secret, atomic consume, session removed after success/cancel | Device clocks may differ; Windows is authoritative. Exported files may remain on either device or in backups; delete them yourself and avoid shared/cloud folders. |
 | T03 | LAN MITM after pairing | TLS 1.3, stored SPKI pin, signed fresh session transcript | Certificate/key rotation requires an authenticated rotation flow or explicit re-pairing. |
 | T04 | Stolen peer credential replays old session proof | Fresh 256-bit nonces, unique session ID, signatures bind both nonces/version/IDs | A stolen live private key permits impersonation until revocation; platform key protection reduces extraction risk. |
 | T05 | Captured event or command replay | Unique IDs, per-origin sequences, immutable payload hash, transactional receipts, idempotent command result cache, expiry | Replaying an exact event consumes resources for validation but cannot repeat its effect. |

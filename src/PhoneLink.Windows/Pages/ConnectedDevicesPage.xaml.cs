@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Net.NetworkInformation;
+using System.Text;
+using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -8,6 +10,7 @@ using PhoneLink.DeviceCommunication.Discovery;
 using PhoneLink.DeviceCommunication.Sessions;
 using PhoneLink.Domain.Devices;
 using QRCoder;
+using Windows.Storage;
 using Windows.Storage.Streams;
 
 namespace PhoneLink.Windows.Pages;
@@ -22,6 +25,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
     private bool _pairingRequestReceived;
     private bool _isPageLoaded;
     private bool _pairingConfirmationOpen;
+    private bool _savingPairingFile;
     private CancellationTokenSource? _discoveryCancellation;
     private bool _discoveryRefreshPending;
 
@@ -91,7 +95,8 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
             QrImage.Source = image;
             ExpiryText.Text = $"This code expires at {_currentOffer.ExpiresAt.ToLocalTime():t} and becomes invalid after its first connection attempt.";
             PairingPanel.Visibility = Visibility.Visible;
-            ShowPairingProgress("Waiting for the companion to scan and tap Connect securely. No matching request has reached this PC yet.");
+            SavePairingFileButton.IsEnabled = !_savingPairingFile;
+            ShowPairingProgress("Waiting for the companion to scan or open the offer and tap Connect securely. No matching request has reached this PC yet.");
             _pairingExpiryTimer.Start();
             StatusBar.IsOpen = false;
         }
@@ -107,6 +112,56 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
             PairButton.IsEnabled = true;
         }
     }
+
+    private async void SavePairingFileButton_Click(object sender, RoutedEventArgs args)
+    {
+        var offer = _currentOffer;
+        if (_savingPairingFile || offer is null || !CanExportOffer(offer)) return;
+        _savingPairingFile = true;
+        SavePairingFileButton.IsEnabled = false;
+        try
+        {
+            var picker = new Microsoft.Windows.Storage.Pickers.FileSavePicker(App.MainWindow.AppWindow.Id)
+            {
+                SuggestedFileName = "PhoneLink-Pairing", DefaultFileExtension = ".plpair", ShowOverwritePrompt = true,
+            };
+            picker.FileTypeChoices.Add("Phone Link pairing offer", [".plpair"]);
+            var destination = await picker.PickSaveFileAsync();
+            if (destination is null || !CanExportOffer(offer)) return;
+            if (!string.Equals(Path.GetExtension(destination.Path), ".plpair", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Invalid pairing file extension.");
+            var folder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(destination.Path)!);
+            if (!CanExportOffer(offer)) return;
+            var file = await folder.CreateFileAsync(Path.GetFileName(destination.Path), CreationCollisionOption.OpenIfExists);
+            if (!CanExportOffer(offer)) return;
+            using var transaction = await file.OpenTransactedWriteAsync();
+            transaction.Stream.Size = 0;
+            using var stream = transaction.Stream.AsStreamForWrite();
+            var payload = Encoding.UTF8.GetBytes(offer.QrPayload);
+            try
+            {
+                await stream.WriteAsync(payload);
+                await stream.FlushAsync();
+                if (!CanExportOffer(offer)) return;
+                await transaction.CommitAsync();
+            }
+            finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(payload); }
+            if (CanExportOffer(offer))
+                ShowPairingProgress("Pairing file saved. Transfer it only to your own iPhone, open it in Phone Link, then tap Connect securely. Keep it private and remove both copies after pairing.");
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (CanExportOffer(offer)) ShowPairingProgress("The pairing file could not be saved. Try a local folder or scan the code in the companion.");
+        }
+        finally
+        {
+            _savingPairingFile = false;
+            SavePairingFileButton.IsEnabled = _currentOffer is { } current && CanExportOffer(current);
+        }
+    }
+
+    private bool CanExportOffer(PairingOfferDisplay offer) => _isPageLoaded && !App.IsLocked && !_pairingRequestReceived &&
+        _currentOffer?.SessionId == offer.SessionId && DateTimeOffset.UtcNow < offer.ExpiresAt;
 
     private void CancelPairing_Click(object sender, RoutedEventArgs args)
     {
@@ -328,6 +383,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
 
         _pairingServer?.CancelOffer(_currentOffer.SessionId);
         _currentOffer = null;
+        SavePairingFileButton.IsEnabled = false;
     }
 
     private void HidePairingQr()
@@ -352,7 +408,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
             HidePairingQr();
             ShowPairingProgress(_pairingRequestReceived
                 ? "The request reached Windows, but the offer expired. Choose Pair iPhone for a fresh code."
-                : "The code expired without a matching request reaching Windows. Scan a fresh code inside the companion, then tap Connect securely on the same local network.");
+                : "The offer expired without a matching request reaching Windows. Scan a fresh code or transfer a new pairing file, then tap Connect securely on the same local network.");
         }
     }
 
@@ -361,6 +417,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
         {
             if (!_isPageLoaded || App.IsLocked || _observedOfferId != args.SessionId) return;
             _pairingRequestReceived = true;
+            SavePairingFileButton.IsEnabled = false;
             if (args.Stage is not (PairingAttemptStage.RequestReceived or PairingAttemptStage.AwaitingConfirmation)) HidePairingQr();
             ShowPairingProgress(args.Stage switch
             {

@@ -27,7 +27,10 @@ class DeviceArchiveTests(unittest.TestCase):
                      "NSCameraUsageDescription": "Camera reason", "NSContactsUsageDescription": "Contacts reason",
                      "NSMotionUsageDescription": "Explicit foreground sensor diagnostic reason",
                      "NSLocalNetworkUsageDescription": "Network reason", "NSBonjourServices": ["_phonelink._tcp"],
-                     "CFBundleURLTypes": [{"CFBundleURLSchemes": ["phonelink"]}]}
+                     "CFBundleURLTypes": [{"CFBundleURLSchemes": ["phonelink"]}],
+                     "UIFileSharingEnabled": True, "LSSupportsOpeningDocumentsInPlace": True,
+                     "UTExportedTypeDeclarations": [{"UTTypeIdentifier": "com.mercyproductions.phonelink.pairing-offer",
+                                                     "UTTypeTagSpecification": {"public.filename-extension": ["plpair"]}}]}
         self.write_info()
         (self.app / "PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps({"NSPrivacyTracking": False, "NSPrivacyCollectedDataTypes": []}))
         (self.app / "Assets.car").write_bytes(b"synthetic-assets")
@@ -108,6 +111,13 @@ class DeviceArchiveTests(unittest.TestCase):
         (self.app / "embedded.mobileprovision").write_bytes(b"synthetic-profile")
         self.pack()
         with self.assertRaisesRegex(ValueError, "provisioning profile"):
+            self.check()
+
+    def test_missing_pairing_file_metadata_is_refused(self):
+        del self.info["UIFileSharingEnabled"]
+        self.write_info()
+        self.pack()
+        with self.assertRaisesRegex(ValueError, "pairing-file sharing metadata"):
             self.check()
 
     def test_package_cannot_substitute_another_executable(self):

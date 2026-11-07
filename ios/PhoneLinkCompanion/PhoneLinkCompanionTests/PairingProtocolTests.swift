@@ -66,6 +66,29 @@ final class PairingProtocolTests: XCTestCase {
         XCTAssertEqual(decoded.qrPayload, payload)
     }
 
+    func testPairingFilePreservesSignedOfferBytesAndExpiry() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".plpair")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let payload = "phonelink://pair?data=" + Base64URL.encode(rawOfferJSON)
+        try Data(payload.utf8).write(to: url)
+        let text = try PairingOfferCodec.readFile(at: url)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let now = try XCTUnwrap(formatter.date(from: "2026-08-12T19:05:31.427Z"))
+        XCTAssertEqual(try PairingOfferCodec.decode(text, now: now).rawJSON, rawOfferJSON)
+        XCTAssertThrowsError(try PairingOfferCodec.decode(text, now: now.addingTimeInterval(180)))
+    }
+
+    func testPairingFileRejectsOversizedNonAsciiAndWrongExtension() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".plpair")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 65, count: PairingOfferCodec.maximumFileBytes + 1).write(to: url)
+        XCTAssertThrowsError(try PairingOfferCodec.readFile(at: url))
+        try Data([0xff]).write(to: url)
+        XCTAssertThrowsError(try PairingOfferCodec.readFile(at: url))
+        XCTAssertThrowsError(try PairingOfferCodec.readFile(at: url.appendingPathExtension("txt")))
+    }
+
     @MainActor
     func testPairingFallbackAfterTransportTimeoutUsesRemainingOfferTime() async throws {
         let start = Date(timeIntervalSince1970: 1000)
