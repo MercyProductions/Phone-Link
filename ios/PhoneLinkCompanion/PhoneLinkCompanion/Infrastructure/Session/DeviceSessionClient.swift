@@ -139,6 +139,16 @@ final class DeviceSessionClient {
         guard receipt.payload.accepted else { throw DeviceSessionError.invalidAcknowledgement }
     }
 
+    func sendRuntimeSample(_ snapshot: RuntimeImageSnapshot, expected: ConnectedWindowsSession) async throws {
+        try Task.checkCancellation()
+        guard connection == expected, expected.capabilities.contains("diagnostics.runtime.v1") else {
+            throw DeviceSessionError.notConnected
+        }
+        let receipt: ProtocolEnvelope<HealthReceipt> = try await sendAndAwaitResponse(
+            kind: "diagnostics.runtime.sample", payload: snapshot, expectedKind: "diagnostics.runtime.receipt", responseTimeout: .seconds(3))
+        guard receipt.payload.accepted else { throw DeviceSessionError.invalidAcknowledgement }
+    }
+
     func reconcileContacts(_ identifiers: [String]) async throws {
         let _: ProtocolEnvelope<EmptyPayload> = try await sendAndAwaitResponse(
             kind: "contacts.reconcile",
@@ -370,7 +380,8 @@ final class DeviceSessionClient {
         kind: String,
         payload: Request,
         originSequence: Int64 = 0,
-        expectedKind: String
+        expectedKind: String,
+        responseTimeout: Duration = .seconds(30)
     ) async throws -> ProtocolEnvelope<Response> {
         guard let webSocket, let connection else {
             throw DeviceSessionError.notConnected
@@ -393,7 +404,7 @@ final class DeviceSessionClient {
         let requestData = try PhoneLinkJSON.encoder.encode(envelope)
         let responseData: Data = try await withCheckedThrowingContinuation { continuation in
             let timeout = Task { @MainActor [weak self] in
-                do { try await Task.sleep(for: .seconds(30)) }
+                do { try await Task.sleep(for: responseTimeout) }
                 catch { return }
                 self?.failWaiter(messageID, with: DeviceSessionError.responseTimedOut)
             }

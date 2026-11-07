@@ -39,6 +39,14 @@
             </Border>
             <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                 <StackPanel Spacing="12">
+                    <TextBlock Text="Live companion addresses" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="Enable here, then start the short feed on iPhone under Health checks → Own runtime image and ASLR. Readings come from the companion’s own running image only, through the authenticated connection. No other process or kernel memory is read." TextWrapping="Wrap" />
+                    <Button x:Name="LiveRuntimeButton" Content="Enable live address view" Click="LiveRuntimeButton_Click" HorizontalAlignment="Left" />
+                    <TextBlock x:Name="LiveRuntimeText" Text="Live view is off." FontFamily="Consolas" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+            <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
                     <TextBlock Text="Static Mach-O offset inspector" FontSize="21" FontWeight="SemiBold" />
                     <TextBlock Text="Inspect a local unpacked 64-bit or universal Mach-O image. Nothing is executed, decrypted, uploaded, or read from device memory. The JSON report distinguishes file offsets, unslid virtual addresses, constants and missing mappings."
                         TextWrapping="Wrap" />

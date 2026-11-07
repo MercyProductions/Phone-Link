@@ -336,6 +336,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                             "videos.import.v1",
                             "command.call.start.confirmed",
                             "diagnostics.health.v1",
+                            "diagnostics.runtime.v1",
                         ],
                         MaximumBatchEvents = 200,
                         MaximumAttachmentBytes = 25 * 1024 * 1024,

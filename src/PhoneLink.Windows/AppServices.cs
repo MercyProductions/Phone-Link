@@ -34,6 +34,7 @@ public sealed class AppServices : IAsyncDisposable
     private readonly object _discoveryTaskGate = new();
     private readonly ConcurrentDictionary<Guid, PendingCommand> _pendingCommands = new();
     private readonly CompanionHealthInbox _companionHealth = new();
+    private readonly CompanionRuntimeFeed _runtimeFeed = new();
     private SqliteDatabase? _database;
     private WindowsCredentialSecretStore? _secretStore;
     private LocalPairingServer? _pairingServer;
@@ -62,6 +63,12 @@ public sealed class AppServices : IAsyncDisposable
     public static AppServices Current => LazyCurrent.Value;
 
     public void SetCompanionHealthPrivacyLocked(bool locked) => _companionHealth.SetPrivacyLocked(locked);
+    public void SetRuntimeFeedArmed(bool armed) => _runtimeFeed.SetArmed(armed && !App.IsLocked);
+    public PhoneLink.Application.Features.BinaryInspection.CompanionOwnImageSample? GetRuntimeSample() =>
+        App.IsLocked ? null : _runtimeFeed.Get(DateTimeOffset.UtcNow, IsCurrentRuntimeSession);
+
+    private bool IsCurrentRuntimeSession(DeviceId deviceId, Guid sessionId) =>
+        _pairingServer is { } server && server.TryGetSessionId(deviceId, out var active) && active == sessionId;
     public ReceivedCompanionHealth? GetCompanionHealth(DeviceId deviceId, Guid activeSessionId) =>
         _companionHealth.Get(deviceId.Value, activeSessionId, DateTimeOffset.UtcNow);
 
@@ -373,6 +380,7 @@ public sealed class AppServices : IAsyncDisposable
         }
         _pendingCommands.Clear();
         _companionHealth.SetPrivacyLocked(true);
+        _runtimeFeed.SetArmed(false);
         await StopAncsSessionAsync().ConfigureAwait(false);
         await _discoveryLock.WaitAsync().ConfigureAwait(false);
         try
@@ -660,6 +668,14 @@ public sealed class AppServices : IAsyncDisposable
                     var receipt = healthHandler.Handle(received, _windowsDeviceId,
                         (deviceId, sessionId) => server.TryGetSessionId(deviceId, out var active) && active == sessionId,
                         App.IsLocked, DateTimeOffset.UtcNow);
+                    if (receipt is not null) await server.SendAsync(received.DeviceId, receipt, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (received.Envelope.Kind == "diagnostics.runtime.sample")
+                {
+                    if (App.IsLocked) _runtimeFeed.SetArmed(false);
+                    var receipt = _runtimeFeed.Handle(received, _windowsDeviceId, DateTimeOffset.UtcNow, IsCurrentRuntimeSession);
                     if (receipt is not null) await server.SendAsync(received.DeviceId, receipt, cancellationToken).ConfigureAwait(false);
                     continue;
                 }

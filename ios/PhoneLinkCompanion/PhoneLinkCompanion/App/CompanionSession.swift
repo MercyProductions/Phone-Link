@@ -335,6 +335,11 @@ final class CompanionSession: ObservableObject {
         guard isForeground, connectedSession == expected else { throw DeviceSessionError.notConnected }
     }
 
+    func sendRuntimeSample(_ snapshot: RuntimeImageSnapshot, expected: ConnectedWindowsSession) async throws {
+        guard isForeground, connectedSession == expected else { throw DeviceSessionError.notConnected }
+        try await deviceSessionClient.sendRuntimeSample(snapshot, expected: expected)
+    }
+
     private func handleCommandRequest(
         _ request: ProtocolEnvelope<CommandRequestPayload>
     ) {

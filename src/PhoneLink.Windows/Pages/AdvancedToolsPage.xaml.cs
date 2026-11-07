@@ -27,6 +27,7 @@ public sealed partial class AdvancedToolsPage : Page
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _loaded;
     private bool _busy;
+    private bool _liveRuntimeEnabled;
     public ObservableCollection<OffsetEntryRow> Rows { get; } = [];
     public ObservableCollection<RuntimeOffsetRow> RuntimeRows { get; } = [];
 
@@ -51,6 +52,7 @@ public sealed partial class AdvancedToolsPage : Page
         ClearSshClientCommand();
         SshProbeText.Text = "No current forwarded SSH observation.";
         ClearRuntimeForPrivacy();
+        SetLiveRuntime(false);
         _timer.Stop();
         var lifetime = _pageLifetime;
         var operation = _operation;
@@ -260,6 +262,7 @@ public sealed partial class AdvancedToolsPage : Page
             _operationCancellation?.Cancel();
             RuntimeSymbolFilter.Text = string.Empty;
             ClearRuntimeForPrivacy();
+            SetLiveRuntime(false);
             try { await StopTunnelAsync(); }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             { SshProbeText.Text = "Forwarder stopping could not be verified. Earlier SSH observations are invalid."; }
@@ -330,6 +333,16 @@ public sealed partial class AdvancedToolsPage : Page
 
     private async void Timer_Tick(object? sender, object args)
     {
+        if (_liveRuntimeEnabled)
+        {
+            if (App.IsLocked) SetLiveRuntime(false);
+            else if (AppServices.Current.GetRuntimeSample() is { } sample)
+                LiveRuntimeText.Text = $"Authenticated companion sample at {sample.CapturedAt.LocalDateTime:HH:mm:ss.fff}\n" +
+                    $"Loaded image base {sample.LoadedAddressHex} · marker {sample.MarkerAddressHex} · ASLR slide {sample.Slide}\n" +
+                    $"{sample.Architecture} · image {sample.ImageUuid:D}\n" +
+                    "Reported by the companion, not independently read by Windows. Addresses apply only to this process lifetime.";
+            else LiveRuntimeText.Text = "Waiting for a fresh sample. Earlier addresses have expired or the session ended.";
+        }
         var tunnel = _tunnel;
         if (tunnel is null) return;
         if (App.IsLocked || !tunnel.IsRunning)
@@ -342,6 +355,19 @@ public sealed partial class AdvancedToolsPage : Page
         TunnelText.Text = $"127.0.0.1:{tunnel.LocalPort} → USB port {_forwardedPort} · {stats.ActiveConnections} active · " +
             $"{stats.BytesToDevice:N0} bytes sent / {stats.BytesFromDevice:N0} received · {stats.FailedConnections} failed · {stats.LastFailureCategory ?? "no failure recorded"}. " +
             "Forwarding active; remote service and SSH authentication are not verified.";
+    }
+
+    private void LiveRuntimeButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (_loaded && !App.IsLocked) SetLiveRuntime(!_liveRuntimeEnabled);
+    }
+
+    private void SetLiveRuntime(bool enabled)
+    {
+        _liveRuntimeEnabled = enabled;
+        AppServices.Current.SetRuntimeFeedArmed(enabled);
+        LiveRuntimeButton.Content = enabled ? "Stop live address view" : "Enable live address view";
+        LiveRuntimeText.Text = enabled ? "Waiting for the iPhone to start its feed…" : "Live view is off.";
     }
 
     private void UpdateButtons()

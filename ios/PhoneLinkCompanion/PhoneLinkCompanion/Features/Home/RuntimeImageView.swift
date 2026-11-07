@@ -141,8 +141,12 @@ enum RuntimeImageProbe {
 
 struct RuntimeImageView: View {
     @Environment(\.scenePhase) private var phase
+    @EnvironmentObject private var session: CompanionSession
     @State private var json: String?
     @State private var status = "Not captured. Nothing runs on entry."
+    @State private var feedTask: Task<Void, Never>?
+    @State private var feedID: UUID?
+    @State private var feedStatus = "Live feed is off."
     var body: some View {
         Form {
             Section("Companion's own runtime image") {
@@ -150,19 +154,29 @@ struct RuntimeImageView: View {
                 Button("Capture own runtime image") { capture() }
                 Text(status).font(.footnote)
             }
+            Section("Live address feed to Windows") {
+                Text("Enable the live address view on your trusted PC first. Starting here shares this app’s image base, marker address, ASLR slide and build identity for up to 15 seconds. No memory contents are sent.")
+                if feedTask == nil {
+                    Button("Start 15-second feed") { startFeed() }
+                        .disabled(phase != .active || session.connectedSession?.capabilities.contains("diagnostics.runtime.v1") != true)
+                } else {
+                    Button("Stop feed", role: .destructive) { stopFeed() }
+                }
+                Text(feedStatus).font(.footnote)
+            }
             if let json {
                 Section("Review before sharing") {
                     Text("Contains this process's live addresses, ASLR slide and code-image UUID. It is not a device identifier, but is sensitive diagnostic information. Addresses apply only to this running process/build. Never reuse them after restart or for a different UUID/architecture.")
                     Text(json).font(.caption.monospaced()).textSelection(.enabled)
                     ShareLink("Share reviewed runtime JSON…", item: json)
-                    Text("No automatic Windows transfer. Choose only a destination you intend. Once shared, clearing this screen cannot revoke the recipient's copy.").font(.footnote)
+                    Text("Sharing this JSON is separate from the live feed. Once shared, clearing this screen cannot revoke the recipient's copy.").font(.footnote)
                     Button("Clear snapshot") { clear() }
                 }
             }
         }
         .navigationTitle("Own runtime image")
-        .onChange(of: phase) { _, value in if value != .active { clear() } }
-        .onDisappear { clear() }
+        .onChange(of: phase) { _, value in if value != .active { stopFeed(); clear() } }
+        .onDisappear { stopFeed(); clear() }
     }
 
     @MainActor private func capture() {
@@ -177,4 +191,39 @@ struct RuntimeImageView: View {
         }
     }
     @MainActor private func clear() { json = nil; status = "Capture a fresh snapshot for this running process." }
+
+    @MainActor private func startFeed() {
+        guard feedTask == nil, phase == .active, let expected = session.connectedSession,
+              expected.capabilities.contains("diagnostics.runtime.v1") else { return }
+        let id = UUID()
+        feedID = id
+        feedStatus = "Waiting for Windows to accept the first sample…"
+        feedTask = Task { @MainActor in
+            let clock = ContinuousClock()
+            let deadline = clock.now + .seconds(15)
+            defer {
+                if feedID == id { feedID = nil; feedTask = nil }
+            }
+            do {
+                while clock.now < deadline {
+                    try Task.checkCancellation()
+                    guard phase == .active else { throw CancellationError() }
+                    try await session.sendRuntimeSample(RuntimeImageProbe.capture(), expected: expected)
+                    try Task.checkCancellation()
+                    if feedID == id { feedStatus = "Windows accepted a fresh sample." }
+                    try await Task.sleep(for: .seconds(2))
+                }
+                if feedID == id { feedStatus = "Feed finished. Windows clears the last sample when it expires." }
+            } catch {
+                if feedID == id { feedStatus = "Feed stopped. Check the trusted connection, Windows live view, and both device clocks." }
+            }
+        }
+    }
+
+    @MainActor private func stopFeed() {
+        feedID = nil
+        feedTask?.cancel()
+        feedTask = nil
+        feedStatus = "Live feed is off."
+    }
 }
