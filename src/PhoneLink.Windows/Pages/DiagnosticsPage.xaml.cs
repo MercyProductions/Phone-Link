@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PhoneLink.Application.Features.Diagnostics;
@@ -27,6 +28,9 @@ public sealed partial class DiagnosticsPage : Page
     private CancellationTokenSource? _presenceCancellation;
     private DispatcherTimer? _presenceTimer;
     private long _presenceEpoch;
+    private long _presenceStartedAt;
+    private UsbConnectionRefresh? _presenceRefresh;
+    private bool _usbRefreshInProgress;
     public ObservableCollection<DiagnosticFinding> Findings { get; } = [];
 
     public DiagnosticsPage() { InitializeComponent(); }
@@ -159,6 +163,8 @@ public sealed partial class DiagnosticsPage : Page
             var monitor = await WindowsUsbPresenceMonitor.StartAsync(cancellation.Token);
             if (!_loaded || App.IsLocked || cancellation.IsCancellationRequested || epoch != _presenceEpoch) { monitor.Dispose(); return; }
             _presenceMonitor = monitor;
+            _presenceRefresh = new UsbConnectionRefresh();
+            _presenceStartedAt = Stopwatch.GetTimestamp();
             _presenceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _presenceTimer.Tick += PresenceTimer_Tick;
             _presenceTimer.Start();
@@ -175,7 +181,13 @@ public sealed partial class DiagnosticsPage : Page
         finally { if (ReferenceEquals(_presenceCancellation, cancellation)) _presenceCancellation = null; }
     }
 
-    private void PresenceTimer_Tick(object? sender, object args) => RenderPresence();
+    private async void PresenceTimer_Tick(object? sender, object args)
+    {
+        RenderPresence();
+        if (_presenceMonitor is { } monitor && _presenceRefresh is { } refresh &&
+            refresh.TryStart(monitor.Snapshot, Stopwatch.GetElapsedTime(_presenceStartedAt), _scanCancellation is not null))
+            await ScanAsync(usbTriggered: true);
+    }
 
     private void RenderPresence()
     {
@@ -202,6 +214,8 @@ public sealed partial class DiagnosticsPage : Page
         if (_presenceTimer is { } timer) { timer.Stop(); timer.Tick -= PresenceTimer_Tick; _presenceTimer = null; }
         _presenceMonitor?.Dispose();
         _presenceMonitor = null;
+        _presenceRefresh = null;
+        if (_usbRefreshInProgress) _scanCancellation?.Cancel();
         PresenceButton.Content = "Start live USB monitor";
         PresenceText.Text = "USB monitor stopped; in-memory history cleared. Start explicitly to observe new changes.";
     }
@@ -259,11 +273,12 @@ public sealed partial class DiagnosticsPage : Page
         { ShowStatus("Clipboard unavailable", "The analysis remains on this page.", InfoBarSeverity.Warning); }
     }
 
-    private async Task ScanAsync()
+    private async Task ScanAsync(bool usbTriggered = false)
     {
         if (!_loaded || App.IsLocked || _scanCancellation is not null) return;
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         _scanCancellation = cancellation;
+        _usbRefreshInProgress = usbTriggered;
         ScanButton.IsEnabled = CopyButton.IsEnabled = ExperimentalButton.IsEnabled = false;
         PhoneInfoButton.IsEnabled = false;
         RecoveryButton.IsEnabled = false;
@@ -316,7 +331,8 @@ public sealed partial class DiagnosticsPage : Page
             ComparisonText.Text = _comparison.ToShareableText();
             ComparisonJsonButton.IsEnabled = true;
             foreach (var finding in _report.Findings) Findings.Add(finding);
-            SnapshotText.Text = $"Snapshot: {snapshot.CapturedAt.LocalDateTime:g}. {snapshot.UnavailableProbes.Count} unavailable probe(s). No phone changes made.";
+            var trigger = usbTriggered ? "USB node change refresh" : "Snapshot";
+            SnapshotText.Text = $"{trigger}: {snapshot.CapturedAt.LocalDateTime:g}. {snapshot.UnavailableProbes.Count} unavailable probe(s). No phone changes made.";
             if (AppServices.Current.LastDiscoveryRecovery is { } recovery)
                 RecoveryText.Text = $"Last app discovery recovery this run: {recovery.Outcome}. {recovery.Summary} This is separate from the copied read-only snapshot.";
             CopyButton.IsEnabled = true;
@@ -339,6 +355,7 @@ public sealed partial class DiagnosticsPage : Page
         }
         finally
         {
+            _usbRefreshInProgress = false;
             _scanCancellation = null;
             if (_loaded)
             {

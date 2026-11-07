@@ -3,7 +3,7 @@ namespace PhoneLink.Application.Features.Diagnostics;
 public enum UsbPresenceState { Initializing, Watching, Unavailable, Stopped }
 public sealed record UsbPresenceChange(DateTimeOffset ObservedAt, bool Added, int PresentNodes);
 public sealed record UsbPresenceSnapshot(UsbPresenceState State, int? PresentNodes,
-    IReadOnlyList<UsbPresenceChange> RecentChanges);
+    IReadOnlyList<UsbPresenceChange> RecentChanges, long ChangeSequence);
 
 // Device keys stay private and transient. Public snapshots contain only counts/times.
 public sealed class UsbPresenceHistory
@@ -12,12 +12,13 @@ public sealed class UsbPresenceHistory
     private readonly HashSet<string> _nodes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<UsbPresenceChange> _changes = new();
     private UsbPresenceState _state = UsbPresenceState.Initializing;
+    private long _changeSequence;
     public const int MaximumNodes = 256;
     public const int MaximumChanges = 20;
 
     public UsbPresenceSnapshot Snapshot
     {
-        get { lock (_gate) return new(_state, _state == UsbPresenceState.Watching ? _nodes.Count : null, _changes.ToArray()); }
+        get { lock (_gate) return new(_state, _state == UsbPresenceState.Watching ? _nodes.Count : null, _changes.ToArray(), _changeSequence); }
     }
 
     public void Add(string key, DateTimeOffset now)
@@ -57,9 +58,10 @@ public sealed class UsbPresenceHistory
     private void Record(bool added, DateTimeOffset now)
     {
         if (_state != UsbPresenceState.Watching) return; // Initial enumeration is a baseline, not a reconnect.
+        _changeSequence++;
         if (_changes.Count == MaximumChanges) _changes.Dequeue();
         _changes.Enqueue(new(now, added, _nodes.Count));
     }
 
-    private void Clear(UsbPresenceState state) { _state = state; _nodes.Clear(); _changes.Clear(); }
+    private void Clear(UsbPresenceState state) { _state = state; _nodes.Clear(); _changes.Clear(); _changeSequence = 0; }
 }

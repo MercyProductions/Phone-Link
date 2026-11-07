@@ -10,7 +10,11 @@ Windows device keys are retained privately in memory only while monitoring, capp
 
 Stop, page unload and Phone Link lock cancel pending startup, stop the UI timer, discard keys/history and detach native callbacks. Native Stop is asynchronous; each instance is single-use and late callbacks cannot rearm stopped history. Explicit restart creates a new watcher. Lock also cancels pending Troubleshooter scans/imports and clears displayed crash/phone/connection/health data. Unlock does not automatically resume monitoring. History remains separate from the copied connection report; copying a report does not export this timeline.
 
-This is an observation tool, not an automatic hardware diagnosis. For comparison, start monitoring, reconnect a known data cable/direct port, allow enumeration to settle, then run connection checks and compare the independent driver/transport findings. Do not infer a defective component from a node transition alone.
+While the monitor is active, real node changes rerun the existing local connection checks after two seconds without a newly observed change. Initial enumeration does not trigger a refresh. Changes are coalesced, automatic scans start at least ten seconds apart, and pending changes wait for any other scan to finish. Stop or watcher failure drops pending refreshes and cancels an in-flight automatic scan. This does not run the experimental phone-data probes or create companion trust.
+
+For comparison, start monitoring, reconnect a known data cable/direct port, then wait for **USB node change refresh** and compare the independent driver/transport findings. Do not infer a defective component from a node transition alone.
+
+Automatic-refresh verification (November 7): full Windows solution build passed with zero warnings/errors; all 515 .NET tests passed. Five new cases cover the initial baseline, duplicate arrivals, burst coalescing, busy/cooldown scheduling, and cancellation of pending refresh on stop or failure. A physical unplug/replug through this updated UI has not yet been verified.
 
 ## Verification — November 3, 2026
 
