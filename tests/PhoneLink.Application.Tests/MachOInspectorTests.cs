@@ -10,6 +10,92 @@ public sealed class MachOInspectorTests
     private const ulong BaseAddress = 0x100000000;
 
     [Fact]
+    public async Task Arm64DeviceAndSimulatorTargetsAndCommandOffsetsStayDistinct()
+    {
+        using var stream = new MemoryStream(Fat(BuildMetadata(2), BuildMetadata(7), false));
+        var report = await MachOInspector.InspectAsync(stream);
+        Assert.False(report.RuntimeAddressesAvailable);
+        Assert.All(report.Images, image => Assert.Equal("arm64", image.Architecture));
+        var device = report.Images[0];
+        var target = Assert.Single(device.DeclaredBuildTargets);
+        Assert.Equal("iOS", target.Platform);
+        Assert.Equal("26.0.0", target.MinimumOs);
+        Assert.Equal("26.2.1", target.Sdk);
+        Assert.Equal(new MachOBuildTool(3, 0x12345678), Assert.Single(target.Tools));
+        Assert.Equal(2u, device.DeclaredLoadCommandCount);
+        Assert.False(device.LoadCommandsTruncated);
+        Assert.Equal(new MachOLoadCommand("0x32", "LC_BUILD_VERSION", "0x1020", 32), device.LoadCommands[0]);
+        Assert.Equal(new MachODeclaredSignature("0x1080", 16), device.DeclaredSignature);
+        Assert.Equal("iOS Simulator", Assert.Single(report.Images[1].DeclaredBuildTargets).Platform);
+        Assert.Equal("0x2020", report.Images[1].LoadCommands[0].FileOffset);
+    }
+
+    [Theory]
+    [InlineData("tool-count")]
+    [InlineData("duplicate-target")]
+    [InlineData("signature-outside-slice")]
+    [InlineData("signature-overlaps-header")]
+    [InlineData("duplicate-signature")]
+    public async Task RejectsInvalidBuildAndSignatureDeclarations(string mutation)
+    {
+        var bytes = BuildMetadata(2);
+        switch (mutation)
+        {
+            case "tool-count": W32(bytes, 52, uint.MaxValue); break;
+            case "duplicate-target":
+                W32(bytes, 20, 64); bytes.AsSpan(32, 32).CopyTo(bytes.AsSpan(64)); break;
+            case "signature-outside-slice": W32(bytes, 72, 255); break;
+            case "signature-overlaps-header": W32(bytes, 72, 60); break;
+            case "duplicate-signature":
+                W32(bytes, 16, 3); W32(bytes, 20, 64); bytes.AsSpan(64, 16).CopyTo(bytes.AsSpan(80)); break;
+        }
+        using var stream = new MemoryStream(bytes);
+        await Assert.ThrowsAsync<InvalidDataException>(() => MachOInspector.InspectAsync(stream));
+    }
+
+    [Fact]
+    public async Task LoadCommandDirectoryCapsOutputAcrossSlicesButStillValidatesRemainder()
+    {
+        static byte[] UnknownCommands(int count)
+        {
+            var bytes = new byte[32 + count * 8];
+            W32(bytes, 0, 0xfeedfacf); W32(bytes, 4, 0x100000c);
+            W32(bytes, 16, (uint)count); W32(bytes, 20, (uint)count * 8);
+            for (var index = 0; index < count; index++)
+            {
+                W32(bytes, 32 + index * 8, 0x99);
+                W32(bytes, 36 + index * 8, 8);
+            }
+            return bytes;
+        }
+
+        var first = UnknownCommands(3000);
+        var second = UnknownCommands(1200);
+        using var stream = new MemoryStream(Fat(first, second, false));
+        var report = await MachOInspector.InspectAsync(stream);
+        Assert.False(report.Images[0].LoadCommandsTruncated);
+        Assert.True(report.Images[1].LoadCommandsTruncated);
+        Assert.Equal(1200u, report.Images[1].DeclaredLoadCommandCount);
+        Assert.Equal(4096, report.Images.Sum(image => image.LoadCommands.Count));
+        Assert.Null(report.Images[0].LoadCommands[0].Name);
+        W32(second, second.Length - 4, 0);
+        using var corrupt = new MemoryStream(Fat(first, second, false));
+        await Assert.ThrowsAsync<InvalidDataException>(() => MachOInspector.InspectAsync(corrupt));
+    }
+
+    private static byte[] BuildMetadata(uint platform)
+    {
+        var bytes = new byte[256];
+        W32(bytes, 0, 0xfeedfacf); W32(bytes, 4, 0x100000c); W32(bytes, 12, 2);
+        W32(bytes, 16, 2); W32(bytes, 20, 48);
+        W32(bytes, 32, 0x32); W32(bytes, 36, 32); W32(bytes, 40, platform);
+        W32(bytes, 44, 0x1a0000); W32(bytes, 48, 0x1a0201); W32(bytes, 52, 1);
+        W32(bytes, 56, 3); W32(bytes, 60, 0x12345678);
+        W32(bytes, 64, 0x1d); W32(bytes, 68, 16); W32(bytes, 72, 128); W32(bytes, 76, 16);
+        return bytes;
+    }
+
+    [Fact]
     public async Task DistinguishesUnslidAddressesFileOffsetsConstantsAndZeroFill()
     {
         var bytes = Thin();

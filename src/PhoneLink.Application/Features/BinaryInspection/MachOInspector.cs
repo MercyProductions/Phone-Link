@@ -70,7 +70,7 @@ public static partial class MachOInspector
         return slices;
     }
 
-    private sealed class InspectionBudget { public int Count; public int NameBytes; }
+    private sealed class InspectionBudget { public int Count; public int NameBytes; public int LoadCommands; }
 
     private sealed partial class ImageReader(Stream source, long sliceOffset, long sliceLength,
         InspectionBudget budget, CancellationToken cancellationToken)
@@ -101,6 +101,9 @@ public static partial class MachOInspector
             var commands = Bytes(32, checked((int)commandBytes));
             string? uuid = null;
             bool encrypted = false;
+            List<MachOLoadCommand> directory = [];
+            List<MachOBuildTarget> targets = [];
+            MachODeclaredSignature? signature = null;
             (uint Offset, uint Count, uint Strings, uint StringBytes)? symbols = null;
             (uint Offset, uint Bytes)? functions = null, exports = null;
             var position = 0;
@@ -114,6 +117,11 @@ public static partial class MachOInspector
                 if (size < 8 || size % 8 != 0 || size > commands.Length - position)
                     throw new InvalidDataException("A load command has invalid bounds or alignment.");
                 command = command[..(int)size];
+                if (budget.LoadCommands < 4096)
+                {
+                    directory.Add(new(Hex(kind), LoadCommandName(kind), Hex((ulong)sliceOffset + 32 + (uint)position), size));
+                    budget.LoadCommands++;
+                }
                 switch (kind)
                 {
                     case 0x19: ReadSegment(command); break;
@@ -130,6 +138,22 @@ public static partial class MachOInspector
                     case 0x26:
                         Minimum(command, 16);
                         functions = (U32(command, 8), U32(command, 12));
+                        break;
+                    case 0x1d:
+                        if (command.Length != 16 || signature is not null)
+                            throw new InvalidDataException("The code-signature range declaration is malformed or duplicated.");
+                        var dataOffset = U32(command, 8);
+                        var dataSize = U32(command, 12);
+                        Range(dataOffset, dataSize);
+                        if (dataSize > 0 && dataOffset < 32UL + commandBytes)
+                            throw new InvalidDataException("The declared signature overlaps the Mach-O header or load commands.");
+                        signature = new(Hex((ulong)sliceOffset + dataOffset), dataSize);
+                        break;
+                    case 0x32:
+                        var target = ReadBuildTarget(command);
+                        if (targets.Count >= 16 || targets.Any(existing => existing.PlatformId == target.PlatformId))
+                            throw new InvalidDataException("Build target declarations exceed the limit or repeat a platform.");
+                        targets.Add(target);
                         break;
                     case 0x80000033:
                         Minimum(command, 16);
@@ -165,8 +189,49 @@ public static partial class MachOInspector
                 _segments.Select(segment => new MachOSegment(segment.Name, Hex(segment.Address), Hex(segment.Size), Hex(segment.FileOffset),
                     Hex((ulong)sliceOffset + segment.FileOffset), Hex(segment.FileSize))).ToArray(),
                 _sections.Select(section => new MachOSection(section.Segment, section.Name, Hex(section.Address), Hex(section.Size),
-                    section.ZeroFill ? null : Hex((ulong)sliceOffset + section.FileOffset))).ToArray(), _entries, _warnings);
+                    section.ZeroFill ? null : Hex((ulong)sliceOffset + section.FileOffset))).ToArray(), _entries, _warnings)
+            {
+                DeclaredLoadCommandCount = commandCount,
+                LoadCommandsTruncated = directory.Count < commandCount,
+                LoadCommands = directory,
+                DeclaredBuildTargets = targets,
+                DeclaredSignature = signature,
+            };
         }
+
+        private static MachOBuildTarget ReadBuildTarget(ReadOnlySpan<byte> command)
+        {
+            Minimum(command, 24);
+            var toolCount = U32(command, 20);
+            if (toolCount > 64 || 24 + toolCount * 8UL != (ulong)command.Length)
+                throw new InvalidDataException("The build target's tool table has invalid bounds.");
+            var platform = U32(command, 8);
+            var sdk = U32(command, 16);
+            var tools = new MachOBuildTool[toolCount];
+            for (var index = 0; index < tools.Length; index++)
+                tools[index] = new(U32(command, 24 + index * 8), U32(command, 28 + index * 8));
+            return new(platform, platform switch
+            {
+                1 => "macOS", 2 => "iOS", 3 => "tvOS", 4 => "watchOS", 5 => "bridgeOS",
+                6 => "Mac Catalyst", 7 => "iOS Simulator", 8 => "tvOS Simulator", 9 => "watchOS Simulator",
+                10 => "DriverKit", _ => $"Unknown platform ({platform})",
+            }, OsVersion(U32(command, 12)), sdk == 0 ? null : OsVersion(sdk), tools);
+        }
+
+        private static string OsVersion(uint value) =>
+            FormattableString.Invariant($"{value >> 16}.{(value >> 8) & 255}.{value & 255}");
+
+        private static string? LoadCommandName(uint kind) => kind switch
+        {
+            0x2 => "LC_SYMTAB", 0xb => "LC_DYSYMTAB", 0xc => "LC_LOAD_DYLIB", 0xd => "LC_ID_DYLIB",
+            0xe => "LC_LOAD_DYLINKER", 0x19 => "LC_SEGMENT_64", 0x1b => "LC_UUID", 0x1d => "LC_CODE_SIGNATURE",
+            0x22 => "LC_DYLD_INFO", 0x80000022 => "LC_DYLD_INFO_ONLY", 0x24 => "LC_VERSION_MIN_MACOSX",
+            0x25 => "LC_VERSION_MIN_IPHONEOS", 0x26 => "LC_FUNCTION_STARTS", 0x80000028 => "LC_MAIN",
+            0x29 => "LC_DATA_IN_CODE", 0x2a => "LC_SOURCE_VERSION", 0x2c => "LC_ENCRYPTION_INFO_64",
+            0x2f => "LC_VERSION_MIN_TVOS", 0x30 => "LC_VERSION_MIN_WATCHOS", 0x32 => "LC_BUILD_VERSION",
+            0x8000001c => "LC_RPATH", 0x80000033 => "LC_DYLD_EXPORTS_TRIE", 0x80000034 => "LC_DYLD_CHAINED_FIXUPS",
+            _ => null,
+        };
 
         private void ReadSegment(ReadOnlySpan<byte> command)
         {

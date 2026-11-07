@@ -242,9 +242,16 @@ public sealed partial class AdvancedToolsPage : Page
         if (_inspection is null || index < 0 || index >= _inspection.Images.Count) return;
         var image = _inspection.Images[index];
         foreach (var entry in image.Entries.Take(500)) Rows.Add(new OffsetEntryRow(entry));
+        var targets = image.DeclaredBuildTargets.Count == 0 ? "No LC_BUILD_VERSION declaration." :
+            "Declared targets: " + string.Join("; ", image.DeclaredBuildTargets.Select(
+                target => $"{target.Platform}, minimum {target.MinimumOs}, SDK {target.Sdk ?? "not declared"}")) + ".";
+        var signature = image.DeclaredSignature is { ByteLength: > 0 } declared ?
+            $"Signature range declared at {declared.FileOffset} ({declared.ByteLength:N0} bytes), not verified." :
+            "No nonempty signature range declared.";
         EntrySummary.Text = $"Showing {Rows.Count:N0} of {image.Entries.Count:N0} parsed entries; declared symbol records: {image.DeclaredSymbolCount:N0}. " +
             $"Output partial: {image.EntriesTruncated}. Encrypted content: {image.EncryptedContent}. " + string.Join(" ", image.Warnings) +
-            " Names may be shortened in the table; JSON retains parsed names. Constants and missing mappings are not file/runtime addresses.";
+            $"\n{targets} {signature} Load-command directory in JSON: {image.LoadCommands.Count:N0} of {image.DeclaredLoadCommandCount:N0}. " +
+            "Names may be shortened in the table; JSON retains parsed names. Constants and missing mappings are not file/runtime addresses.";
     }
 
     public void ClearRuntimeForPrivacy()

@@ -40,6 +40,10 @@ Choose a local unpacked little-endian 64-bit Mach-O image or supported universal
 
 Addresses are hexadecimal strings. File offsets refer to the outer file, including a universal slice's base. Image-relative offsets, unslid virtual addresses, constants, and unavailable mappings remain distinct. Undefined and absolute symbols are not invented file addresses. `RuntimeAddressesAvailable` is always false: no ASLR slide, kernel address, process memory, or private API offset is guessed.
 
+The JSON also contains a load-command directory (up to 4,096 entries across all slices), raw command IDs, and outer-file offsets and sizes. Unknown command IDs remain numeric; reaching the directory cap does not bypass command validation. Modern `LC_BUILD_VERSION` declarations report platform, deployment minimum, SDK, and numeric tool records. A missing declaration is not inferred from architecture. `LC_CODE_SIGNATURE` only reports a bounded file range; it does not read entitlements, validate the signature, or establish trust or installability. See [Apple's Mach-O load command definitions](https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/EXTERNAL_HEADERS/mach-o/loader.h).
+
+Native comparison: [iOS run 42383887582](https://github.com/MercyProductions/Phone-Link/actions/runs/42383887582), attempt 2, provided two ARM64 images. The device archive reported iOS 26.0.0 minimum, SDK 26.2.0, 60 commands and no signature declaration, with UUID and SHA-256 matching the archive manifest. The simulator fixture reported iOS Simulator, the same minimum and SDK, 60 commands and a declared signature range. Optional marker mapping on the simulator fixture remained explicitly snapshot-derived, not verified live. No physical iPhone memory was read.
+
 ```powershell
 dotnet run --project tools/PhoneLink.OffsetDumper/PhoneLink.OffsetDumper.csproj -- 'C:\path\owned-image.dylib'
 ```

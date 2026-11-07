@@ -197,6 +197,8 @@ Windows automatic discovery recovery now retries after a five-minute cooldown in
 
 Physical-device gates remain separate: the selected phone previously refused Bluetooth inbox access with OBEX `0xC3`; `e2023fc` identifies the operation on the next attempt. Camera-free pairing source `006609b` produced a hash-verified unsigned iPhone archive. [The native workflow](https://github.com/MercyProductions/Phone-Link/actions/runs/42383887582) timed out waiting for the simulator to boot before tests on its first attempt, so only the failed job was retried. Neither archive output nor a simulator result verifies physical pairing, Bluetooth feeds, or SSH login.
 
+Attempt 2 succeeded: 18 XCTest and 13 Swift Testing cases passed, including both pairing-file cases. The static offset dumper now exports build targets, load-command locations, and the declared signature range (not verified). Windows CLI comparison distinguished the ARM64 device archive from the ARM64 simulator fixture and matched the device manifest. The physical pairing and runtime gates remain open.
+
 ## Primary research references
 
 - [libusbmuxd iproxy](https://github.com/libimobiledevice/libusbmuxd/blob/master/docs/iproxy.1) and [implementation](https://github.com/libimobiledevice/libusbmuxd/blob/master/tools/iproxy.c): USB forwarding is transport, not installation of an SSH server.
