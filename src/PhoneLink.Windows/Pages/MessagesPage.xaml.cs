@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PhoneLink.Application.Features.Calling;
 using PhoneLink.Integrations.AppleBluetooth.Capabilities;
 
 namespace PhoneLink.Windows.Pages;
@@ -9,6 +10,7 @@ public sealed partial class MessagesPage : Page, IDisposable
 {
     private CancellationTokenSource? _probeCancellation;
     private CancellationTokenSource? _inboxCancellation;
+    private CancellationTokenSource? _draftCancellation;
     private bool _loaded;
 
     public MessagesPage()
@@ -20,7 +22,7 @@ public sealed partial class MessagesPage : Page, IDisposable
     public ObservableCollection<ClassicBluetoothPeer> Peers { get; } = [];
     public ObservableCollection<MapInboxItem> Inbox { get; } = [];
 
-    private async void Page_Loaded(object sender, RoutedEventArgs e) { _loaded = true; await RefreshAsync(); }
+    private async void Page_Loaded(object sender, RoutedEventArgs e) { _loaded = true; UpdateDraftControls(); await RefreshAsync(); }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
 
@@ -34,8 +36,10 @@ public sealed partial class MessagesPage : Page, IDisposable
             Peers.Clear();
             Capabilities.Clear();
             ClearInbox();
+            ClearDraft();
         }
         UpdateInboxButton();
+        UpdateDraftControls();
     }
 
     public void Dispose()
@@ -44,7 +48,98 @@ public sealed partial class MessagesPage : Page, IDisposable
         _probeCancellation = null;
         Peers.Clear();
         ClearInbox();
+        ClearDraft();
         GC.SuppressFinalize(this);
+    }
+
+    private async void RefreshDraftTargetsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || App.IsLocked || _draftCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        _draftCancellation = cancellation;
+        DraftTargetBox.Items.Clear();
+        UpdateDraftControls();
+        DraftStatus.Text = "Checking authenticated companion sessions…";
+        try
+        {
+            var targets = await AppServices.Current.ListConnectedMessageTargetsAsync(cancellation.Token);
+            if (!IsCurrentDraftOperation(cancellation) || cancellation.IsCancellationRequested) return;
+            foreach (var target in targets) DraftTargetBox.Items.Add(target);
+            DraftStatus.Text = targets.Count == 0
+                ? "No connected companion reported draft support. Open the updated companion on your iPhone and connect securely."
+                : "Select the iPhone where you want to review this draft.";
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (IsCurrentDraftOperation(cancellation)) DraftStatus.Text = "Could not check companion sessions. No draft was sent.";
+        }
+        finally { FinishDraftOperation(cancellation); }
+    }
+
+    private void DraftTargetBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    { if (_loaded) UpdateDraftControls(); }
+
+    private async void ReviewDraftButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || App.IsLocked || _draftCancellation is not null ||
+            DraftTargetBox.SelectedItem is not CompanionDialTarget target) return;
+        CompanionMessageDraft draft;
+        try { draft = CompanionMessageDraft.Create(DraftNumberBox.Text, DraftBodyBox.Text); }
+        catch (ArgumentException)
+        {
+            DraftStatus.Text = "Enter one phone number and a nonempty draft of up to 1,000 UTF-8 bytes. No draft was sent.";
+            return;
+        }
+        using var cancellation = new CancellationTokenSource();
+        _draftCancellation = cancellation;
+        UpdateDraftControls();
+        DraftNumberBox.Text = DraftBodyBox.Text = string.Empty;
+        DraftStatus.Text = "Waiting for your review on iPhone. Phone Link does not send the message automatically.";
+        try
+        {
+            var result = await AppServices.Current.RequestMessageComposeAsync(target, draft, cancellation.Token);
+            if (!IsCurrentDraftOperation(cancellation)) return;
+            DraftStatus.Text = result.Status switch
+            {
+                "submitted" => "The iPhone composer reported submission. Delivery is not verified.",
+                "declined" => "The draft was cancelled on iPhone.",
+                "expired" => "The draft expired.",
+                "rejected" or "unsupported" or "failed" => "The iPhone did not accept or complete the draft. Nothing was retried.",
+                _ => "The iPhone returned no recognized draft outcome.",
+            };
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (IsCurrentDraftOperation(cancellation))
+                DraftStatus.Text = "No outcome was confirmed. Check the iPhone before trying again. Nothing was retried.";
+        }
+        finally { FinishDraftOperation(cancellation); }
+    }
+
+    private bool IsCurrentDraftOperation(CancellationTokenSource cancellation) =>
+        _loaded && !App.IsLocked && ReferenceEquals(_draftCancellation, cancellation);
+
+    private void FinishDraftOperation(CancellationTokenSource cancellation)
+    {
+        if (!ReferenceEquals(_draftCancellation, cancellation)) return;
+        _draftCancellation = null;
+        UpdateDraftControls();
+    }
+
+    private void ClearDraft()
+    {
+        _draftCancellation?.Cancel();
+        _draftCancellation = null;
+        DraftTargetBox.Items.Clear();
+        DraftNumberBox.Text = DraftBodyBox.Text = string.Empty;
+        DraftStatus.Text = "Draft cleared. Open the updated iPhone companion, then find connected iPhones.";
+    }
+
+    private void UpdateDraftControls()
+    {
+        var ready = _loaded && !App.IsLocked && _draftCancellation is null;
+        RefreshDraftTargetsButton.IsEnabled = DraftTargetBox.IsEnabled = DraftNumberBox.IsEnabled = DraftBodyBox.IsEnabled = ready;
+        ReviewDraftButton.IsEnabled = ready && DraftTargetBox.SelectedItem is CompanionDialTarget;
     }
 
     private async Task RefreshAsync()

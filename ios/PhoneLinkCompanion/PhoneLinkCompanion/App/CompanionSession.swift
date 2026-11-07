@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import Network
+import MessageUI
 
 @MainActor
 final class CompanionSession: ObservableObject {
@@ -21,6 +22,7 @@ final class CompanionSession: ObservableObject {
     @Published private(set) var trustedPeers: [TrustedWindowsPeer] = []
     @Published private(set) var connectionState: ConnectionState = .disconnected
     @Published private(set) var pendingDialRequest: PendingDialRequest?
+    @Published private(set) var pendingMessageDraft: PendingMessageDraft?
     @Published private(set) var reconnectStatus: String?
 
     var connectedSession: ConnectedWindowsSession? {
@@ -46,6 +48,7 @@ final class CompanionSession: ObservableObject {
     private let defaults: UserDefaults
     private var manuallyDisconnected: Bool
     private var contactSyncInProgress = false
+    private var draftExpiry: Task<Void, Never>?
 
     init(
         identityStore: DeviceIdentityStore = DeviceIdentityStore(),
@@ -63,6 +66,7 @@ final class CompanionSession: ObservableObject {
         }
         self.deviceSessionClient.onConnectionFailure = { [weak self] message in
             self?.pendingDialRequest = nil
+            self?.clearMessageDraft()
             self?.connectionState = .failed(message)
             self?.scheduleReconnect()
         }
@@ -119,6 +123,7 @@ final class CompanionSession: ObservableObject {
         guard isForeground, networkAvailable, !manuallyDisconnected, trustedPeers.contains(peer) else { return }
         reconnectTask?.cancel()
         reconnectTask = nil
+        clearMessageDraft()
         connectionAttemptID = UUID()
         let attemptID = connectionAttemptID
         reconnectStatus = nil
@@ -149,6 +154,7 @@ final class CompanionSession: ObservableObject {
         reconnectTask = nil
         deviceSessionClient.disconnect()
         pendingDialRequest = nil
+        clearMessageDraft()
         connectionState = .disconnected
     }
 
@@ -343,6 +349,10 @@ final class CompanionSession: ObservableObject {
     private func handleCommandRequest(
         _ request: ProtocolEnvelope<CommandRequestPayload>
     ) {
+        if request.payload.name == "message.compose" {
+            handleMessageDraft(request)
+            return
+        }
         guard request.payload.name == "call.start" else {
             Task {
                 try? await deviceSessionClient.sendCommandResult(
@@ -367,7 +377,7 @@ final class CompanionSession: ObservableObject {
             }
             return
         }
-        guard pendingDialRequest == nil else {
+        guard pendingDialRequest == nil, pendingMessageDraft == nil else {
             Task {
                 try? await deviceSessionClient.sendCommandResult(
                     for: request,
@@ -383,6 +393,53 @@ final class CompanionSession: ObservableObject {
             phoneNumber: phoneNumber,
             expiresAt: expiresAt
         )
+    }
+
+    private func handleMessageDraft(_ request: ProtocolEnvelope<CommandRequestPayload>) {
+        let now = Date()
+        guard isForeground, connectedSession?.sessionID == request.sessionId,
+              connectedSession?.capabilities.contains("command.message.compose.v1") == true,
+              request.payload.requiresUserConfirmation,
+              let input = MessageDraftInput(arguments: request.payload.arguments),
+              let expiry = parseTimestamp(request.payload.expiresAt),
+              expiry > now, expiry.timeIntervalSince(now) <= 130 else {
+            rejectDraft(request, "command.invalid-or-expired")
+            return
+        }
+        guard pendingDialRequest == nil, pendingMessageDraft == nil else {
+            rejectDraft(request, "command.busy")
+            return
+        }
+        guard MFMessageComposeViewController.canSendText() else {
+            rejectDraft(request, "message.unavailable")
+            return
+        }
+        let draft = PendingMessageDraft(envelope: request, input: input, expiresAt: expiry)
+        pendingMessageDraft = draft
+        draftExpiry = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) }
+            catch { return }
+            guard self?.pendingMessageDraft?.id == draft.id else { return }
+            self?.draftExpiry = nil
+            await self?.finishMessageDraft(id: draft.id, status: "expired")
+        }
+    }
+
+    private func rejectDraft(_ request: ProtocolEnvelope<CommandRequestPayload>, _ code: String) {
+        Task { try? await deviceSessionClient.sendCommandResult(for: request, status: "rejected", errorCode: code) }
+    }
+
+    func finishMessageDraft(id: UUID, status: String) async {
+        guard let draft = pendingMessageDraft, draft.id == id else { return }
+        clearMessageDraft()
+        guard isForeground, connectedSession?.sessionID == draft.envelope.sessionId else { return }
+        try? await deviceSessionClient.sendCommandResult(for: draft.envelope, status: status)
+    }
+
+    private func clearMessageDraft() {
+        draftExpiry?.cancel()
+        draftExpiry = nil
+        pendingMessageDraft = nil
     }
 
     private func isSafeDialString(_ value: String) -> Bool {
@@ -412,4 +469,27 @@ struct PendingDialRequest: Identifiable {
     let envelope: ProtocolEnvelope<CommandRequestPayload>
     let phoneNumber: String
     let expiresAt: Date
+}
+
+struct PendingMessageDraft: Identifiable {
+    var id: UUID { envelope.payload.commandId }
+    let envelope: ProtocolEnvelope<CommandRequestPayload>
+    let input: MessageDraftInput
+    let expiresAt: Date
+}
+
+struct MessageDraftInput {
+    let recipient: String
+    let body: String
+
+    init?(arguments: [String: String]) {
+        guard arguments.count == 2, let recipient = arguments["recipient"], let body = arguments["body"],
+              recipient.utf8.count <= 32, body.utf8.count <= 1_000,
+              !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              body.unicodeScalars.allSatisfy({ $0.value == 10 || $0.value == 9 || $0.properties.generalCategory != .control }) else { return nil }
+        let digits = recipient.utf8.first == 43 ? recipient.utf8.dropFirst() : recipient.utf8.dropFirst(0)
+        guard digits.count >= 3, digits.allSatisfy({ (48...57).contains($0) }) else { return nil }
+        self.recipient = recipient
+        self.body = body
+    }
 }

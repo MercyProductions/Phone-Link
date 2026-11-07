@@ -1,4 +1,5 @@
 import SwiftUI
+import MessageUI
 
 struct RootView: View {
     @EnvironmentObject private var session: CompanionSession
@@ -26,7 +27,7 @@ struct RootView: View {
         .tint(.indigo)
         .onOpenURL { url in
             // An external link only opens the review screen; it cannot approve trust.
-            guard pairingLink == nil else { return }
+            guard pairingLink == nil, session.pendingMessageDraft == nil else { return }
             pairingLink = PairingLink(url: url)
         }
         .sheet(item: $pairingLink) { link in
@@ -51,6 +52,12 @@ struct RootView: View {
                 }
             )
         }
+        .sheet(item: pendingMessageBinding) { draft in
+            NativeMessageComposer(input: draft.input) { result in
+                Task { await session.finishMessageDraft(id: draft.id, status: result) }
+            }
+            .interactiveDismissDisabled()
+        }
     }
 
     private var pendingDialBinding: Binding<PendingDialRequest?> {
@@ -58,6 +65,44 @@ struct RootView: View {
             get: { session.pendingDialRequest },
             set: { _ in }
         )
+    }
+
+    private var pendingMessageBinding: Binding<PendingMessageDraft?> {
+        Binding(get: { session.pendingMessageDraft }, set: { _ in })
+    }
+}
+
+private struct NativeMessageComposer: UIViewControllerRepresentable {
+    let input: MessageDraftInput
+    let finished: (String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(finished: finished) }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        guard MFMessageComposeViewController.canSendText() else {
+            Task { @MainActor in finished("failed") }
+            return UIViewController()
+        }
+        let controller = MFMessageComposeViewController()
+        controller.recipients = [input.recipient]
+        controller.body = input.body
+        controller.messageComposeDelegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) { }
+
+    final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+        let finished: (String) -> Void
+        init(finished: @escaping (String) -> Void) { self.finished = finished }
+
+        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
+            switch result {
+            case .sent: finished("submitted")
+            case .cancelled: finished("declined")
+            default: finished("failed")
+            }
+        }
     }
 }
 

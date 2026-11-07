@@ -19,6 +19,7 @@ struct SessionServerChallenge: Codable {
     let selectedProtocolVersion: Int
     let serverTime: String
     let signature: String
+    let supportsMessageCompose: Bool?
 }
 
 struct SessionClientProof: Codable {
@@ -26,6 +27,7 @@ struct SessionClientProof: Codable {
     let connectionId: UUID
     let sessionId: UUID
     let signature: String
+    let supportsMessageCompose: Bool?
 }
 
 struct SessionReady: Codable {

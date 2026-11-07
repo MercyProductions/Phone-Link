@@ -3,6 +3,16 @@ import XCTest
 @testable import PhoneLinkCompanion
 
 final class PairingProtocolTests: XCTestCase {
+    func testMessageDraftRequiresOneCanonicalRecipientAndBoundedUtf8() {
+        XCTAssertEqual(MessageDraftInput(arguments: ["recipient": "+15550101000", "body": "Hello\n👩‍👩‍👦"])?.recipient, "+15550101000")
+        XCTAssertNotNil(MessageDraftInput(arguments: ["recipient": "123", "body": String(repeating: "é", count: 500)]))
+        XCTAssertNil(MessageDraftInput(arguments: ["recipient": "123", "body": String(repeating: "é", count: 501)]))
+        XCTAssertNil(MessageDraftInput(arguments: ["recipient": "*123", "body": "Hello"]))
+        XCTAssertNil(MessageDraftInput(arguments: ["recipient": "123,456", "body": "Hello"]))
+        XCTAssertNil(MessageDraftInput(arguments: ["recipient": "123", "body": "bad\u{0}value"]))
+        XCTAssertNil(MessageDraftInput(arguments: ["recipient": "123", "body": "Hello", "unexpected": "value"]))
+    }
+
     private let rawOfferJSON = Data(base64Encoded: "eyJ2ZXJzaW9uIjoxLCJzZXNzaW9uSWQiOiI0YWJiZTMxMi1lODFlLTQ1ZWMtOGM4ZS02YTQ3NDE2MWFkN2YiLCJleHBpcmVzQXQiOiIyMDI2LTA4LTEyVDE5OjA2OjMxLjQyN1oiLCJlbmRwb2ludHMiOlt7Imhvc3QiOiIxOTIuMTY4LjEuMjQiLCJwb3J0Ijo0NTgzMX1dLCJ0bHNTcGtpU2hhMjU2IjoiRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRSIsInNlcnZlcklkZW50aXR5S2V5IjoiSWlJaUlpSWlJaUlpSWlJaUlpSWlJaUlpSWlJaUlpSWlJaUlpSWlJaUlpSSIsIm9mZmVyTm9uY2UiOiJNek16TXpNek16TXpNek16TXpNek13IiwicGFpcmluZ1NlY3JldCI6IlJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVEifQ==")!
 
     func testTranscriptMatchesWindowsVector() throws {

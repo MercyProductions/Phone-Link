@@ -57,7 +57,6 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Border Padding="24,18" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
                 <StackPanel>
@@ -67,6 +66,19 @@
             </Border>
             <ScrollViewer Grid.Row="1">
                 <StackPanel Margin="24" Spacing="16">
+                    <Expander Header="Draft a message for iPhone" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="This uses the paired Phone Link companion, not the Bluetooth inbox. Review and tap Send in Apple’s composer on your iPhone. Nothing is sent automatically or saved by Phone Link. Leaving this page stops waiting; cancel a draft already visible on the iPhone there." TextWrapping="Wrap" />
+                            <Button x:Name="RefreshDraftTargetsButton" Content="Find connected iPhones" Click="RefreshDraftTargetsButton_Click" />
+                            <ComboBox x:Name="DraftTargetBox" Header="Select an authenticated iPhone"
+                                DisplayMemberPath="SelectionLabel" SelectionChanged="DraftTargetBox_SelectionChanged" HorizontalAlignment="Stretch" />
+                            <TextBox x:Name="DraftNumberBox" Header="Recipient phone number" MaxLength="64" InputScope="TelephoneNumber" />
+                            <TextBox x:Name="DraftBodyBox" Header="Draft text (up to 1,000 UTF-8 bytes)" MaxLength="1000"
+                                AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
+                            <Button x:Name="ReviewDraftButton" Content="Review draft on iPhone" Click="ReviewDraftButton_Click" IsEnabled="False" />
+                            <TextBlock x:Name="DraftStatus" Text="Open the updated iPhone companion, then find connected iPhones." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                    </Expander>
                     <InfoBar x:Name="ErrorBar" IsClosable="True" IsOpen="False" Severity="Error" Title="Bluetooth capability check failed" />
                     <ProgressRing x:Name="LoadingRing" Width="32" Height="32" HorizontalAlignment="Left" />
                     <ComboBox x:Name="PeerBox" Header="Select your paired iPhone" ItemsSource="{x:Bind Peers}"
@@ -101,22 +113,10 @@
                     <TextBlock
                         MaxWidth="640"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="Service discovery does not prove that inbox reads or sending are permitted. This tab does not access the iPhone Messages database, send messages, or save previews."
+                        Text="Bluetooth service discovery does not prove inbox access. This Bluetooth path does not access the iPhone Messages database, send messages, or save previews."
                         TextWrapping="Wrap" />
                 </StackPanel>
             </ScrollViewer>
-            <Border Grid.Row="2" Margin="24" Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12">
-                <Grid ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Button IsEnabled="False"><FontIcon Glyph="&#xE898;" /></Button>
-                    <TextBox Grid.Column="1" IsEnabled="False" PlaceholderText="Select an available message source first" />
-                    <Button Grid.Column="2" Content="Send" IsEnabled="False" Style="{StaticResource AccentButtonStyle}" />
-                </Grid>
-            </Border>
         </Grid>
     </Grid>
 </Page>

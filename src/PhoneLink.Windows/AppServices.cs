@@ -221,6 +221,12 @@ public sealed class AppServices : IAsyncDisposable
         AppleBluetoothCapabilityProbe.ProbeAsync(cancellationToken);
 
     public async Task<IReadOnlyList<CompanionDialTarget>> ListConnectedDialTargetsAsync(
+        CancellationToken cancellationToken) => await ListConnectedTargetsAsync(false, cancellationToken).ConfigureAwait(false);
+
+    public Task<IReadOnlyList<CompanionDialTarget>> ListConnectedMessageTargetsAsync(CancellationToken cancellationToken) =>
+        ListConnectedTargetsAsync(true, cancellationToken);
+
+    private async Task<IReadOnlyList<CompanionDialTarget>> ListConnectedTargetsAsync(bool requireMessageCompose,
         CancellationToken cancellationToken)
     {
         var server = await GetPairingServerAsync(cancellationToken).ConfigureAwait(false);
@@ -228,25 +234,40 @@ public sealed class AppServices : IAsyncDisposable
         var targets = new List<CompanionDialTarget>();
         foreach (var device in devices)
         {
-            if (!server.TryGetSessionId(device.Id, out var sessionId)) continue;
+            if (!server.TryGetSessionId(device.Id, out var sessionId) ||
+                requireMessageCompose && !server.SupportsMessageCompose(device.Id, sessionId)) continue;
             var target = new CompanionDialTarget(device.Id, sessionId, device.DisplayName);
             if (target.Matches(device, sessionId)) targets.Add(target);
         }
         return targets;
     }
 
-    public async Task<CommandResultPayload> RequestDialAsync(
+    public Task<CommandResultPayload> RequestDialAsync(
         CompanionDialTarget target,
         string phoneNumber,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        RequestCompanionCommandAsync(target, "call.start",
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["phoneNumber"] = TelephoneDialString.Normalize(phoneNumber) },
+            false, cancellationToken);
+
+    public Task<CommandResultPayload> RequestMessageComposeAsync(CompanionDialTarget target,
+        CompanionMessageDraft draft, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        return RequestCompanionCommandAsync(target, "message.compose",
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["recipient"] = draft.Recipient, ["body"] = draft.Body },
+            true, cancellationToken);
+    }
+
+    private async Task<CommandResultPayload> RequestCompanionCommandAsync(CompanionDialTarget target, string name,
+        IReadOnlyDictionary<string, string> arguments, bool requireMessageCompose, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
-        var normalized = TelephoneDialString.Normalize(phoneNumber);
         var server = await GetPairingServerAsync(cancellationToken).ConfigureAwait(false);
         var devices = await _deviceStore!.ListAsync(cancellationToken).ConfigureAwait(false);
         var device = devices.FirstOrDefault(candidate => candidate.Id == target.DeviceId);
         if (!server.TryGetSessionId(target.DeviceId, out var sessionId) ||
-            !target.Matches(device, sessionId))
+            !target.Matches(device, sessionId) || requireMessageCompose && !server.SupportsMessageCompose(target.DeviceId, sessionId))
         {
             throw new InvalidOperationException("The selected iPhone session is no longer authorized. Refresh and select it again.");
         }
@@ -267,11 +288,8 @@ public sealed class AppServices : IAsyncDisposable
             var payload = new CommandRequestPayload
             {
                 CommandId = commandId,
-                Name = "call.start",
-                Arguments = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["phoneNumber"] = normalized,
-                },
+                Name = name,
+                Arguments = arguments,
                 ExpiresAt = expiresAt,
                 RequiresUserConfirmation = true,
             };
@@ -288,6 +306,7 @@ public sealed class AppServices : IAsyncDisposable
                 Payload = JsonSerializer.SerializeToElement(payload, WebJsonOptions),
             };
             cancellationToken.ThrowIfCancellationRequested();
+            if (App.IsLocked) throw new InvalidOperationException("Phone Link locked before sending the request.");
             await server.SendAsync(target.DeviceId, envelope, cancellationToken).ConfigureAwait(false);
             return await completion.Task
                 .WaitAsync(expiresAt - DateTimeOffset.UtcNow, cancellationToken)

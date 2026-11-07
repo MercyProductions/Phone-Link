@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import MessageUI
 import Security
 
 struct ConnectedWindowsSession: Equatable {
@@ -231,6 +232,7 @@ final class DeviceSessionClient {
         status: String,
         errorCode: String? = nil
     ) async throws {
+        guard connection?.sessionID == request.sessionId else { throw DeviceSessionError.notConnected }
         try await send(
             kind: "command.result",
             payload: CommandResultPayload(
@@ -339,7 +341,8 @@ final class DeviceSessionClient {
                 kind: "session.clientProof",
                 connectionId: connectionID,
                 sessionId: challenge.sessionId,
-                signature: Base64URL.encode(clientSignature)
+                signature: Base64URL.encode(clientSignature),
+                supportsMessageCompose: challenge.supportsMessageCompose == true && MFMessageComposeViewController.canSendText() ? true : nil
             )
             try await task.send(.data(PhoneLinkJSON.encoder.encode(proof)))
 

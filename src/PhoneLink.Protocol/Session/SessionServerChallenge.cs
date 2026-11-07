@@ -20,4 +20,7 @@ public sealed record SessionServerChallenge
     public required DateTimeOffset ServerTime { get; init; }
 
     public required string Signature { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SupportsMessageCompose { get; init; }
 }

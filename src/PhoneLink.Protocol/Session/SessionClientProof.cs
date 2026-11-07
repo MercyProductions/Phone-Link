@@ -12,4 +12,7 @@ public sealed record SessionClientProof
     public required Guid SessionId { get; init; }
 
     public required string Signature { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SupportsMessageCompose { get; init; }
 }

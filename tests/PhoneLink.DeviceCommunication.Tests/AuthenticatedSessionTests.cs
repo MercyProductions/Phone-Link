@@ -84,6 +84,7 @@ public sealed class AuthenticatedSessionTests
 
         var challenge = SessionWireSerializer.Parse<SessionServerChallenge>(await ReceiveAsync(socket));
         Assert.Equal("session.serverChallenge", challenge.Kind);
+        Assert.True(challenge.SupportsMessageCompose);
         Assert.Equal(connectionId, challenge.ConnectionId);
         Assert.Equal(serverDeviceId, challenge.ServerDeviceId);
         var serverNonce = Base64Url.Decode(challenge.ServerNonce);
@@ -109,6 +110,7 @@ public sealed class AuthenticatedSessionTests
                 ConnectionId = connectionId,
                 SessionId = challenge.SessionId,
                 Signature = Base64Url.Encode(clientSignature),
+                SupportsMessageCompose = termination == "replay",
             });
 
         var ready = SessionWireSerializer.Parse<SessionReady>(await ReceiveAsync(socket));
@@ -117,6 +119,7 @@ public sealed class AuthenticatedSessionTests
         Assert.Contains("diagnostics.health.v1", ready.Capabilities);
         Assert.Contains("diagnostics.runtime.v1", ready.Capabilities);
         Assert.Contains("videos.import.v1", ready.Capabilities);
+        Assert.Contains("command.message.compose.v1", ready.Capabilities);
 
         var ping = new ProtocolEnvelope
         {
@@ -139,6 +142,8 @@ public sealed class AuthenticatedSessionTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await using var received = server.ReadFramesAsync(timeout.Token).GetAsyncEnumerator(timeout.Token);
         Assert.True(await received.MoveNextAsync());
+        Assert.Equal(termination == "replay", server.SupportsMessageCompose(clientDeviceId, challenge.SessionId));
+        Assert.False(server.SupportsMessageCompose(clientDeviceId, Guid.NewGuid()));
         var receivedEnvelope = Assert.IsType<PhoneLink.DeviceCommunication.Sessions.ReceivedDeviceEnvelope>(
             received.Current);
         Assert.Equal(clientDeviceId, receivedEnvelope.DeviceId);
@@ -176,8 +181,10 @@ public sealed class AuthenticatedSessionTests
             Payload = JsonSerializer.SerializeToElement(new CommandRequestPayload
             {
                 CommandId = commandId,
-                Name = "call.start",
-                Arguments = new Dictionary<string, string> { ["phoneNumber"] = "+13125550198" },
+                Name = termination == "replay" ? "message.compose" : "call.start",
+                Arguments = termination == "replay"
+                    ? new Dictionary<string, string> { ["recipient"] = "+13125550198", ["body"] = "Synthetic draft" }
+                    : new Dictionary<string, string> { ["phoneNumber"] = "+13125550198" },
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(2),
                 RequiresUserConfirmation = true,
             }),
@@ -196,7 +203,12 @@ public sealed class AuthenticatedSessionTests
         var dial = receivedCommand.Payload.Deserialize<CommandRequestPayload>();
         Assert.NotNull(dial);
         Assert.True(dial.RequiresUserConfirmation);
-        Assert.Equal("+13125550198", dial.Arguments["phoneNumber"]);
+        Assert.Equal("+13125550198", dial.Arguments[termination == "replay" ? "recipient" : "phoneNumber"]);
+        if (termination == "replay")
+        {
+            Assert.Equal("message.compose", dial.Name);
+            Assert.Equal("Synthetic draft", dial.Arguments["body"]);
+        }
 
         var commandResult = new ProtocolEnvelope
         {

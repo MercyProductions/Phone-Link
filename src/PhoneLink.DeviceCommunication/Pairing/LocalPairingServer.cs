@@ -159,6 +159,9 @@ public sealed class LocalPairingServer : IAsyncDisposable
 
     public bool IsConnected(DeviceId deviceId) => _sessions.ContainsKey(deviceId);
 
+    public bool SupportsMessageCompose(DeviceId deviceId, Guid sessionId) =>
+        _sessions.TryGetValue(deviceId, out var session) && session.SessionId == sessionId && session.SupportsMessageCompose;
+
     public bool TryGetSessionId(DeviceId deviceId, out Guid sessionId)
     {
         if (_sessions.TryGetValue(deviceId, out var session))
@@ -292,6 +295,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                         SelectedProtocolVersion = selectedVersion,
                         ServerTime = DateTimeOffset.UtcNow,
                         Signature = Base64Url.Encode(serverSignature),
+                        SupportsMessageCompose = true,
                     },
                     context.RequestAborted).ConfigureAwait(false);
 
@@ -335,6 +339,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                             "photos.import",
                             "videos.import.v1",
                             "command.call.start.confirmed",
+                            "command.message.compose.v1",
                             "diagnostics.health.v1",
                             "diagnostics.runtime.v1",
                         ],
@@ -343,7 +348,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                     },
                     context.RequestAborted).ConfigureAwait(false);
 
-                liveSession = new LiveDeviceSession(deviceId, sessionId, socket);
+                liveSession = new LiveDeviceSession(deviceId, sessionId, socket, proof.SupportsMessageCompose);
                 if (_sessions.TryGetValue(deviceId, out var previous))
                 {
                     await previous.CloseAsync(CancellationToken.None).ConfigureAwait(false);
@@ -757,16 +762,18 @@ public sealed class LocalPairingServer : IAsyncDisposable
     {
         private readonly SemaphoreSlim _sendLock = new(1, 1);
 
-        public LiveDeviceSession(DeviceId deviceId, Guid sessionId, WebSocket socket)
+        public LiveDeviceSession(DeviceId deviceId, Guid sessionId, WebSocket socket, bool supportsMessageCompose = false)
         {
             DeviceId = deviceId;
             SessionId = sessionId;
             Socket = socket;
+            SupportsMessageCompose = supportsMessageCompose;
         }
 
         public DeviceId DeviceId { get; }
 
         public Guid SessionId { get; }
+        public bool SupportsMessageCompose { get; }
 
         public WebSocket Socket { get; }
 
