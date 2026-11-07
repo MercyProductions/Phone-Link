@@ -130,6 +130,23 @@ public sealed class ConnectionDiagnosticHistoryTests
         using var json = JsonDocument.Parse(result.ToShareableJson());
         Assert.Equal(1, json.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("Reported", json.RootElement.GetProperty("confidence").GetString());
-        Assert.Equal(5, json.RootElement.GetProperty("comparison").GetProperty("Issues").GetArrayLength());
+        Assert.Equal(6, json.RootElement.GetProperty("comparison").GetProperty("Issues").GetArrayLength());
+    }
+
+    [Fact]
+    public void TransportGapNeedsRepeatedKnownEvidenceAndStopsWhenInventoryRecovers()
+    {
+        var history = new ConnectionDiagnosticHistory();
+        var gap = new UsbTransportObservation(UsbTransportState.Responded, 0);
+        history.Observe(Snapshot(1) with { UsbTransport = gap });
+        var timeout = history.Observe(Snapshot(2) with { UsbTransport = new(UsbTransportState.TimedOut) });
+        Assert.Equal(DiagnosticTransition.NotVerifiable, timeout.Issues.Single(issue => issue.Id == "usb-transport").Transition);
+        var first = history.Observe(Snapshot(3) with { UsbTransport = gap });
+        Assert.DoesNotContain(first.Insights, insight => insight.Id == "repeated-usb-transport-gap");
+        var repeated = history.Observe(Snapshot(4) with { UsbTransport = gap });
+        Assert.Contains(repeated.Insights, insight => insight.Id == "repeated-usb-transport-gap");
+        var recovered = history.Observe(Snapshot(5) with { UsbTransport = new(UsbTransportState.Responded, 1) });
+        Assert.Equal(DiagnosticTransition.ImprovedObservation, recovered.Issues.Single(issue => issue.Id == "usb-transport").Transition);
+        Assert.DoesNotContain(recovered.Insights, insight => insight.Id == "repeated-usb-transport-gap");
     }
 }

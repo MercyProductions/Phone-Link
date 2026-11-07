@@ -24,11 +24,30 @@ public sealed class ConnectionDiagnosticEvaluatorTests
     public void HealthyWindowsEvidenceDoesNotClaimPhoneHardwareOrTrustHealth()
     {
         var report = ConnectionDiagnosticEvaluator.Evaluate(Snapshot);
-        Assert.Equal(7, report.Findings.Count);
+        Assert.Equal(8, report.Findings.Count);
         Assert.Equal(DiagnosticOutcome.Passed, report.Findings.Single(finding => finding.Id == "usb").Outcome);
         Assert.Contains("not necessarily iPhones", report.Findings.Single(finding => finding.Id == "usb").Evidence);
         Assert.Contains("does not prove iOS trust", report.Findings.Single(finding => finding.Id == "driver").Evidence);
         Assert.Equal(DiagnosticOutcome.Guidance, report.Findings.Single(finding => finding.Id == "recovery").Outcome);
+    }
+
+    [Theory]
+    [InlineData(UsbTransportState.Responded, 1, 4, DiagnosticOutcome.Passed)]
+    [InlineData(UsbTransportState.Responded, 0, 4, DiagnosticOutcome.Attention)]
+    [InlineData(UsbTransportState.Responded, 0, 0, DiagnosticOutcome.Guidance)]
+    [InlineData(UsbTransportState.ConnectionRefused, null, 4, DiagnosticOutcome.Attention)]
+    [InlineData(UsbTransportState.ConnectionRefused, null, null, DiagnosticOutcome.Unknown)]
+    [InlineData(UsbTransportState.TimedOut, null, 4, DiagnosticOutcome.Unknown)]
+    [InlineData(UsbTransportState.InvalidReply, null, 4, DiagnosticOutcome.Unknown)]
+    [InlineData(UsbTransportState.Unavailable, null, 4, DiagnosticOutcome.Unknown)]
+    public void HostTransportDistinguishesEmptyInventoryFromUnavailableEvidence(UsbTransportState state, int? entries, int? nodes,
+        DiagnosticOutcome expected)
+    {
+        var finding = ConnectionDiagnosticEvaluator.Evaluate(Snapshot with
+            { AppleUsbNodes = nodes, UsbTransport = new(state, entries) }).Findings.Single(item => item.Id == "usb-transport");
+        Assert.Equal(expected, finding.Outcome);
+        Assert.Contains("sends no iPhone command", finding.NextStep);
+        if (entries > 0) Assert.Contains("does not verify iOS Trust", finding.Evidence);
     }
 
     [Fact]

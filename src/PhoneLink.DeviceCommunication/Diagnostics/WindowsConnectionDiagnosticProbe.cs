@@ -1,5 +1,7 @@
 using PhoneLink.Application.Features.Diagnostics;
 using PhoneLink.DeviceCommunication.Discovery;
+using System.Net.Sockets;
+using System.Xml;
 using Windows.Devices.Enumeration;
 using Windows.Management.Deployment;
 
@@ -72,6 +74,7 @@ public static class WindowsConnectionDiagnosticProbe
         catch (Exception exception) when (exception is not OutOfMemoryException) { unavailable.Add("app-inventory-unavailable"); }
         try { endpointCount = LocalNetworkCatalog.SelectPairingAddresses(LocalNetworkCatalog.Capture()).Length; }
         catch (Exception exception) when (exception is not OutOfMemoryException) { unavailable.Add("network-query-unavailable"); }
+        var usbTransport = await CaptureUsbTransportAsync(ExperimentalUsbMuxProbe.ProbeAsync, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         return new(DateTimeOffset.UtcNow, usbCount, problemCount, unknownCount,
             appleDevicesInstalled, version, endpointCount, null, null, unavailable)
@@ -79,7 +82,31 @@ public static class WindowsConnectionDiagnosticProbe
             UsbProblemCodes = usbCount is null ? null : problemCodes.OrderBy(item => item.Key)
                 .Select(item => new UsbDeviceProblemCount(item.Key, item.Value)).ToArray(),
             UsbNodesWithUnavailableProblemCode = unavailableCodes,
+            UsbTransport = usbTransport,
         };
+    }
+
+    internal static async Task<UsbTransportObservation> CaptureUsbTransportAsync(
+        Func<CancellationToken, Task<UsbMuxInventory>> probe, CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var inventory = await probe(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new(UsbTransportState.Responded, inventory.UsbConnections);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new(exception switch
+            {
+                SocketException { SocketErrorCode: SocketError.ConnectionRefused } => UsbTransportState.ConnectionRefused,
+                OperationCanceledException or SocketException { SocketErrorCode: SocketError.TimedOut } => UsbTransportState.TimedOut,
+                InvalidDataException or EndOfStreamException or XmlException => UsbTransportState.InvalidReply,
+                _ => UsbTransportState.Unavailable,
+            });
+        }
     }
 
     // SDK declares UInt32; accept nonnegative Int32 too, as documentation describes Int32.

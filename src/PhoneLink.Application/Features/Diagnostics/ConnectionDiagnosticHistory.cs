@@ -42,7 +42,7 @@ public sealed record ConnectionDiagnosticComparison(DateTimeOffset CapturedAt, D
 public sealed class ConnectionDiagnosticHistory
 {
     public const int MaximumScans = 20;
-    private static readonly string[] TrackedIds = ["usb", "driver", "apple-devices", "network", "companion"];
+    private static readonly string[] TrackedIds = ["usb", "driver", "apple-devices", "usb-transport", "network", "companion"];
     private readonly Queue<Observation> _observations = new();
 
     public void Clear() => _observations.Clear();
@@ -92,6 +92,9 @@ public sealed class ConnectionDiagnosticHistory
         if (issues.Any(issue => issue.Id == "driver" && issue.ConsecutiveAttentionObservations >= 2))
             insights.Add(new("repeated-driver-indication", "Consecutive scans report a Windows device/driver problem indication.",
                 "Compare the numeric Windows problem-code guidance with Device Manager. Aggregate observations may involve different nodes or phones; repetition does not prove a bad cable, failed hardware or a specific driver conflict. No driver reset is authorized by this rule."));
+        if (issues.Any(issue => issue.Id == "usb-transport" && issue.ConsecutiveAttentionObservations >= 2))
+            insights.Add(new("repeated-usb-transport-gap", "Consecutive scans show Apple USB nodes without a usable USB transport listing.",
+                "Check whether Apple Devices sees the phone. Node and transport counts describe different layers; do not reset iPhone Trust or restart services based on this result alone."));
         return new(snapshot.CapturedAt, previous?.CapturedAt, observations.Length, reset, issues, insights.ToArray());
     }
 

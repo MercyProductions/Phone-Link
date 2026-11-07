@@ -23,6 +23,8 @@ public sealed class DiagnosticFinding(string id, string title, DiagnosticOutcome
 }
 
 public sealed record UsbDeviceProblemCount(uint Code, int NodeCount);
+public enum UsbTransportState { Responded, ConnectionRefused, TimedOut, InvalidReply, Unavailable }
+public sealed record UsbTransportObservation(UsbTransportState State, int? UsbConnections = null);
 
 // Aggregate counts/codes and a deployment-mode flag only: no device identifiers or secrets.
 public sealed record ConnectionDiagnosticSnapshot(DateTimeOffset CapturedAt,
@@ -33,6 +35,7 @@ public sealed record ConnectionDiagnosticSnapshot(DateTimeOffset CapturedAt,
     public bool? HasPackageIdentity { get; init; }
     public IReadOnlyList<UsbDeviceProblemCount>? UsbProblemCodes { get; init; }
     public int? UsbNodesWithUnavailableProblemCode { get; init; }
+    public UsbTransportObservation? UsbTransport { get; init; }
 }
 
 public sealed record ConnectionDiagnosticReport(ConnectionDiagnosticSnapshot Snapshot,
@@ -97,6 +100,7 @@ public static class ConnectionDiagnosticEvaluator
                 _ => "The current-user app inventory could not be read; installation status is unknown.",
             },
             "Use Apple's Apple Devices app for supported USB backups, updates, and restoration. Its USB Trust relationship is separate from Phone Link companion pairing.", TrustGuide));
+        findings.Add(EvaluateUsbTransport(snapshot));
         findings.Add(new("network", "Companion local-network path",
             snapshot.LocalEndpointCount is null ? DiagnosticOutcome.Unknown :
                 snapshot.LocalEndpointCount > 0 ? DiagnosticOutcome.Passed : DiagnosticOutcome.Attention,
@@ -114,5 +118,29 @@ public static class ConnectionDiagnosticEvaluator
             "This connection scan cannot diagnose a boot loop, certify battery health, or establish a hardware fault.",
             "Back up first when possible. Use the symptom-specific Apple recovery or diagnostics workflow. Restore erases data; no restore, reset, or firmware operation is performed by this scan.", RecoveryGuide));
         return new(snapshot, findings);
+    }
+
+    private static DiagnosticFinding EvaluateUsbTransport(ConnectionDiagnosticSnapshot snapshot)
+    {
+        var transport = snapshot.UsbTransport;
+        var nodesPresent = snapshot.AppleUsbNodes > 0;
+        var (outcome, evidence) = transport switch
+        {
+            { State: UsbTransportState.Responded, UsbConnections: > 0 } =>
+                (DiagnosticOutcome.Passed, $"The local Apple transport returned {transport.UsbConnections.GetValueOrDefault()} USB connection(s). This does not verify iOS Trust, media access or a companion session."),
+            { State: UsbTransportState.Responded, UsbConnections: 0 } =>
+                (nodesPresent ? DiagnosticOutcome.Attention : DiagnosticOutcome.Guidance,
+                    "The local Apple transport answered, but returned no USB connections. Windows Apple-vendor nodes and transport connections are separate observations."),
+            { State: UsbTransportState.ConnectionRefused } =>
+                (nodesPresent ? DiagnosticOutcome.Attention : DiagnosticOutcome.Unknown,
+                    "The fixed local transport endpoint refused the connection. This does not prove that Apple Devices is missing or that an iPhone is faulty."),
+            { State: UsbTransportState.TimedOut } =>
+                (DiagnosticOutcome.Unknown, "The fixed local transport check timed out; USB connection count is unknown."),
+            { State: UsbTransportState.InvalidReply } =>
+                (DiagnosticOutcome.Unknown, "The local endpoint did not return a supported inventory. Its USB connection count is unknown."),
+            _ => (DiagnosticOutcome.Unknown, "Local Apple transport inventory is unavailable."),
+        };
+        return new("usb-transport", "Apple USB transport inventory", outcome, evidence,
+            "If a connected iPhone is missing here, compare with Apple Devices before changing drivers or trust. This check only queries the local Windows endpoint; it sends no iPhone command and restarts no service.", ConnectionGuide);
     }
 }

@@ -25,7 +25,7 @@
                 <Button Content="Open Apple Devices" Click="AppleDevicesButton_Click" />
                 <ProgressRing x:Name="ScanProgress" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
             </StackPanel>
-            <Button x:Name="ExperimentalButton" Content="Experimental: probe Apple USB transport" Click="ExperimentalButton_Click"
+            <Button x:Name="ExperimentalButton" Content="Detailed local transport inventory" Click="ExperimentalButton_Click"
                 HorizontalAlignment="Left" ToolTipService.ToolTip="Read-only local Apple service query. No pairing records or phone commands are requested." />
             <Button x:Name="PhoneInfoButton" Content="Experimental: read connected iPhone information" Click="PhoneInfoButton_Click"
                 HorizontalAlignment="Left" ToolTipService.ToolTip="Use with one owned iPhone connected by USB. Reads model, OS and available battery observations; no settings or firmware changes." />
@@ -56,7 +56,7 @@
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock Text="Live USB presence" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="Watch Apple-vendor USB node arrivals/removals while comparing cables or ports. After changes settle, the monitor automatically reruns the local connection checks. One phone can expose several nodes; these events do not identify a physical disconnect, bad cable, USB Trust, charging quality or hardware fault. Only the latest 20 count/timestamp events stay in memory. Leaving this page, stopping or locking clears them. The monitor does not pair, send phone commands or run repairs."
+            <TextBlock Text="Watch Apple-vendor USB node arrivals/removals while comparing cables or ports. After changes settle, the monitor reruns local checks, including Apple transport inventory on this PC. One phone can expose several nodes; these events do not identify a physical disconnect, bad cable, USB Trust, charging quality or hardware fault. Only the latest 20 count/timestamp events stay in memory. Leaving this page, stopping or locking clears them. The monitor does not pair, send phone commands or run repairs."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <Button x:Name="PresenceButton" Content="Start live USB monitor" Click="PresenceButton_Click" HorizontalAlignment="Left" />
             <TextBlock x:Name="PresenceText" Text="USB monitor stopped. Its history is separate from the copied connection report." TextWrapping="Wrap" />
