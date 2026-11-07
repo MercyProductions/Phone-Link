@@ -12,6 +12,10 @@ After archiving, Apple `lipo`, `vtool` and `dwarfdump` inspect architecture, bui
 
 Local validator tests use intentionally synthetic, non-runnable fixtures. They cover matching hashes/false verification flags, ARM64 simulator versus device, x64 rejection, mismatched deployment metadata, missing permission reasons (including motion), unexpected profile, truncated commands, unsafe/foreign ZIP paths and changed executable/assets. All 14 passed on Windows and in the native job at the motion-diagnostic checkpoint below. These fixtures are not a physical-device execution test.
 
+## Short-video device artifact — November 7
+
+The `device_archive` job of [run 42380297667](https://github.com/MercyProductions/Phone-Link/actions/runs/42380297667) passed for source `b6f71435cade53fc80e4cf4e5467931dc2193b46`. The local `artifacts/media-device-42380297667/PhoneLinkCompanion-unsigned.ipa` and its embedded executable match the SHA-256 values in `device-build.json`. The Windows offset dumper matched the Release device image UUID and found 4,382 static entries, including `__mh_execute_header` at file offset zero. No runtime address was inferred. The artifact is unsigned; installation, picker behavior, and playback of a clip delivered from a physical iPhone have not been verified.
+
 ## Motion-diagnostic device artifact — November 3
 
 [Run 41654482900](https://github.com/MercyProductions/Phone-Link/actions/runs/41654482900), source `c03b6cbacccc320b80997cf71e8151af47ad7cf2`, is terminal success on attempt 2. The first simulator attempt timed out waiting on BackBoard before tests; only that failed job was rerun, without weakening readiness checks. The retry booted and passed 12 XCTest plus 12 Swift Testing cases (24 total), including all six motion-summary cases. Device Release compilation/archive, 14 package-validator cases, full package matching and artifact upload passed. This is not a native warning-free or physical-sensor test claim.
