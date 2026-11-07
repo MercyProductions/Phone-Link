@@ -14,9 +14,10 @@ namespace PhoneLink.DeviceCommunication.Tests;
 public sealed class LocalPairingServerTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AuthenticatedPairingRequiresPhoneConfirmationBeforeExpiry(bool stallPhoneConfirmation)
+    [InlineData("success")]
+    [InlineData("expired")]
+    [InlineData("invalid-proof")]
+    public async Task PairingReportsOnlyObservedStagesAndRequiresBothConfirmations(string scenario)
     {
         var secretStore = new InMemorySecretStore();
         var certificate = await new LocalTlsCertificateProvider(secretStore)
@@ -30,6 +31,14 @@ public sealed class LocalPairingServerTests
             trustedDevices,
             serverDeviceId);
         var requested = new TaskCompletionSource<PairingApprovalRequestedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource<PairingAttemptProgress>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ConcurrentQueue<PairingAttemptStage> stages = new();
+        server.PairingProgressChanged += (_, progress) =>
+        {
+            stages.Enqueue(progress.Stage);
+            if (progress.Stage is not (PairingAttemptStage.RequestReceived or PairingAttemptStage.AwaitingConfirmation))
+                finished.TrySetResult(progress);
+        };
         server.PairingApprovalRequested += (_, args) =>
         {
             args.Submit(true);
@@ -37,7 +46,7 @@ public sealed class LocalPairingServerTests
         };
         await server.StartAsync(CancellationToken.None);
 
-        var display = server.CreateOffer(stallPhoneConfirmation ? DateTimeOffset.UtcNow.AddSeconds(-112) : DateTimeOffset.UtcNow);
+        var display = server.CreateOffer(scenario == "expired" ? DateTimeOffset.UtcNow.AddSeconds(-112) : DateTimeOffset.UtcNow);
         using var artifact = PairingOfferCodec.Decode(display.QrPayload);
         var endpoint = artifact.Offer.Endpoints.First(candidate => candidate.Host.Contains('.'));
 
@@ -58,6 +67,7 @@ public sealed class LocalPairingServerTests
             clientPublicKey,
             clientNonce);
         var proof = PairingTranscript.CreateClientProof(artifact.Offer.PairingSecret.Span, digest);
+        if (scenario == "invalid-proof") proof[0] ^= 1;
 
         await SendAsync(
             socket,
@@ -72,6 +82,17 @@ public sealed class LocalPairingServerTests
                 Proof = Base64Url.Encode(proof),
                 AppVersion = "1.0",
             });
+
+        if (scenario == "invalid-proof")
+        {
+            var failed = await finished.Task.WaitAsync(TimeSpan.FromSeconds(8));
+            Assert.Equal(display.SessionId, failed.SessionId);
+            Assert.Equal(PairingAttemptStage.Failed, failed.Stage);
+            Assert.Equal([PairingAttemptStage.RequestReceived, PairingAttemptStage.Failed], stages.ToArray());
+            Assert.False(requested.Task.IsCompleted);
+            Assert.Null(await trustedDevices.FindAsync(new DeviceId(clientDeviceId), CancellationToken.None));
+            return;
+        }
 
         var serverProof = PairingWireSerializer.Parse<PairingServerProof>(await ReceiveAsync(socket));
         var serverNonce = Base64Url.Decode(serverProof.ServerNonce);
@@ -88,7 +109,7 @@ public sealed class LocalPairingServerTests
                 serverInput,
                 signature));
 
-        if (stallPhoneConfirmation)
+        if (scenario == "expired")
         {
             var approval = await requested.Task.WaitAsync(TimeSpan.FromSeconds(5));
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -103,6 +124,9 @@ public sealed class LocalPairingServerTests
             }
             Assert.False(deadline.IsCancellationRequested);
             Assert.True(approval.AttemptEnded.IsCancellationRequested);
+            var expired = await finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(display.SessionId, expired.SessionId);
+            Assert.Equal([PairingAttemptStage.RequestReceived, PairingAttemptStage.AwaitingConfirmation, PairingAttemptStage.Expired], stages.ToArray());
             Assert.Null(await trustedDevices.FindAsync(new DeviceId(clientDeviceId), CancellationToken.None));
             return;
         }
@@ -124,6 +148,9 @@ public sealed class LocalPairingServerTests
             "Test complete",
             CancellationToken.None);
         var saved = await trustedDevices.FindAsync(new DeviceId(clientDeviceId), CancellationToken.None);
+        var trusted = await finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(display.SessionId, trusted.SessionId);
+        Assert.Equal([PairingAttemptStage.RequestReceived, PairingAttemptStage.AwaitingConfirmation, PairingAttemptStage.Trusted], stages.ToArray());
         Assert.NotNull(saved);
         Assert.Equal("Test iPhone", saved.DisplayName);
         Assert.Equal(clientPublicKey, saved.IdentityPublicKey.ToArray());

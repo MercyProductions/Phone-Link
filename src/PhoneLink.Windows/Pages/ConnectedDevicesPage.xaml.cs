@@ -17,6 +17,9 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
     private readonly ObservableCollection<DeviceListItem> _devices = [];
     private LocalPairingServer? _pairingServer;
     private PairingOfferDisplay? _currentOffer;
+    private readonly DispatcherTimer _pairingExpiryTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private Guid? _observedOfferId;
+    private bool _pairingRequestReceived;
     private bool _isPageLoaded;
     private bool _pairingConfirmationOpen;
     private CancellationTokenSource? _discoveryCancellation;
@@ -26,6 +29,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
     {
         InitializeComponent();
         DevicesList.ItemsSource = _devices;
+        _pairingExpiryTimer.Tick += PairingExpiryTimer_Tick;
         Loaded += Page_Loaded;
         Unloaded += Page_Unloaded;
     }
@@ -52,12 +56,13 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
         _isPageLoaded = false;
         Dispose();
         NetworkChange.NetworkAddressChanged -= Network_AddressChanged;
-        CancelCurrentOffer();
-        QrImage.Source = null;
-        PairingPanel.Visibility = Visibility.Collapsed;
+        HidePairingQr();
+        _observedOfferId = null;
+        PairingProgressText.Visibility = Visibility.Collapsed;
         if (_pairingServer is not null)
         {
             _pairingServer.PairingApprovalRequested -= PairingServer_ApprovalRequested;
+            _pairingServer.PairingProgressChanged -= PairingServer_ProgressChanged;
             _pairingServer.PairingCompleted -= PairingServer_PairingCompleted;
             _pairingServer.SessionConnected -= PairingServer_SessionChanged;
             _pairingServer.SessionDisconnected -= PairingServer_SessionChanged;
@@ -71,21 +76,30 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
         try
         {
             var server = await EnsureServerAsync();
-            CancelCurrentOffer();
+            if (!_isPageLoaded || App.IsLocked) return;
+            HidePairingQr();
             _currentOffer = server.CreateOffer(DateTimeOffset.UtcNow);
             var offer = _currentOffer;
+            _observedOfferId = offer.SessionId;
+            _pairingRequestReceived = false;
             var image = await CreateQrImageAsync(offer.QrPayload);
-            if (!_isPageLoaded || _currentOffer?.SessionId != offer.SessionId)
+            if (!_isPageLoaded || App.IsLocked || _currentOffer?.SessionId != offer.SessionId)
             {
+                if (_currentOffer?.SessionId == offer.SessionId) HidePairingQr();
                 return;
             }
             QrImage.Source = image;
             ExpiryText.Text = $"This code expires at {_currentOffer.ExpiresAt.ToLocalTime():t} and becomes invalid after its first connection attempt.";
             PairingPanel.Visibility = Visibility.Visible;
+            ShowPairingProgress("Waiting for the companion to scan and tap Connect securely. No matching request has reached this PC yet.");
+            _pairingExpiryTimer.Start();
             StatusBar.IsOpen = false;
         }
         catch (Exception exception)
         {
+            HidePairingQr();
+            _observedOfferId = null;
+            PairingProgressText.Visibility = Visibility.Collapsed;
             ShowError("A pairing code could not be created.", exception);
         }
         finally
@@ -96,9 +110,9 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
 
     private void CancelPairing_Click(object sender, RoutedEventArgs args)
     {
-        CancelCurrentOffer();
-        PairingPanel.Visibility = Visibility.Collapsed;
-        QrImage.Source = null;
+        HidePairingQr();
+        _observedOfferId = null;
+        ShowPairingProgress("Pairing stopped. Choose Pair iPhone when you’re ready to try again.");
     }
 
     private async void RevokeButton_Click(object sender, RoutedEventArgs args)
@@ -161,6 +175,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
             return _pairingServer;
         }
         server.PairingApprovalRequested += PairingServer_ApprovalRequested;
+        server.PairingProgressChanged += PairingServer_ProgressChanged;
         server.PairingCompleted += PairingServer_PairingCompleted;
         server.SessionConnected += PairingServer_SessionChanged;
         server.SessionDisconnected += PairingServer_SessionChanged;
@@ -182,9 +197,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
                 }
 
                 // The server has consumed this QR. Only the comparison step remains.
-                CancelCurrentOffer();
-                QrImage.Source = null;
-                PairingPanel.Visibility = Visibility.Collapsed;
+                HidePairingQr();
                 var dialog = new ContentDialog
                 {
                     XamlRoot = XamlRoot,
@@ -233,9 +246,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
         DispatcherQueue.TryEnqueue(async () =>
         {
             if (!_isPageLoaded) { return; }
-            CancelCurrentOffer();
-            PairingPanel.Visibility = Visibility.Collapsed;
-            QrImage.Source = null;
+            HidePairingQr();
             StatusBar.Title = "iPhone paired";
             StatusBar.Message = $"{args.DisplayName} is now trusted and can reconnect securely.";
             StatusBar.Severity = InfoBarSeverity.Success;
@@ -319,6 +330,59 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
         _currentOffer = null;
     }
 
+    private void HidePairingQr()
+    {
+        _pairingExpiryTimer.Stop();
+        CancelCurrentOffer();
+        QrImage.Source = null;
+        PairingPanel.Visibility = Visibility.Collapsed;
+        if (PairingProgressText.Text.Length != 0) PairingProgressText.Visibility = Visibility.Visible;
+    }
+
+    private void PairingExpiryTimer_Tick(object? sender, object args)
+    {
+        if (App.IsLocked)
+        {
+            HidePairingQr();
+            _observedOfferId = null;
+            PairingProgressText.Visibility = Visibility.Collapsed;
+        }
+        else if (_currentOffer is { } offer && DateTimeOffset.UtcNow >= offer.ExpiresAt)
+        {
+            HidePairingQr();
+            ShowPairingProgress(_pairingRequestReceived
+                ? "The request reached Windows, but the offer expired. Choose Pair iPhone for a fresh code."
+                : "The code expired without a matching request reaching Windows. Scan a fresh code inside the companion, then tap Connect securely on the same local network.");
+        }
+    }
+
+    private void PairingServer_ProgressChanged(object? sender, PairingAttemptProgress args) =>
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_isPageLoaded || App.IsLocked || _observedOfferId != args.SessionId) return;
+            _pairingRequestReceived = true;
+            if (args.Stage is not (PairingAttemptStage.RequestReceived or PairingAttemptStage.AwaitingConfirmation)) HidePairingQr();
+            ShowPairingProgress(args.Stage switch
+            {
+                PairingAttemptStage.RequestReceived => "A request reached Windows for this code. Checking its pairing proof…",
+                PairingAttemptStage.AwaitingConfirmation => "The pairing proof verified. Compare all six words and confirm on both devices only if they match.",
+                PairingAttemptStage.Trusted => "Windows saved trust. Look for Securely connected to verify an authenticated session.",
+                PairingAttemptStage.Declined => "Pairing was not approved on both devices. No new trust was saved for this attempt.",
+                PairingAttemptStage.Expired => "The request reached Windows, but the offer expired before pairing completed. Choose Pair iPhone for a fresh code.",
+                PairingAttemptStage.Interrupted => "The request reached Windows, but the connection closed before pairing completed. Choose Pair iPhone to retry.",
+                _ => "The request reached Windows, but pairing could not finish. Generate a fresh code and check the companion’s error if it happens again.",
+            });
+        });
+
+    private void ShowPairingProgress(string message)
+    {
+        PairingProgressText.Text = message;
+        LivePairingProgressText.Text = message;
+        PairingProgressText.Visibility = PairingPanel.Visibility == Visibility.Visible
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
     private void ShowError(string title, Exception exception)
     {
         if (!_isPageLoaded)
@@ -343,9 +407,12 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
         {
             if (!_isPageLoaded) { return; }
             var hadOffer = _currentOffer is not null;
-            CancelCurrentOffer();
-            PairingPanel.Visibility = Visibility.Collapsed;
-            QrImage.Source = null;
+            HidePairingQr();
+            if (hadOffer)
+            {
+                _observedOfferId = null;
+                PairingProgressText.Visibility = Visibility.Collapsed;
+            }
             NearbyServicesList.ItemsSource = null;
             _ = RefreshNearbyServicesAsync();
             try { RefreshNetworks(); }

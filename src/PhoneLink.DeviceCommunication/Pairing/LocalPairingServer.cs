@@ -67,6 +67,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
     }
 
     public event EventHandler<PairingApprovalRequestedEventArgs>? PairingApprovalRequested;
+    public event EventHandler<PairingAttemptProgress>? PairingProgressChanged;
 
     public event EventHandler<PairingCompletedEventArgs>? PairingCompleted;
 
@@ -394,6 +395,9 @@ public sealed class LocalPairingServer : IAsyncDisposable
         using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         attempt.CancelAfter(TimeSpan.FromSeconds(15));
+        Guid? matchedOffer = null;
+        DateTimeOffset? expiresAt = null;
+        var outcome = PairingAttemptStage.Failed;
         try
         {
             var helloBytes = await ReceiveTextMessageAsync(socket, attempt.Token).ConfigureAwait(false);
@@ -402,6 +406,9 @@ public sealed class LocalPairingServer : IAsyncDisposable
 
             using var artifact = _offers.Consume(hello.SessionId, DateTimeOffset.UtcNow)
                 ?? throw new InvalidOperationException("The pairing offer is unknown, expired, or already used.");
+            matchedOffer = artifact.Offer.SessionId;
+            expiresAt = artifact.Offer.ExpiresAt;
+            PublishPairingProgress(matchedOffer.Value, PairingAttemptStage.RequestReceived);
             PairingOfferValidator.ValidateForClient(artifact.Offer, DateTimeOffset.UtcNow);
             var remaining = artifact.Offer.ExpiresAt - DateTimeOffset.UtcNow;
             if (remaining <= TimeSpan.Zero) throw new TimeoutException("The pairing offer expired.");
@@ -459,6 +466,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                     comparisonPhrase,
                     artifact.Offer.ExpiresAt,
                     attempt.Token);
+                PublishPairingProgress(matchedOffer.Value, PairingAttemptStage.AwaitingConfirmation);
                 PairingApprovalRequested?.Invoke(this, approval);
 
                 var confirmationBytes = await ReceiveTextMessageAsync(socket, attempt.Token).ConfigureAwait(false);
@@ -482,9 +490,14 @@ public sealed class LocalPairingServer : IAsyncDisposable
                         clientIdentity,
                         DateTimeOffset.UtcNow);
                     await _deviceStore.SaveAsync(device, context.RequestAborted).ConfigureAwait(false);
+                    outcome = PairingAttemptStage.Trusted;
                     PairingCompleted?.Invoke(
                         this,
                         new PairingCompletedEventArgs(hello.ClientDeviceId, hello.ClientDisplayName));
+                }
+                else
+                {
+                    outcome = PairingAttemptStage.Declined;
                 }
 
                 await SendAsync(
@@ -517,6 +530,13 @@ public sealed class LocalPairingServer : IAsyncDisposable
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            if (outcome == PairingAttemptStage.Failed)
+            {
+                if (expiresAt is { } expiry && DateTimeOffset.UtcNow >= expiry)
+                    outcome = PairingAttemptStage.Expired;
+                else if (context.RequestAborted.IsCancellationRequested)
+                    outcome = PairingAttemptStage.Interrupted;
+            }
             await attempt.CancelAsync().ConfigureAwait(false);
             await ClosePairingSocketAsync(socket, WebSocketCloseStatus.PolicyViolation,
                 "Pairing failed", context.RequestAborted).ConfigureAwait(false);
@@ -524,7 +544,15 @@ public sealed class LocalPairingServer : IAsyncDisposable
         finally
         {
             await attempt.CancelAsync().ConfigureAwait(false);
+            if (matchedOffer is { } sessionId) PublishPairingProgress(sessionId, outcome);
         }
+    }
+
+    private void PublishPairingProgress(Guid sessionId, PairingAttemptStage stage)
+    {
+        // A failing diagnostics subscriber must not change the handshake outcome.
+        try { PairingProgressChanged?.Invoke(this, new PairingAttemptProgress(sessionId, stage)); }
+        catch (Exception exception) when (exception is not OutOfMemoryException) { }
     }
 
     private static async Task ClosePairingSocketAsync(WebSocket socket, WebSocketCloseStatus status,

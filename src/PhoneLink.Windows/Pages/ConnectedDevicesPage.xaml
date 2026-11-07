@@ -27,6 +27,9 @@
                 IsClosable="True"
                 IsOpen="False" />
 
+            <TextBlock x:Name="PairingProgressText" Visibility="Collapsed" TextWrapping="Wrap"
+                AutomationProperties.LiveSetting="Polite" />
+
             <Border x:Name="PairingPanel" Padding="16"
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 CornerRadius="12" Visibility="Collapsed">
@@ -43,6 +46,7 @@
                         <TextBlock Text="On the iPhone, open Pair with Windows → Scan QR code. Use the companion’s scanner, not Apple Camera. Keep both devices on the same local network." TextWrapping="Wrap" />
                         <TextBlock Text="When the iPhone says Windows PC found, tap Connect securely. Only scan a code from your own PC and approve only if all six words match on both screens." TextWrapping="Wrap" />
                         <TextBlock x:Name="ExpiryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="LivePairingProgressText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                         <Button HorizontalAlignment="Left" Click="CancelPairing_Click" Content="Cancel pairing" />
                     </StackPanel>
                 </Grid>
