@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using PhoneLink.Integrations.AppleBluetooth.Capabilities;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
@@ -8,7 +9,7 @@ namespace PhoneLink.Integrations.AppleBluetooth.Ancs;
 
 public sealed class AncsNotificationSession : IAsyncDisposable
 {
-    private static readonly Guid ServiceUuid = Guid.Parse("7905f431-b5ce-4e99-a40f-4b1e122d00d0");
+    internal static readonly Guid ServiceUuid = Guid.Parse("7905f431-b5ce-4e99-a40f-4b1e122d00d0");
     private static readonly Guid NotificationSourceUuid = Guid.Parse("9fbf120d-6301-42d9-8c58-25e699a21dbd");
     private static readonly Guid ControlPointUuid = Guid.Parse("69d1d8f3-45e1-49a8-9821-9bbdfdaad9d9");
     private static readonly Guid DataSourceUuid = Guid.Parse("22eac6e9-24d6-4bb5-be44-b36ace7c7bfb");
@@ -169,12 +170,17 @@ public sealed class AncsNotificationSession : IAsyncDisposable
                 "No paired iPhone exposed ANCS. Pair the iPhone in Windows Bluetooth settings and allow notification access.");
         }
 
-        // Only the explicit Start-session action requests access. Capability scans
-        // never request or approve permissions, and denied access is not bypassed.
-        var access = await _service.RequestAccessAsync().AsTask(cancellationToken);
+        // Reuse existing access; only a manual start can request access if Windows has no decision.
+        var access = await GattServiceAuthorization.ReadOrRequestForManualStartAsync(_service, cancellationToken);
         if (access != DeviceAccessStatus.Allowed)
             throw new InvalidOperationException($"Windows denied ANCS service access ({access}). Review access yourself; no permission or security setting was changed by Phone Link.");
 
+        cancellationToken.ThrowIfCancellationRequested();
+        var open = await _service.OpenAsync(GattSharingMode.SharedReadAndWrite).AsTask(cancellationToken);
+        if (!GattServiceAuthorization.IsSharedOpen(open))
+            throw new InvalidOperationException($"Windows did not open the ANCS service in shared mode ({open}). No subscription was attempted.");
+
+        cancellationToken.ThrowIfCancellationRequested();
         var characteristics = await _service
             .GetCharacteristicsAsync(BluetoothCacheMode.Uncached)
             .AsTask(cancellationToken);

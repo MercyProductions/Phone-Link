@@ -1,6 +1,6 @@
 # ANCS notification actions and access evidence
 
-The Windows Notifications page now implements iPhone-advertised ANCS actions. Physical operation is **not verified**: the current Windows Debug environment finds ANCS but denies characteristic access. Do not describe this as working call answering, message replies, or majority Watch/AirPods parity.
+The Windows Notifications page implements iPhone-advertised ANCS actions. Physical notification delivery and actions are **not verified**. Earlier Debug attempts were denied characteristic access; a later [staged read-only check](bluetooth-gatt-access-check.md) reached characteristic enumeration. Do not describe this as working call answering, message replies, or majority Watch/AirPods parity.
 
 ## Protocol and UI
 
@@ -18,7 +18,7 @@ Results distinguish `NotSent`, `WriteAccepted`, `DeviceRejected` with an ATT err
 
 Passive discovery now inspects characteristic properties rather than treating the ANCS service UUID as operational support. Notification readiness requires a notifiable Notification Source. The implemented labeled-action path additionally requires a writable Control Point and notifiable Data Source. AccessDenied is displayed explicitly instead of Available. Discovery itself does not request permissions.
 
-The explicit **Start notification session** action calls Windows' [RequestAccessAsync](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattdeviceservice.requestaccessasync?view=winrt-26100), then enumerates characteristics only if allowed. App-service startup preserves the UI context across lifecycle waits/retries because [BluetoothLEDevice.FromIdAsync requires a UI thread](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothledevice.fromidasync?view=winrt-26100). [WriteValueWithResultAsync](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattcharacteristic.writevaluewithresultasync?view=winrt-26100) supplies the write status/protocol error. No permission dialog, privacy setting or OS policy is automatically approved or bypassed. The app manifest already declares the Bluetooth capability; that alone does not prove access for an unpackaged executable.
+The explicit **Start notification session** action reuses an existing Allowed decision, calls Windows' [RequestAccessAsync](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattdeviceservice.requestaccessasync?view=winrt-26100) only for Unspecified, and does not retry a denial. It opens the allowed service in shared mode before enumerating characteristics. App-service startup preserves the UI context across lifecycle waits/retries because [BluetoothLEDevice.FromIdAsync requires a UI thread](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothledevice.fromidasync?view=winrt-26100). [WriteValueWithResultAsync](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattcharacteristic.writevaluewithresultasync?view=winrt-26100) supplies the write status/protocol error. No permission dialog, privacy setting or OS policy is automatically approved or bypassed. The app manifest already declares the Bluetooth capability; that alone does not prove access for an unpackaged executable.
 
 ## Verification
 

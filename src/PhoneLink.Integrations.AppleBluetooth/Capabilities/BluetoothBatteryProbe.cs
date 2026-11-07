@@ -1,17 +1,8 @@
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
-using Windows.Devices.Enumeration;
 using Windows.Storage.Streams;
 
 namespace PhoneLink.Integrations.AppleBluetooth.Capabilities;
-
-public sealed class PairedBatteryTarget
-{
-    internal PairedBatteryTarget(string id, string displayName) => (Id, DisplayName) = (id, displayName);
-    internal string Id { get; }
-    public string DisplayName { get; }
-    public override string ToString() => DisplayName;
-}
 
 public enum BatteryReadOutcome { Reported, NotExposed, AccessDenied, Unreachable, ProtocolError, InvalidValue, Ambiguous, Unavailable }
 public enum BatteryReadStage { Device, Service, Characteristic, Value }
@@ -21,17 +12,7 @@ public static class BluetoothBatteryProbe
 {
     private const int MaximumServices = 4;
 
-    // Enumeration alone does not perform GATT discovery or request battery data.
-    public static async Task<IReadOnlyList<PairedBatteryTarget>> ListPairedAsync(CancellationToken cancellationToken)
-    {
-        var devices = await DeviceInformation.FindAllAsync(BluetoothLEDevice.GetDeviceSelectorFromPairingState(true))
-            .AsTask(cancellationToken).ConfigureAwait(false);
-        if (devices.Count > 32) throw new InvalidOperationException("The paired Bluetooth LE device list exceeds the inspection limit.");
-        return devices.Select(device => new PairedBatteryTarget(device.Id,
-            string.IsNullOrWhiteSpace(device.Name) ? "Unnamed paired Bluetooth LE device" : device.Name)).ToArray();
-    }
-
-    public static async Task<IReadOnlyList<BluetoothBatteryReading>> ReadAsync(PairedBatteryTarget target, CancellationToken cancellationToken)
+    public static async Task<IReadOnlyList<BluetoothBatteryReading>> ReadAsync(PairedBluetoothLeTarget target, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
         cancellationToken.ThrowIfCancellationRequested();

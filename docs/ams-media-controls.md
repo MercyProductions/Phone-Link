@@ -1,6 +1,6 @@
 # iPhone media controls
 
-The Windows **iPhone media** page implements Apple Media Service (AMS) remote commands and timestamped player/queue/track observations. It is not audio streaming, call audio, Siri, or a claim of AirPods/Watch parity. Actual media control remains unverified because the current Windows environment denies characteristic access.
+The Windows **iPhone media** page implements Apple Media Service (AMS) remote commands and timestamped player/queue/track observations. It is not audio streaming, call audio, Siri, or a claim of AirPods/Watch parity. Actual media control remains unverified. Earlier attempts encountered characteristic access denial; the later [staged read-only check](bluetooth-gatt-access-check.md) reached characteristic enumeration.
 
 ## Source and implemented scope
 
@@ -13,7 +13,7 @@ For a truncated observation, select the row and choose **Read full selected valu
 ## Workflow and boundaries
 
 1. Select **Scan paired devices**. Discovery probes existing paired BLE devices, reports unavailable probes separately, and lists only AMS advertisers. A name is not authenticated ownership or proof of characteristic access.
-2. Explicitly select your own device. There is no automatic first-device selection or fallback to another phone. Startup rechecks the selected Windows device ID against the paired inventory, requests service access, explicitly attempts a shared-mode service open, then checks actual characteristics. A denied or failed open is terminal for that attempt, with no exclusive-mode fallback.
+2. Explicitly select your own device. There is no automatic first-device selection or fallback to another phone. Startup rechecks the selected Windows device ID against the paired inventory, reuses existing allowed access (requests only if Windows reports Unspecified), explicitly attempts a shared-mode service open, then checks actual characteristics. A denied or failed open is terminal for that attempt, with no exclusive-mode fallback.
 3. Setup subscribes for command support and observations. It sends no playback/volume/preference command. Any permission decision remains the user's; the app does not approve dialogs, change settings, bypass access policy, read pairing credentials or install software.
 4. Choose an advertised command and review its confirmation. Cancel is the default. Each confirmation creates a session-bound, single-use request. A new, explicitly confirmed request may repeat a command, but the same request cannot be submitted twice.
 5. Stop/cancel, navigate away, or lock Phone Link to cancel pending work, close confirmation, clear observations/command knowledge, and release owned WinRT objects. Disconnect or a service change permanently ends that session object. A fresh session is required afterward.

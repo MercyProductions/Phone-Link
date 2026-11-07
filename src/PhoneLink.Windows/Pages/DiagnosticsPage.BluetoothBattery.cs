@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PhoneLink.Integrations.AppleBluetooth.Capabilities;
+using PhoneLink.Security.Storage;
 
 namespace PhoneLink.Windows.Pages;
 
@@ -13,18 +14,18 @@ public sealed partial class DiagnosticsPage
         {
             BatteryDeviceSelector.ItemsSource = null;
             BluetoothBatteryText.Text = "Listing paired Bluetooth LE devices…";
-            var targets = await BluetoothBatteryProbe.ListPairedAsync(cancellation);
+            var targets = await PairedBluetoothLeTarget.ListAsync(cancellation);
             if (!current()) return;
             BatteryDeviceSelector.ItemsSource = targets;
             BatteryDeviceSelector.SelectedIndex = -1;
             BluetoothBatteryText.Text = targets.Count == 0
                 ? "Windows returned no paired Bluetooth LE devices. No battery read was attempted."
-                : "Select a device and choose Read. No battery read has been attempted.";
+                : "Select a device and choose a check. No battery read has been attempted.";
         });
 
     private async void BatteryReadButton_Click(object sender, RoutedEventArgs args)
     {
-        if (BatteryDeviceSelector.SelectedItem is not PairedBatteryTarget target) return;
+        if (BatteryDeviceSelector.SelectedItem is not PairedBluetoothLeTarget target) return;
         await RunBatteryOperationAsync(async (cancellation, current) =>
         {
             BluetoothBatteryText.Text = "Reading the selected device’s standard Bluetooth battery service…";
@@ -36,16 +37,38 @@ public sealed partial class DiagnosticsPage
         });
     }
 
-    private async Task RunBatteryOperationAsync(Func<CancellationToken, Func<bool>, Task> action)
+    private async void GattAccessButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (BatteryDeviceSelector.SelectedItem is not PairedBluetoothLeTarget target) return;
+        await RunBatteryOperationAsync(async (cancellation, current) =>
+        {
+            GattAccessText.Text = "Checking existing Windows access for the selected device…";
+            var report = await AppleGattAccessProbe.InspectAsync(target, cancellation);
+            if (current() && ReferenceEquals(BatteryDeviceSelector.SelectedItem, target))
+                GattAccessText.Text = $"Windows app package identity: {DescribePackageIdentity()}.\n{report.ToDisplayText()}";
+        }, profileAccess: true);
+    }
+
+    private static string DescribePackageIdentity()
+    {
+        try { return LocalAppStorage.HasPackageIdentity ? "present" : "absent"; }
+        catch (Exception exception) when (exception is not OutOfMemoryException) { return "unknown"; }
+    }
+
+    private async Task RunBatteryOperationAsync(Func<CancellationToken, Func<bool>, Task> action, bool profileAccess = false)
     {
         if (!_loaded || App.IsLocked || _batteryCancellation is not null) return;
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(profileAccess ? 25 : 15));
         _batteryCancellation = cancellation;
         UpdateBatteryButtons();
         try { await action(cancellation.Token, Current); }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            if (Current()) BluetoothBatteryText.Text = "Windows could not complete this Bluetooth check. No charge level was verified.";
+            if (Current())
+            {
+                if (profileAccess) GattAccessText.Text = "Windows could not complete the profile access check. Access remains unknown.";
+                else BluetoothBatteryText.Text = "Windows could not complete this Bluetooth check. No charge level was verified.";
+            }
         }
         finally
         {
@@ -62,6 +85,7 @@ public sealed partial class DiagnosticsPage
     private void BatteryDevice_SelectionChanged(object sender, SelectionChangedEventArgs args)
     {
         BluetoothBatteryText.Text = "No Bluetooth battery reading for this selection.";
+        if (GattAccessText is not null) GattAccessText.Text = "No Bluetooth profile access check for this selection.";
         UpdateBatteryButtons();
     }
 
@@ -71,6 +95,7 @@ public sealed partial class DiagnosticsPage
         _batteryCancellation = null;
         BatteryDeviceSelector.ItemsSource = null;
         BluetoothBatteryText.Text = "No Bluetooth battery reading.";
+        GattAccessText.Text = "No Bluetooth profile access check.";
         UpdateBatteryButtons();
     }
 
@@ -79,7 +104,8 @@ public sealed partial class DiagnosticsPage
         var ready = _loaded && !App.IsLocked && _batteryCancellation is null;
         BatteryListButton.IsEnabled = ready;
         BatteryDeviceSelector.IsEnabled = ready && BatteryDeviceSelector.Items.Count != 0;
-        BatteryReadButton.IsEnabled = ready && BatteryDeviceSelector.SelectedItem is PairedBatteryTarget;
+        BatteryReadButton.IsEnabled = ready && BatteryDeviceSelector.SelectedItem is PairedBluetoothLeTarget;
+        if (GattAccessButton is not null) GattAccessButton.IsEnabled = BatteryReadButton.IsEnabled;
     }
 
     private static string DescribeBattery(BluetoothBatteryReading reading) => reading.Outcome switch

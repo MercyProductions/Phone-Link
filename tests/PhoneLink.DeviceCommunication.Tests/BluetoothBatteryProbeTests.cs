@@ -43,6 +43,6 @@ public sealed class BluetoothBatteryProbeTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            BluetoothBatteryProbe.ReadAsync(new PairedBatteryTarget("unused-test-id", "Synthetic accessory"), cancellation.Token));
+            BluetoothBatteryProbe.ReadAsync(new PairedBluetoothLeTarget("unused-test-id", "Synthetic accessory"), cancellation.Token));
     }
 }

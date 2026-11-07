@@ -1,0 +1,13 @@
+# Bluetooth notification and media access check
+
+In **Troubleshooter → Bluetooth accessory checks**, list paired Bluetooth LE devices, select an iPhone you own, and choose **Check selected notification and media access**. This checks the selected Windows endpoint only. It does not fall back to another phone or use the separate USB Trust relationship.
+
+The check shows whether this Windows app has package identity (without publishing a package name), and separates endpoint access, ANCS/AMS discovery and instance count, existing service access, shared open, and characteristic enumeration. Later stages are **Not attempted** when a prior stage cannot proceed. Empty discovery, denial, timeout, and an unknown access status are not interchangeable. The report contains no names, IDs, characteristic values, messages, or media. It clears on selection change, lock or navigation and is not included in the connection scan export.
+
+The probe checks Windows' existing access status before opening the device and again before explicitly opening a discovered service in shared mode. An uncached check may initiate a Bluetooth connection. It does not call `RequestAccessAsync`, choose exclusive access, read or write characteristic values, subscribe, or enable media or notification actions. Timeout bounds app waits, not the OS's underlying Bluetooth activity. Results are not a diagnosis of an iPhone fault or proof that a packaged build will behave differently.
+
+The CLI `--bluetooth-access-inventory` counts paired LE endpoints by Windows access status without opening any endpoint or GATT service. It is not an ANCS/AMS probe or proof of permissions for the desktop app.
+
+Live standalone Windows check: the CLI observed two paired LE endpoints reporting Allowed. On the selected iPhone, the Troubleshooter showed package identity absent, endpoint access Allowed, one service each for ANCS and AMS, service access Allowed, shared open Success, and three characteristics for each service. The other paired device was not selected. No settings or permissions were changed. This is positive evidence for discovery/open/enumeration on this run, not proof of notification delivery, command effects, or a permanent resolution of the earlier denial. ANCS startup now explicitly uses shared open, and both manual startup paths reuse existing Allowed access before proceeding.
+
+Primary references: [Windows GATT client and connection behavior](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/gatt-client), [GATT service access and shared open](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattdeviceservice?view=winrt-26100).

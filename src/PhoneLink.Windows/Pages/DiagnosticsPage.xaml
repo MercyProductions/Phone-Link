@@ -33,14 +33,19 @@
                 ToolTipService.ToolTip="Checks before and after restoring only Phone Link's missing Bonjour advertisement. Does not reset pairing, disconnect healthy sessions, change drivers, or repair phone hardware." />
             <Button x:Name="RoundTripButton" Content="Check companion response time" Click="RoundTripButton_Click" HorizontalAlignment="Left" />
             <TextBlock x:Name="RoundTripText" Text="Not measured. Requires exactly one authenticated iPhone companion." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-            <TextBlock Text="Bluetooth accessory battery" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="Choose a paired Bluetooth LE accessory you own. Reading may open a Bluetooth connection to the selected device. Only the standard Battery Level is requested; some accessories do not expose it to Windows. This is charge level, not battery health."
+            <TextBlock Text="Bluetooth accessory checks" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="Choose a paired Bluetooth LE device you own. A check may open a Bluetooth connection to that device. The battery check requests only the standard Battery Level, which some accessories do not expose to Windows. This is charge level, not battery health."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <Button x:Name="BatteryListButton" Content="List paired Bluetooth LE devices" Click="BatteryListButton_Click" HorizontalAlignment="Left" />
             <ComboBox x:Name="BatteryDeviceSelector" Header="Select the accessory to check" DisplayMemberPath="DisplayName"
                 HorizontalAlignment="Stretch" IsEnabled="False" SelectionChanged="BatteryDevice_SelectionChanged" />
             <Button x:Name="BatteryReadButton" Content="Read selected battery level" Click="BatteryReadButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
             <TextBlock x:Name="BluetoothBatteryText" Text="No Bluetooth battery reading." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+            <Button x:Name="GattAccessButton" Content="Check selected notification and media access" Click="GattAccessButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
+            <TextBlock Text="Checks the selected device’s Bluetooth setup stages without requesting access or subscribing. The check may open a shared connection if Windows already reports access as allowed."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="GattAccessText" Text="No Bluetooth profile access check." TextWrapping="Wrap"
+                IsTextSelectionEnabled="True" AutomationProperties.LiveSetting="Polite" />
             <TextBlock Text="Connection comparison and troubleshooting rules" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
             <TextBlock x:Name="ComparisonText" Text="No comparison retained. Run connection checks twice to compare aggregate observations." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             <Button x:Name="ComparisonJsonButton" Content="Copy comparison JSON" Click="ComparisonJsonButton_Click" IsEnabled="False" HorizontalAlignment="Left" />

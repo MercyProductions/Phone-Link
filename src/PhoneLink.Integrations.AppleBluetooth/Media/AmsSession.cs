@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using PhoneLink.Integrations.AppleBluetooth.Capabilities;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
@@ -20,7 +21,7 @@ public enum AmsSessionEndCause { None, BluetoothDisconnected, ServicesChanged, S
 // The session belongs to one explicitly selected paired device, never a fallback.
 public sealed class AmsSession : IAsyncDisposable
 {
-    private static readonly Guid ServiceUuid = Guid.Parse("89d3502b-0f36-433a-8ef4-c502ad55f8dc");
+    internal static readonly Guid ServiceUuid = Guid.Parse("89d3502b-0f36-433a-8ef4-c502ad55f8dc");
     private static readonly Guid RemoteUuid = Guid.Parse("9b3c81d8-57b1-4a8a-b8df-0e56f7ca51c2");
     private static readonly Guid UpdateUuid = Guid.Parse("2f7cabce-808d-411f-9a0c-bb92ba96c102");
     private static readonly Guid AttributeUuid = Guid.Parse("c6b2f38c-23ab-46d8-a6ab-a3a870bbd5d7");
@@ -159,12 +160,12 @@ public sealed class AmsSession : IAsyncDisposable
             AmsReconnectAttempt.RequireExistingAccess(_service.DeviceAccessInformation.CurrentStatus);
         else
         {
-            var access = await _service.RequestAccessAsync().AsTask(cancellationToken);
+            var access = await GattServiceAuthorization.ReadOrRequestForManualStartAsync(_service, cancellationToken);
             if (access != DeviceAccessStatus.Allowed) throw new InvalidOperationException($"Windows denied AMS service access ({access}). No permission was approved automatically.");
         }
         cancellationToken.ThrowIfCancellationRequested();
         var opened = await _service.OpenAsync(GattSharingMode.SharedReadAndWrite).AsTask(cancellationToken);
-        if (opened is not (GattOpenStatus.Success or GattOpenStatus.AlreadyOpened))
+        if (!GattServiceAuthorization.IsSharedOpen(opened))
             throw new InvalidOperationException($"Windows did not open the AMS service in shared mode ({opened}). No characteristic write was attempted.");
         cancellationToken.ThrowIfCancellationRequested();
         var (characteristics, retried) = existingAccessOnly
