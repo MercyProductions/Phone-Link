@@ -8,6 +8,19 @@ public sealed class PbapPhoneBookClientTests
     private static readonly byte[] ConnectResponse = Convert.FromHexString("A0001F100010004A0013796135F0F0C511D809660800200C9A66CB01020304");
     private static readonly string[] ExpectedNumbers = ["123", "456"];
 
+    [Fact]
+    public async Task SuccessfulEmptyCombinedCallLogIsNotAClaimThatRecentsAreEmpty()
+    {
+        await using var input = new MemoryStream([.. ConnectResponse, 0xA0, 0, 6, 0x49, 0, 3, 0xA0, 0, 3]);
+        await using var output = new MemoryStream();
+        var entries = await PbapPhoneBookClient.ReadCallHistoryAsync(input, output, true, CancellationToken.None);
+        var result = BluetoothCallHistoryObservation.FromPermittedEntries(entries);
+        Assert.True(result.Completed);
+        Assert.Empty(result.Items);
+        Assert.Contains("shared no entries", result.Status);
+        Assert.Contains("does not mean the iPhone’s Recents list is empty", result.Status);
+    }
+
     [Theory]
     [InlineData(0, 0, 0)]
     [InlineData(0x12, 0x34, 0x1234)]
