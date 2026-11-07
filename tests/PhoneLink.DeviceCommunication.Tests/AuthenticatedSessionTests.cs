@@ -276,6 +276,34 @@ public sealed class AuthenticatedSessionTests
         Assert.Equal(pong.MessageId, returned.MessageId);
         Assert.Equal(ping.MessageId, returned.CorrelationId);
 
+        if (termination == "replay")
+        {
+            var stale = await server.ProbeResponsivenessAsync(clientDeviceId, Guid.NewGuid(), timeout.Token);
+            Assert.Equal(CompanionRoundTripOutcome.SessionChanged, stale.Outcome);
+            Assert.Null(stale.Elapsed);
+            var probe = server.ProbeResponsivenessAsync(clientDeviceId, challenge.SessionId, timeout.Token);
+            var diagnosticPing = ProtocolEnvelopeSerializer.Parse(await ReceiveAsync(socket));
+            Assert.Equal("ping", diagnosticPing.Kind);
+            Assert.Equal(challenge.SessionId, diagnosticPing.SessionId);
+            Assert.Equal(CompanionRoundTripOutcome.Busy,
+                (await server.ProbeResponsivenessAsync(clientDeviceId, challenge.SessionId, timeout.Token)).Outcome);
+            var diagnosticPong = ping with
+            {
+                Kind = "pong",
+                MessageId = Guid.NewGuid(),
+                CorrelationId = Guid.NewGuid(),
+                Payload = JsonSerializer.SerializeToElement(new { }),
+            };
+            await socket.SendAsync(ProtocolEnvelopeSerializer.Serialize(diagnosticPong), WebSocketMessageType.Text, true, timeout.Token);
+            Assert.True(await received.MoveNextAsync());
+            Assert.False(probe.IsCompleted);
+            diagnosticPong = diagnosticPong with { MessageId = Guid.NewGuid(), CorrelationId = diagnosticPing.MessageId };
+            await socket.SendAsync(ProtocolEnvelopeSerializer.Serialize(diagnosticPong), WebSocketMessageType.Text, true, timeout.Token);
+            var measurement = await probe;
+            Assert.Equal(CompanionRoundTripOutcome.Responded, measurement.Outcome);
+            Assert.True(measurement.Elapsed >= TimeSpan.Zero);
+        }
+
         var healthInbox = new CompanionHealthInbox();
         var healthHandler = new CompanionHealthEnvelopeHandler(healthInbox);
         var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

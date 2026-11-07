@@ -31,6 +31,8 @@
                 HorizontalAlignment="Left" ToolTipService.ToolTip="Use with one owned iPhone connected by USB. Reads model, OS and available battery observations; no settings or firmware changes." />
             <Button x:Name="RecoveryButton" Content="Repair missing app discovery" Click="RecoveryButton_Click" HorizontalAlignment="Left"
                 ToolTipService.ToolTip="Checks before and after restoring only Phone Link's missing Bonjour advertisement. Does not reset pairing, disconnect healthy sessions, change drivers, or repair phone hardware." />
+            <Button x:Name="RoundTripButton" Content="Check companion response time" Click="RoundTripButton_Click" HorizontalAlignment="Left" />
+            <TextBlock x:Name="RoundTripText" Text="Not measured. Requires exactly one authenticated iPhone companion." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
             <TextBlock Text="Connection comparison and troubleshooting rules" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
             <TextBlock x:Name="ComparisonText" Text="No comparison retained. Run connection checks twice to compare aggregate observations." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             <Button x:Name="ComparisonJsonButton" Content="Copy comparison JSON" Click="ComparisonJsonButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
@@ -52,7 +54,7 @@
             <TextBlock x:Name="RecoveryText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="StagingRecoveryText" Text="No transfer-staging cleanup result available." TextWrapping="Wrap"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Text="Background maintenance checks for missing app discovery every 30 seconds while eligible. After three failed recovery attempts, automatic retries pause until a network-address change, successful manual check, or app restart. Healthy registrations and sessions are not restarted. Local registration recovery does not prove an iPhone connection."
+            <TextBlock Text="Background maintenance checks for missing app discovery every 30 seconds while eligible. After three failed recovery attempts, automatic retries slow to at most one every five minutes. Healthy registrations and sessions are not restarted. Local registration recovery does not prove an iPhone connection."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock Text="Live USB presence" FontSize="20" FontWeight="SemiBold" />

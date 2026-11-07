@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
@@ -16,6 +17,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using PhoneLink.Application.Ports;
 using PhoneLink.DeviceCommunication.Discovery;
+using PhoneLink.DeviceCommunication.Diagnostics;
 using PhoneLink.DeviceCommunication.Sessions;
 using PhoneLink.Domain.Devices;
 using PhoneLink.Protocol;
@@ -179,6 +181,50 @@ public sealed class LocalPairingServer : IAsyncDisposable
     public IAsyncEnumerable<ReceivedDeviceFrame> ReadFramesAsync(
         CancellationToken cancellationToken) =>
         _receivedFrames.Reader.ReadAllAsync(cancellationToken);
+
+    public async Task<CompanionRoundTripResult> ProbeResponsivenessAsync(DeviceId deviceId, Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_sessions.TryGetValue(deviceId, out var session) || session.SessionId != sessionId)
+            return new(CompanionRoundTripOutcome.SessionChanged);
+        var pending = new PendingPing(Guid.NewGuid());
+        if (!session.TryBeginPing(pending)) return new(CompanionRoundTripOutcome.Busy);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(4));
+        var start = Stopwatch.GetTimestamp();
+        try
+        {
+            await SendAsync(deviceId, new ProtocolEnvelope
+            {
+                ProtocolVersion = ProtocolConstants.CurrentVersion,
+                MessageId = pending.MessageId,
+                SessionId = sessionId,
+                OriginDeviceId = _serverDeviceId,
+                OriginSequence = 0,
+                SentAt = DateTimeOffset.UtcNow,
+                Kind = "ping",
+                RequiresAck = false,
+                Payload = JsonSerializer.SerializeToElement(new { }),
+            }, deadline.Token).ConfigureAwait(false);
+            var received = await pending.Reply.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return received is { } at && IsCurrent()
+                ? new(CompanionRoundTripOutcome.Responded, Stopwatch.GetElapsedTime(start, at))
+                : new(CompanionRoundTripOutcome.SessionChanged);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        { return new(IsCurrent() ? CompanionRoundTripOutcome.NoReply : CompanionRoundTripOutcome.SessionChanged); }
+        catch (Exception exception) when (exception is IOException or WebSocketException or InvalidOperationException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new(IsCurrent() ? CompanionRoundTripOutcome.Unavailable : CompanionRoundTripOutcome.SessionChanged);
+        }
+        finally { session.FinishPing(pending); }
+
+        bool IsCurrent() => _sessions.TryGetValue(deviceId, out var current) &&
+            ReferenceEquals(current, session) && session.Socket.State == WebSocketState.Open;
+    }
 
     public async ValueTask SendAsync(
         DeviceId deviceId,
@@ -671,6 +717,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                 highestPositiveSequence = envelope.OriginSequence;
             }
 
+            if (session.TryAcceptPong(envelope)) continue;
             await _receivedFrames.Writer.WriteAsync(
                 new ReceivedDeviceEnvelope(session.DeviceId, envelope),
                 cancellationToken).ConfigureAwait(false);
@@ -778,6 +825,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
     private sealed class LiveDeviceSession : IDisposable
     {
         private readonly SemaphoreSlim _sendLock = new(1, 1);
+        private PendingPing? _pendingPing;
 
         public LiveDeviceSession(DeviceId deviceId, Guid sessionId, WebSocket socket, bool supportsMessageCompose = false)
         {
@@ -793,6 +841,19 @@ public sealed class LocalPairingServer : IAsyncDisposable
         public bool SupportsMessageCompose { get; }
 
         public WebSocket Socket { get; }
+
+        public bool TryBeginPing(PendingPing pending) => Interlocked.CompareExchange(ref _pendingPing, pending, null) is null;
+
+        public void FinishPing(PendingPing pending) => Interlocked.CompareExchange(ref _pendingPing, null, pending);
+
+        public bool TryAcceptPong(ProtocolEnvelope envelope)
+        {
+            var pending = Volatile.Read(ref _pendingPing);
+            if (pending is null || envelope.Kind != "pong" || envelope.CorrelationId != pending.MessageId ||
+                envelope.RequiresAck || envelope.OriginSequence != 0 || envelope.Payload.EnumerateObject().MoveNext()) return false;
+            pending.Reply.TrySetResult(Stopwatch.GetTimestamp());
+            return true;
+        }
 
         public async ValueTask SendAsync(
             ProtocolEnvelope envelope,
@@ -816,6 +877,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
 
         public async Task CloseAsync(CancellationToken cancellationToken)
         {
+            Volatile.Read(ref _pendingPing)?.Reply.TrySetResult(null);
             if (Socket.State == WebSocketState.Open)
             {
                 await Socket.CloseOutputAsync(
@@ -825,7 +887,16 @@ public sealed class LocalPairingServer : IAsyncDisposable
             }
         }
 
-        public void Dispose() => _sendLock.Dispose();
+        public void Dispose()
+        {
+            Volatile.Read(ref _pendingPing)?.Reply.TrySetResult(null);
+            _sendLock.Dispose();
+        }
+    }
+
+    private sealed record PendingPing(Guid MessageId)
+    {
+        public TaskCompletionSource<long?> Reply { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private sealed record SocketFrame(WebSocketMessageType MessageType, byte[] Payload);

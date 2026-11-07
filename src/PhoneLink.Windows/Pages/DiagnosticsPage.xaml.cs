@@ -15,6 +15,7 @@ namespace PhoneLink.Windows.Pages;
 public sealed partial class DiagnosticsPage : Page
 {
     private CancellationTokenSource? _scanCancellation;
+    private CancellationTokenSource? _roundTripCancellation;
     private ConnectionDiagnosticReport? _report;
     private readonly ConnectionDiagnosticHistory _connectionHistory = new();
     private ConnectionDiagnosticComparison? _comparison;
@@ -49,6 +50,7 @@ public sealed partial class DiagnosticsPage : Page
         ClearCompanionHealthForPrivacy();
         _loaded = false;
         _scanCancellation?.Cancel();
+        ClearRoundTrip();
         _crashCancellation?.Cancel();
         _crashAnalysis = null;
         CrashAnalysisText.Text = string.Empty;
@@ -68,6 +70,7 @@ public sealed partial class DiagnosticsPage : Page
         ClearConnectionHistory();
         StopPresence();
         _scanCancellation?.Cancel();
+        ClearRoundTrip();
         _crashCancellation?.Cancel();
         ClearCompanionHealthForPrivacy();
         _crashAnalysis = null;
@@ -76,6 +79,64 @@ public sealed partial class DiagnosticsPage : Page
         CrashAnalysisText.Text = PhoneInfoText.Text = RecoveryText.Text = string.Empty;
         SnapshotText.Text = "No connection snapshot displayed.";
         CopyButton.IsEnabled = CrashCopyButton.IsEnabled = false;
+    }
+
+    private void ClearRoundTrip()
+    {
+        _roundTripCancellation?.Cancel();
+        _roundTripCancellation = null;
+        RoundTripText.Text = "Not measured. Requires exactly one authenticated iPhone companion.";
+        RoundTripButton.IsEnabled = true;
+    }
+
+    private async void RoundTripButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || App.IsLocked || _roundTripCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        _roundTripCancellation = cancellation;
+        RoundTripButton.IsEnabled = false;
+        RoundTripText.Text = "Checking the current authenticated companion session…";
+        try
+        {
+            var services = AppServices.Current;
+            var targets = await services.ListConnectedDialTargetsAsync(cancellation.Token);
+            if (!Current()) return;
+            if (targets.Count != 1)
+            {
+                RoundTripText.Text = targets.Count == 0
+                    ? "No authenticated iPhone companion is connected. No ping was sent."
+                    : "More than one authenticated iPhone is connected. No device was selected and no ping was sent.";
+                return;
+            }
+            var target = targets[0];
+            var server = await services.GetPairingServerAsync(cancellation.Token);
+            if (!Current()) return;
+            var result = await server.ProbeResponsivenessAsync(target.DeviceId, target.SessionId, cancellation.Token);
+            if (!Current()) return;
+            RoundTripText.Text = result.Outcome switch
+            {
+                CompanionRoundTripOutcome.Responded when result.Elapsed is { } elapsed =>
+                    $"The authenticated companion answered in {elapsed.TotalMilliseconds:F1} ms. This includes both apps’ processing and transport time; it is not a network speed test.",
+                CompanionRoundTripOutcome.NoReply => "No valid response arrived within four seconds. This does not identify the cause or prove the iPhone is offline.",
+                CompanionRoundTripOutcome.SessionChanged => "The selected session ended or changed before the result could be verified. No other device was probed.",
+                CompanionRoundTripOutcome.Busy => "A response check is already running for this session.",
+                _ => "The response check could not complete. No repair was attempted.",
+            };
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (Current()) RoundTripText.Text = "The response check stopped or could not complete. No repair was attempted.";
+        }
+        finally
+        {
+            if (ReferenceEquals(_roundTripCancellation, cancellation))
+            {
+                _roundTripCancellation = null;
+                RoundTripButton.IsEnabled = true;
+            }
+        }
+
+        bool Current() => _loaded && !App.IsLocked && ReferenceEquals(_roundTripCancellation, cancellation);
     }
 
     private void ClearConnectionHistory()
