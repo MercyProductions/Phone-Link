@@ -1,10 +1,18 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using PhoneLink.Application.Features.BinaryInspection;
 
-if (args.Length != 1 && !(args.Length == 3 && args[1] == "--runtime") &&
+var lookup = args.Length == 3 && args[1] == "--file-offset";
+if (args.Length != 1 && !lookup && !(args.Length == 3 && args[1] == "--runtime") &&
     !(args.Length == 5 && args[1] == "--runtime" && args[3] == "--symbol"))
 {
-    Console.Error.WriteLine("Usage: PhoneLink.OffsetDumper <local-Mach-O-file> [--runtime <reviewed-companion-JSON> [--symbol <exact-name>]]. Optional text mapping is snapshot-derived, not verified live. No device memory is read and no binary is executed.");
+    Console.Error.WriteLine("Usage: PhoneLink.OffsetDumper <local-Mach-O-file> [--file-offset <0xHEX> | --runtime <reviewed-companion-JSON> [--symbol <exact-name>]]. No device memory is read and no binary is executed.");
+    return 2;
+}
+ulong offset = 0;
+if (lookup && !MachOFileOffsetLookup.TryParseHex(args[2], out offset))
+{
+    Console.Error.WriteLine("Supply one outer-file offset in hexadecimal, for example 0x204.");
     return 2;
 }
 using var cancellation = new CancellationTokenSource();
@@ -16,7 +24,11 @@ try
         64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
     var report = await MachOInspector.InspectAsync(stream, cancellation.Token);
     object output = report;
-    if (args.Length >= 3)
+    if (lookup)
+    {
+        output = new { report.Sha256, report.ByteLength, report.RuntimeAddressesAvailable, Lookup = MachOFileOffsetLookup.Lookup(report, offset) };
+    }
+    else if (args.Length >= 3)
     {
         await using var snapshot = new FileStream(args[2], FileMode.Open, FileAccess.Read, FileShare.Read,
             8192, FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -27,7 +39,7 @@ try
         var mapping = CompanionRuntimeMapper.Map(report, bytes, args.Length == 5 ? args[4] : null);
         output = new { StaticInspection = report, RuntimeTextMapping = mapping };
     }
-    Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true, Converters = { new JsonStringEnumConverter() } }));
     return 0;
 }
 catch (OperationCanceledException) { Console.Error.WriteLine("Inspection cancelled."); return 1; }

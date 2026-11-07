@@ -58,6 +58,9 @@
                     <TextBlock x:Name="ImageSummary" Text="No image selected." TextWrapping="Wrap" FontFamily="Consolas" />
                     <ComboBox x:Name="ImageSelector" Header="Architecture / image UUID" SelectionChanged="ImageSelector_SelectionChanged" HorizontalAlignment="Stretch" />
                     <TextBlock x:Name="EntrySummary" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBox x:Name="FileOffsetBox" Header="Look up an offset in the entire file" PlaceholderText="0x204" MaxLength="64" />
+                    <Button x:Name="FileOffsetButton" Content="Look up file offset" Click="FileOffsetButton_Click" IsEnabled="False" />
+                    <TextBlock x:Name="FileOffsetText" TextWrapping="Wrap" FontFamily="Consolas" />
                     <ListView Height="360" ItemsSource="{x:Bind Rows}" SelectionMode="None">
                         <ListView.Header>
                             <TextBlock Text="Name / source     ·     unslid VA     ·     image-relative offset     ·     outer-file offset" TextWrapping="Wrap" />

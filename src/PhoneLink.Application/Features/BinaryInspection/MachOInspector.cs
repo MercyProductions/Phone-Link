@@ -187,7 +187,7 @@ public static partial class MachOInspector
                 Hex(subtype), uuid, fileType, Hex((ulong)sliceOffset), sliceLength, Hex(_imageBase), encrypted,
                 symbols?.Count ?? 0, _truncated,
                 _segments.Select(segment => new MachOSegment(segment.Name, Hex(segment.Address), Hex(segment.Size), Hex(segment.FileOffset),
-                    Hex((ulong)sliceOffset + segment.FileOffset), Hex(segment.FileSize))).ToArray(),
+                    Hex((ulong)sliceOffset + segment.FileOffset), Hex(segment.FileSize)) { Flags = segment.Flags }).ToArray(),
                 _sections.Select(section => new MachOSection(section.Segment, section.Name, Hex(section.Address), Hex(section.Size),
                     section.ZeroFill ? null : Hex((ulong)sliceOffset + section.FileOffset))).ToArray(), _entries, _warnings)
             {
@@ -239,7 +239,7 @@ public static partial class MachOInspector
             var count = U32(command, 64);
             if (count > 4096 || _sections.Count + count > 4096 || 72 + count * 80UL > (ulong)command.Length)
                 throw new InvalidDataException("A segment section table exceeds its bounds.");
-            var segment = new Segment(FixedName(command.Slice(8, 16)), U64(command, 24), U64(command, 32), U64(command, 40), U64(command, 48));
+            var segment = new Segment(FixedName(command.Slice(8, 16)), U64(command, 24), U64(command, 32), U64(command, 40), U64(command, 48), U32(command, 68));
             Range(segment.FileOffset, segment.FileSize);
             AddressEnd(segment.Address, segment.Size);
             _segments.Add(segment);
@@ -310,7 +310,7 @@ public static partial class MachOInspector
         private static uint U32(ReadOnlySpan<byte> bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]);
         private static ulong U64(ReadOnlySpan<byte> bytes, int offset) => BinaryPrimitives.ReadUInt64LittleEndian(bytes[offset..]);
         private static string Hex(ulong value) => "0x" + value.ToString("x", CultureInfo.InvariantCulture);
-        private sealed record Segment(string Name, ulong Address, ulong Size, ulong FileOffset, ulong FileSize);
+        private sealed record Segment(string Name, ulong Address, ulong Size, ulong FileOffset, ulong FileSize, uint Flags);
         private sealed record Section(string Segment, string Name, ulong Address, ulong Size, ulong FileOffset, bool ZeroFill);
     }
 }

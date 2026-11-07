@@ -208,6 +208,7 @@ public sealed partial class AdvancedToolsPage : Page
         var file = await picker.PickSingleFileAsync();
         if (file is null || token.IsCancellationRequested || !_loaded || App.IsLocked) return;
         _inspection = null;
+        FileOffsetBox.Text = FileOffsetText.Text = string.Empty;
         ImageSelector.Items.Clear();
         Rows.Clear();
         ImageSummary.Text = "Inspecting selected image…";
@@ -254,6 +255,29 @@ public sealed partial class AdvancedToolsPage : Page
             "Names may be shortened in the table; JSON retains parsed names. Constants and missing mappings are not file/runtime addresses.";
     }
 
+    private void FileOffsetButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_loaded || _busy || App.IsLocked || _inspection is not { } report) return;
+        if (!MachOFileOffsetLookup.TryParseHex(FileOffsetBox.Text, out var offset))
+        {
+            FileOffsetText.Text = "Enter an outer-file offset such as 0x204.";
+            return;
+        }
+        var result = MachOFileOffsetLookup.Lookup(report, offset);
+        var detail = result.Outcome switch
+        {
+            MachOFileOffsetOutcome.Mapped => $"{result.Architecture} · slice offset {result.SliceRelativeOffset} · " +
+                $"segment {result.Segment} · section {result.Section ?? (result.SectionAmbiguous ? "ambiguous" : "not mapped")}\n" +
+                $"Unslid VA {result.UnslidVirtualAddress} · image-relative offset {result.ImageRelativeOffset ?? "unavailable"}",
+            MachOFileOffsetOutcome.OutsideFile => "Offset is outside the file.",
+            MachOFileOffsetOutcome.OutsideImageSlice => "Offset is in the container, outside all Mach-O slices.",
+            MachOFileOffsetOutcome.AmbiguousSegment => "Segment ranges overlap; no address is inferred.",
+            MachOFileOffsetOutcome.UnsupportedLayout => "The segment layout does not support this address calculation.",
+            _ => "The slice contains this byte, but no segment maps it to an address.",
+        };
+        FileOffsetText.Text = $"{result.FileOffset}: {detail}\nStatic file lookup, not a live address.";
+    }
+
     public void ClearRuntimeForPrivacy()
     {
         _runtimeEpoch++;
@@ -267,6 +291,7 @@ public sealed partial class AdvancedToolsPage : Page
         if (locked)
         {
             _operationCancellation?.Cancel();
+            FileOffsetBox.Text = FileOffsetText.Text = string.Empty;
             RuntimeSymbolFilter.Text = string.Empty;
             ClearRuntimeForPrivacy();
             SetLiveRuntime(false);
@@ -386,6 +411,7 @@ public sealed partial class AdvancedToolsPage : Page
         SshButton.IsEnabled = !_busy && !App.IsLocked && _tunnel?.IsRunning == true;
         DirectSshButton.IsEnabled = !_busy && !App.IsLocked && _tunnel is null;
         ExportButton.IsEnabled = !_busy && _inspection is not null;
+        FileOffsetButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
         RuntimeImportButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
         ImageSelector.IsEnabled = !_busy;
         RuntimeSymbolFilter.IsEnabled = !_busy;

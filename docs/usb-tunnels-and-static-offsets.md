@@ -46,7 +46,12 @@ Native comparison: [iOS run 42383887582](https://github.com/MercyProductions/Pho
 
 ```powershell
 dotnet run --project tools/PhoneLink.OffsetDumper/PhoneLink.OffsetDumper.csproj -- 'C:\path\owned-image.dylib'
+dotnet run --project tools/PhoneLink.OffsetDumper/PhoneLink.OffsetDumper.csproj -- 'C:\path\owned-image.dylib' --file-offset 0x204
 ```
+
+Use **Look up file offset** in the Windows inspector or `--file-offset <0xHEX>` in the CLI to go the other direction. The byte position is relative to the entire file, including the universal container if present. A unique normal file-backed segment supplies the unslid virtual address; a section is named only when its file and virtual displacements agree. Container padding, unmapped bytes, overlapping ranges, and unsupported segment layouts do not get guessed addresses. This feature never applies ASLR, reads device memory, or executes a binary.
+
+The Windows CLI matched the actual device archive's `__mh_execute_header` at file offset `0x0` to unslid VA `0x100000000` and the simulator fixture's marker at `0x37f98` to its `__TEXT,__text` symbol mapping. A byte outside the file produced no address. The Windows UI uses the same lookup, but these native binary checks exercised the CLI.
 
 The CLI prints JSON; the Windows page provides explicit **Save JSON report**. Reports can contain image UUIDs and proprietary symbol names; review before sharing. Unsupported/compressed/IPSW/archives, filesets, malformed ranges, unsupported byte order, and invalid symbol mappings fail clearly. Encryption is flagged, not removed. Stripped images can legitimately contain few or no names. Input size is bounded at 8 GiB; load commands, symbol/string tables, export traversal, and aggregate output have independent limits. Truncation is explicit.
 

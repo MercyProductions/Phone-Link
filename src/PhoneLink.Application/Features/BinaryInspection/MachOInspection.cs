@@ -3,7 +3,10 @@ namespace PhoneLink.Application.Features.BinaryInspection;
 public sealed record MachOOffsetEntry(string Name, string Source, string Kind,
     string? VirtualAddress, string? ImageRelativeOffset, string? FileOffset, string? AbsoluteValue);
 public sealed record MachOSegment(string Name, string VirtualAddress, string VirtualSize,
-    string SliceRelativeFileOffset, string FileOffset, string FileSize);
+    string SliceRelativeFileOffset, string FileOffset, string FileSize)
+{
+    public uint Flags { get; init; }
+}
 public sealed record MachOSection(string Segment, string Name, string VirtualAddress, string ByteSize, string? FileOffset);
 public sealed record MachOLoadCommand(string Code, string? Name, string FileOffset, uint ByteLength);
 public sealed record MachOBuildTool(uint Id, uint RawVersion);

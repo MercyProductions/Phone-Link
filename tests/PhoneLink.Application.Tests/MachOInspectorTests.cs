@@ -9,6 +9,71 @@ public sealed class MachOInspectorTests
 {
     private const ulong BaseAddress = 0x100000000;
 
+    [Theory]
+    [InlineData("0x204", true)]
+    [InlineData("0XABCDEF", true)]
+    [InlineData("0xffffffffffffffff", true)]
+    [InlineData("0x10000000000000000", false)]
+    [InlineData("0x12\0", false)]
+    [InlineData("0x12 ", false)]
+    [InlineData("204", false)]
+    [InlineData("0x", false)]
+    public void FileOffsetInputRequiresExplicitAsciiHex(string input, bool expected) =>
+        Assert.Equal(expected, MachOFileOffsetLookup.TryParseHex(input, out _));
+
+    [Fact]
+    public async Task ReverseLookupDistinguishesUniversalHeaderGapsAndMappedSections()
+    {
+        using var stream = new MemoryStream(Fat(Thin(), Thin(0x1000007, 3), false));
+        var report = await MachOInspector.InspectAsync(stream);
+        var result = MachOFileOffsetLookup.Lookup(report, 0x2204);
+        Assert.Equal(MachOFileOffsetOutcome.Mapped, result.Outcome);
+        Assert.Equal("x86_64", result.Architecture);
+        Assert.Equal("0x204", result.SliceRelativeOffset);
+        Assert.Equal("__TEXT", result.Segment);
+        Assert.Equal("__text", result.Section);
+        Assert.Equal("0x100000204", result.UnslidVirtualAddress);
+        Assert.Equal("0x204", result.ImageRelativeOffset);
+        Assert.Equal(MachOFileOffsetOutcome.OutsideImageSlice, MachOFileOffsetLookup.Lookup(report, 0x20).Outcome);
+        Assert.Equal(MachOFileOffsetOutcome.NotMapped, MachOFileOffsetLookup.Lookup(report, 0x2300).Outcome);
+        Assert.Equal(MachOFileOffsetOutcome.OutsideFile, MachOFileOffsetLookup.Lookup(report, (ulong)report.ByteLength).Outcome);
+        Assert.False(report.RuntimeAddressesAvailable);
+    }
+
+    [Theory]
+    [InlineData("file-overlap", MachOFileOffsetOutcome.AmbiguousSegment)]
+    [InlineData("virtual-overlap", MachOFileOffsetOutcome.AmbiguousSegment)]
+    [InlineData("high-vm", MachOFileOffsetOutcome.UnsupportedLayout)]
+    public async Task ReverseLookupRefusesToGuessAddressesForNonUniqueOrUnsupportedLayouts(string fixture, MachOFileOffsetOutcome expected)
+    {
+        var bytes = Thin();
+        switch (fixture)
+        {
+            case "file-overlap": W64(bytes, 224, 0x200); W64(bytes, 232, 0x40); break;
+            case "virtual-overlap":
+                W64(bytes, 208, BaseAddress + 0x200); W64(bytes, 288, BaseAddress + 0x200);
+                W64(bytes, 0x318, BaseAddress + 0x200);
+                break;
+            case "high-vm": W32(bytes, 100, 1); break;
+        }
+        using var stream = new MemoryStream(bytes);
+        var result = MachOFileOffsetLookup.Lookup(await MachOInspector.InspectAsync(stream), 0x204);
+        Assert.Equal(expected, result.Outcome);
+        Assert.Null(result.UnslidVirtualAddress);
+    }
+
+    [Fact]
+    public async Task SectionIsNotAttributedWhenItsFileAndVirtualDisplacementsDisagree()
+    {
+        var bytes = Thin();
+        W64(bytes, 136, BaseAddress + 0x201);
+        using var stream = new MemoryStream(bytes);
+        var result = MachOFileOffsetLookup.Lookup(await MachOInspector.InspectAsync(stream), 0x204);
+        Assert.Equal(MachOFileOffsetOutcome.Mapped, result.Outcome);
+        Assert.Equal("__TEXT", result.Segment);
+        Assert.Null(result.Section);
+    }
+
     [Fact]
     public async Task Arm64DeviceAndSimulatorTargetsAndCommandOffsetsStayDistinct()
     {
