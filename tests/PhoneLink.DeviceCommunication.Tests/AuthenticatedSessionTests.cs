@@ -68,55 +68,8 @@ public sealed class AuthenticatedSessionTests
             new Uri($"wss://127.0.0.1:{server.BoundPort}/sync/v1"),
             CancellationToken.None);
 
-        var connectionId = Guid.NewGuid();
-        var clientNonce = RandomNumberGenerator.GetBytes(32);
-        const string appVersion = "1.0-test";
-        await SendAuthenticationAsync(
-            socket,
-            new SessionClientHello
-            {
-                Kind = "session.clientHello",
-                ConnectionId = connectionId,
-                ClientDeviceId = clientDeviceId.Value,
-                ClientNonce = Base64Url.Encode(clientNonce),
-                ProtocolFloor = 1,
-                ProtocolCeiling = 1,
-                AppVersion = appVersion,
-            });
-
-        var challenge = SessionWireSerializer.Parse<SessionServerChallenge>(await ReceiveAsync(socket));
-        Assert.Equal("session.serverChallenge", challenge.Kind);
-        Assert.True(challenge.SupportsMessageCompose);
-        Assert.Equal(connectionId, challenge.ConnectionId);
-        Assert.Equal(serverDeviceId, challenge.ServerDeviceId);
-        var serverNonce = Base64Url.Decode(challenge.ServerNonce);
-        var serverSignature = Base64Url.Decode(challenge.Signature);
-        var serverProofInput = SessionTranscript.CreateServerProofInput(
-            connectionId,
-            challenge.SessionId,
-            serverDeviceId,
-            clientDeviceId.Value,
-            clientNonce,
-            serverNonce,
-            challenge.SelectedProtocolVersion,
-            appVersion);
-        Assert.True(Ed25519Identity.Verify(serverPublicKey, serverProofInput, serverSignature));
-
-        var clientProofInput = SessionTranscript.CreateClientProofInput(serverProofInput, serverSignature);
-        var clientSignature = clientIdentity.Sign(clientProofInput);
-        await SendAuthenticationAsync(
-            socket,
-            new SessionClientProof
-            {
-                Kind = "session.clientProof",
-                ConnectionId = connectionId,
-                SessionId = challenge.SessionId,
-                Signature = Base64Url.Encode(clientSignature),
-                SupportsMessageCompose = termination == "replay",
-            });
-
-        var ready = SessionWireSerializer.Parse<SessionReady>(await ReceiveAsync(socket));
-        Assert.Equal(challenge.SessionId, ready.SessionId);
+        var (challenge, ready) = await AuthenticateAsync(socket, clientDeviceId, clientIdentity, serverDeviceId, serverPublicKey,
+            supportsCompose: termination == "replay");
         Assert.Equal(ProtocolConstants.CurrentVersion, ready.ProtocolVersion);
         Assert.Contains("diagnostics.health.v1", ready.Capabilities);
         Assert.Contains("diagnostics.runtime.v1", ready.Capabilities);
@@ -424,6 +377,95 @@ public sealed class AuthenticatedSessionTests
             (id, session) => server.TryGetSessionId(id, out var active) && active == session, false, DateTimeOffset.UtcNow));
         Assert.Null(runtime.Get(DateTimeOffset.UtcNow, IsCurrent));
         Assert.Null(runtime.Handle(validQueuedRuntime!, serverDeviceId, DateTimeOffset.UtcNow, IsCurrent));
+    }
+
+    [Fact]
+    public async Task SilentWebSocketIsClearedAndSameTrustCanReconnect()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var certificate = await new LocalTlsCertificateProvider(new InMemorySecretStore()).LoadOrCreateAsync(deadline.Token);
+        var tlsPin = LocalTlsCertificateProvider.GetSubjectPublicKeyInfoSha256(certificate);
+        using var clientIdentity = Ed25519Identity.Create();
+        var clientId = new DeviceId(Guid.NewGuid());
+        var trusted = new InMemoryTrustedDeviceStore();
+        await trusted.SaveAsync(TrustedDevice.Create(clientId, "Test iPhone", DevicePlatform.Ios,
+            clientIdentity.ExportPublicKey(), DateTimeOffset.UtcNow), deadline.Token);
+        var serverId = Guid.NewGuid();
+        var serverIdentity = Ed25519Identity.Create();
+        var serverPublicKey = serverIdentity.ExportPublicKey();
+        await using var server = new LocalPairingServer(certificate, serverIdentity, trusted, serverId)
+        {
+            SessionKeepAliveInterval = TimeSpan.FromSeconds(1),
+            SessionKeepAliveTimeout = TimeSpan.FromSeconds(2),
+        };
+        var disconnected = new TaskCompletionSource<Guid>(TaskCreationOptions.RunContinuationsAsynchronously);
+        server.SessionDisconnected += (_, args) => disconnected.TrySetResult(args.SessionId);
+        await server.StartAsync(deadline.Token);
+        var endpoint = new Uri($"wss://127.0.0.1:{server.BoundPort}/sync/v1");
+
+        using var silent = new ClientWebSocket();
+        silent.Options.KeepAliveInterval = Timeout.InfiniteTimeSpan;
+        silent.Options.RemoteCertificateValidationCallback = (_, presented, _, _) => CertificateMatchesPin(presented, tlsPin);
+        await silent.ConnectAsync(endpoint, deadline.Token);
+        var (_, first) = await AuthenticateAsync(silent, clientId, clientIdentity, serverId, serverPublicKey);
+        Assert.Equal(WebSocketState.Open, silent.State);
+        // No receive pump: the client remains open without processing/responding to WebSocket PING.
+        Assert.Equal(first.SessionId, await disconnected.Task.WaitAsync(deadline.Token));
+        Assert.False(server.IsConnected(clientId));
+        Assert.Equal(DeviceTrustState.Trusted, (await trusted.FindAsync(clientId, deadline.Token))?.TrustState);
+
+        using var healthy = new ClientWebSocket();
+        healthy.Options.KeepAliveInterval = Timeout.InfiniteTimeSpan;
+        healthy.Options.RemoteCertificateValidationCallback = (_, presented, _, _) => CertificateMatchesPin(presented, tlsPin);
+        await healthy.ConnectAsync(endpoint, deadline.Token);
+        var (_, second) = await AuthenticateAsync(healthy, clientId, clientIdentity, serverId, serverPublicKey);
+        Assert.NotEqual(first.SessionId, second.SessionId);
+        // A pending read handles native control frames but sends no app messages.
+        var receive = healthy.ReceiveAsync(new byte[1].AsMemory(), deadline.Token).AsTask();
+        await Task.Delay(TimeSpan.FromSeconds(4), deadline.Token);
+        Assert.False(receive.IsCompleted);
+        Assert.True(server.TryGetSessionId(clientId, out var active));
+        Assert.Equal(second.SessionId, active);
+        await healthy.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Test complete", deadline.Token);
+        Assert.Equal(WebSocketMessageType.Close, (await receive).MessageType);
+    }
+
+    private static async Task<(SessionServerChallenge Challenge, SessionReady Ready)> AuthenticateAsync(ClientWebSocket socket,
+        DeviceId clientId, Ed25519Identity clientIdentity, Guid serverId, byte[] serverPublicKey, bool supportsCompose = false)
+    {
+        var connectionId = Guid.NewGuid();
+        var clientNonce = RandomNumberGenerator.GetBytes(32);
+        const string appVersion = "1.0-test";
+        await SendAuthenticationAsync(socket, new SessionClientHello
+        {
+            Kind = "session.clientHello",
+            ConnectionId = connectionId,
+            ClientDeviceId = clientId.Value,
+            ClientNonce = Base64Url.Encode(clientNonce),
+            ProtocolFloor = 1,
+            ProtocolCeiling = 1,
+            AppVersion = appVersion,
+        });
+        var challenge = SessionWireSerializer.Parse<SessionServerChallenge>(await ReceiveAsync(socket));
+        Assert.Equal("session.serverChallenge", challenge.Kind);
+        Assert.True(challenge.SupportsMessageCompose);
+        Assert.Equal(connectionId, challenge.ConnectionId);
+        Assert.Equal(serverId, challenge.ServerDeviceId);
+        var serverSignature = Base64Url.Decode(challenge.Signature);
+        var proofInput = SessionTranscript.CreateServerProofInput(connectionId, challenge.SessionId, serverId, clientId.Value,
+            clientNonce, Base64Url.Decode(challenge.ServerNonce), challenge.SelectedProtocolVersion, appVersion);
+        Assert.True(Ed25519Identity.Verify(serverPublicKey, proofInput, serverSignature));
+        await SendAuthenticationAsync(socket, new SessionClientProof
+        {
+            Kind = "session.clientProof",
+            ConnectionId = connectionId,
+            SessionId = challenge.SessionId,
+            Signature = Base64Url.Encode(clientIdentity.Sign(SessionTranscript.CreateClientProofInput(proofInput, serverSignature))),
+            SupportsMessageCompose = supportsCompose,
+        });
+        var ready = SessionWireSerializer.Parse<SessionReady>(await ReceiveAsync(socket));
+        Assert.Equal(challenge.SessionId, ready.SessionId);
+        return (challenge, ready);
     }
 
     private static bool CertificateMatchesPin(X509Certificate? presented, ReadOnlySpan<byte> expected)

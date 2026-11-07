@@ -16,6 +16,12 @@ Each recovery attempt has a 25-second cancellation deadline; native teardown can
 
 `AdvertisementRegistered` means this process received a successful native registration callback and has not begun teardown. It is not a fresh multicast query, remote discovery proof, firewall test or authenticated companion session. A silently stale external mDNS state may need further diagnosis; the existing network-address-change path rebuilds registration. Recovery does not restart the pairing listener or forcibly reconnect a companion.
 
+## Silent companion connections
+
+The Windows `/sync/v1` WebSocket uses native PING/PONG keep-alive (20-second interval, 45-second reply timeout). This applies to the sync socket only; it does not change the pairing endpoint or the application's explicit round-trip diagnostic. A transport timeout aborts the socket and removes only that exact session from the active table, leaving stored trust intact. The companion can reconnect using its existing foreground-only retry path. Silence is not a hardware diagnosis, and the timer is not a guaranteed end-to-end deadline under host scheduling or receive backpressure.
+
+A real TLS/WebSocket loopback test with shortened timings verifies that an authenticated client which stops reading is removed without revocation. The same trusted identity authenticates again and remains connected while its idle receive pump answers control frames. This verifies Windows transport behavior, not iOS foreground reconnection, background behavior, or a physical Wi-Fi interruption. See [ASP.NET Core WebSocket keep-alive timeout](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/websockets?view=aspnetcore-10.0#keep-alive-timeout) and [Apple's RFC 6455 URLSession WebSocket transport](https://developer.apple.com/documentation/foundation/urlsessionwebsockettask).
+
 ## Verification and remaining gates
 
 - Eighteen application tests cover recovery, before/after evidence, healthy no-op, locked/unpaired/offline refusal, action failure, missing after-probe, prerequisite changes, cancellation, retry limits, concurrent failure accounting and rearming.

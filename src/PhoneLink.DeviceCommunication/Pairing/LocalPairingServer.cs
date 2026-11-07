@@ -80,6 +80,8 @@ public sealed class LocalPairingServer : IAsyncDisposable
     public event EventHandler<DeviceSessionChangedEventArgs>? SessionDisconnected;
 
     public int BoundPort => _port;
+    internal TimeSpan SessionKeepAliveInterval { get; init; } = TimeSpan.FromSeconds(20);
+    internal TimeSpan SessionKeepAliveTimeout { get; init; } = TimeSpan.FromSeconds(45);
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -309,7 +311,11 @@ public sealed class LocalPairingServer : IAsyncDisposable
             return;
         }
 
-        using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
+        using var socket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            KeepAliveInterval = SessionKeepAliveInterval,
+            KeepAliveTimeout = SessionKeepAliveTimeout,
+        }).ConfigureAwait(false);
         LiveDeviceSession? liveSession = null;
         try
         {
@@ -429,6 +435,8 @@ public sealed class LocalPairingServer : IAsyncDisposable
                 CryptographicOperations.ZeroMemory(clientProofInput);
             }
         }
+        catch (WebSocketException) when (socket.State == WebSocketState.Aborted) { }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested || socket.State == WebSocketState.Aborted) { }
         catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
         {
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
@@ -442,10 +450,8 @@ public sealed class LocalPairingServer : IAsyncDisposable
         finally
         {
             if (liveSession is not null &&
-                _sessions.TryGetValue(liveSession.DeviceId, out var current) &&
-                ReferenceEquals(current, liveSession))
+                _sessions.TryRemove(new KeyValuePair<DeviceId, LiveDeviceSession>(liveSession.DeviceId, liveSession)))
             {
-                _sessions.TryRemove(liveSession.DeviceId, out _);
                 SessionDisconnected?.Invoke(
                     this,
                     new DeviceSessionChangedEventArgs(liveSession.DeviceId, liveSession.SessionId));
