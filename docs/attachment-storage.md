@@ -22,6 +22,8 @@ After the received byte count and incremental SHA-256 match the offer, the encry
 
 Previously cataloged `PLA1` imports remain readable through their original AES-GCM layout. That compatibility path retains the original 25 MiB bound and verifies the actual encrypted file length before allocation. It is not used for new uploads.
 
+In Windows **Photos**, use **Refresh imports** after a completed transfer and choose **Preview** on an imported image. The preview uses the same verified decryption path in a bounded memory buffer, not a temporary plaintext file. The Windows image codec must recognize the format; HEIC support depends on the installed codec. The preview checks source dimensions, scales to at most 1,600 pixels on the longest edge, and releases the display on close, lock or navigation. The managed plaintext input buffer is cleared after decoding. This does not add iPhone library browsing or video transfer.
+
 Crash-interrupted staging recovery/key garbage collection and persistent resume manifests are not implemented. Normal disconnect, failed chunk, incomplete completion, and application disposal remove incomplete staging. Files left by a process crash remain encrypted; the receiver currently does not resume them. Disk capacity and byte-count limits remain enforced.
 
 Tests cover ordered chunk round-trip, bounded export writes, header/ciphertext/tag corruption, truncation, appended data, chunk reordering, zero plaintext output on corruption, wrong-device completion, duplicate completed IDs, concurrent-offer limits, disconnect cleanup, failed chunk cleanup, and PLA1 compatibility. Physical-iPhone delivery and crash recovery are separate gates.

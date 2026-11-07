@@ -4,7 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:PhoneLink.Windows.Pages"
-    Loaded="Page_Loaded">
+    Loaded="Page_Loaded" Unloaded="Page_Unloaded">
     <Grid Padding="32" RowSpacing="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -19,6 +19,7 @@
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 Text="Photos explicitly selected in the iPhone system picker appear here after integrity verification. Files remain encrypted in Phone Link storage."
                 TextWrapping="Wrap" />
+            <Button x:Name="RefreshButton" Content="Refresh imports" Click="RefreshButton_Click" HorizontalAlignment="Left" />
         </StackPanel>
 
         <InfoBar
@@ -64,6 +65,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Border Width="44" Height="44" Background="{ThemeResource AccentFillColorSecondaryBrush}" CornerRadius="8">
                                 <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" Glyph="&#xEB9F;" />
@@ -82,6 +84,12 @@
                             </Border>
                             <Button
                                 Grid.Column="3"
+                                VerticalAlignment="Center"
+                                Click="PreviewButton_Click"
+                                CommandParameter="{x:Bind AttachmentId}"
+                                Content="Preview" />
+                            <Button
+                                Grid.Column="4"
                                 Margin="12,0,0,0"
                                 VerticalAlignment="Center"
                                 Click="SaveCopyButton_Click"
@@ -91,6 +99,17 @@
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
+            <Grid x:Name="PreviewPanel" Visibility="Collapsed" Padding="16" RowSpacing="8"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Button x:Name="ClosePreviewButton" Content="Back to imported photos" Click="ClosePreviewButton_Click" />
+                <TextBlock x:Name="PreviewStatus" Grid.Row="1" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                <Image x:Name="PreviewImage" Grid.Row="2" Stretch="Uniform" AutomationProperties.Name="Selected imported photo" />
+            </Grid>
         </Grid>
     </Grid>
 </Page>
