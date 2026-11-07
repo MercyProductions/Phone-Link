@@ -392,15 +392,21 @@ public sealed class LocalPairingServer : IAsyncDisposable
         }
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        attempt.CancelAfter(TimeSpan.FromSeconds(15));
         try
         {
-            var helloBytes = await ReceiveTextMessageAsync(socket, context.RequestAborted).ConfigureAwait(false);
+            var helloBytes = await ReceiveTextMessageAsync(socket, attempt.Token).ConfigureAwait(false);
             var hello = PairingWireSerializer.Parse<PairingClientHello>(helloBytes);
             ValidateClientHello(hello);
 
             using var artifact = _offers.Consume(hello.SessionId, DateTimeOffset.UtcNow)
                 ?? throw new InvalidOperationException("The pairing offer is unknown, expired, or already used.");
             PairingOfferValidator.ValidateForClient(artifact.Offer, DateTimeOffset.UtcNow);
+            var remaining = artifact.Offer.ExpiresAt - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) throw new TimeoutException("The pairing offer expired.");
+            attempt.Token.ThrowIfCancellationRequested();
+            attempt.CancelAfter(remaining);
 
             var clientIdentity = Base64Url.Decode(hello.ClientIdentityPublicKey);
             var clientNonce = Base64Url.Decode(hello.ClientNonce);
@@ -444,17 +450,18 @@ public sealed class LocalPairingServer : IAsyncDisposable
                         ServerNonce = Base64Url.Encode(serverNonce),
                         Signature = Base64Url.Encode(signature),
                     },
-                    context.RequestAborted).ConfigureAwait(false);
+                    attempt.Token).ConfigureAwait(false);
 
                 var approval = new PairingApprovalRequestedEventArgs(
                     hello.SessionId,
                     hello.ClientDeviceId,
                     hello.ClientDisplayName,
                     comparisonPhrase,
-                    artifact.Offer.ExpiresAt);
+                    artifact.Offer.ExpiresAt,
+                    attempt.Token);
                 PairingApprovalRequested?.Invoke(this, approval);
 
-                var confirmationBytes = await ReceiveTextMessageAsync(socket, context.RequestAborted).ConfigureAwait(false);
+                var confirmationBytes = await ReceiveTextMessageAsync(socket, attempt.Token).ConfigureAwait(false);
                 var phoneConfirmation = PairingWireSerializer.Parse<PairingConfirmation>(confirmationBytes);
                 if (phoneConfirmation.Kind != "pairing.confirm" ||
                     phoneConfirmation.SessionId != hello.SessionId)
@@ -462,9 +469,10 @@ public sealed class LocalPairingServer : IAsyncDisposable
                     throw new InvalidDataException("The phone returned an invalid pairing confirmation.");
                 }
 
-                var windowsApproved = PairingApprovalRequested is not null &&
-                    await approval.WaitAsync(context.RequestAborted).ConfigureAwait(false);
-                var paired = phoneConfirmation.Approved && windowsApproved;
+                var paired = phoneConfirmation.Approved && PairingApprovalRequested is not null &&
+                    await approval.WaitAsync(attempt.Token).ConfigureAwait(false);
+                attempt.Token.ThrowIfCancellationRequested();
+                if (DateTimeOffset.UtcNow >= artifact.Offer.ExpiresAt) throw new TimeoutException("The pairing offer expired.");
                 if (paired)
                 {
                     var device = TrustedDevice.Create(
@@ -490,10 +498,10 @@ public sealed class LocalPairingServer : IAsyncDisposable
                         ErrorCode = paired ? null : "pairing.user-rejected",
                     },
                     context.RequestAborted).ConfigureAwait(false);
-                await socket.CloseAsync(
+                await ClosePairingSocketAsync(socket,
                     WebSocketCloseStatus.NormalClosure,
                     paired ? "Pairing complete" : "Pairing rejected",
-                    CancellationToken.None).ConfigureAwait(false);
+                    context.RequestAborted).ConfigureAwait(false);
             }
             finally
             {
@@ -507,16 +515,26 @@ public sealed class LocalPairingServer : IAsyncDisposable
                 CryptographicOperations.ZeroMemory(comparisonDigest);
             }
         }
-        catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-            {
-                await socket.CloseAsync(
-                    WebSocketCloseStatus.PolicyViolation,
-                    "Pairing failed",
-                    CancellationToken.None).ConfigureAwait(false);
-            }
+            await attempt.CancelAsync().ConfigureAwait(false);
+            await ClosePairingSocketAsync(socket, WebSocketCloseStatus.PolicyViolation,
+                "Pairing failed", context.RequestAborted).ConfigureAwait(false);
         }
+        finally
+        {
+            await attempt.CancelAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task ClosePairingSocketAsync(WebSocket socket, WebSocketCloseStatus status,
+        string reason, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested || socket.State is not (WebSocketState.Open or WebSocketState.CloseReceived)) return;
+        using var close = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        close.CancelAfter(TimeSpan.FromSeconds(2));
+        try { await socket.CloseAsync(status, reason, close.Token).ConfigureAwait(false); }
+        catch (Exception exception) when (exception is OperationCanceledException or WebSocketException) { socket.Abort(); }
     }
 
     private static void ValidateClientHello(PairingClientHello hello)

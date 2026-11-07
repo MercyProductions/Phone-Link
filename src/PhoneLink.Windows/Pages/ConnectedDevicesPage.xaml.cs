@@ -18,6 +18,7 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
     private LocalPairingServer? _pairingServer;
     private PairingOfferDisplay? _currentOffer;
     private bool _isPageLoaded;
+    private bool _pairingConfirmationOpen;
     private CancellationTokenSource? _discoveryCancellation;
     private bool _discoveryRefreshPending;
 
@@ -173,12 +174,17 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
     {
         if (!DispatcherQueue.TryEnqueue(async () =>
             {
-                if (!_isPageLoaded || App.IsLocked || XamlRoot is null)
+                if (!_isPageLoaded || App.IsLocked || XamlRoot is null || _pairingConfirmationOpen ||
+                    args.AttemptEnded.IsCancellationRequested || _currentOffer?.SessionId != args.SessionId)
                 {
                     args.Submit(false);
                     return;
                 }
 
+                // The server has consumed this QR. Only the comparison step remains.
+                CancelCurrentOffer();
+                QrImage.Source = null;
+                PairingPanel.Visibility = Visibility.Collapsed;
                 var dialog = new ContentDialog
                 {
                     XamlRoot = XamlRoot,
@@ -188,8 +194,34 @@ public sealed partial class ConnectedDevicesPage : Page, IDisposable
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
                 };
-                var result = await dialog.ShowAsync();
-                args.Submit(_isPageLoaded && !App.IsLocked && result == ContentDialogResult.Primary);
+                _pairingConfirmationOpen = true;
+                var showing = true;
+                using var ended = args.AttemptEnded.Register(() => DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (showing) dialog.Hide();
+                }));
+                try
+                {
+                    var result = await dialog.ShowAsync();
+                    args.Submit(_isPageLoaded && !App.IsLocked && result == ContentDialogResult.Primary);
+                    if (_isPageLoaded && !App.IsLocked && args.AttemptEnded.IsCancellationRequested &&
+                        DateTimeOffset.UtcNow >= args.ExpiresAt)
+                    {
+                        StatusBar.Title = "Pairing expired";
+                        StatusBar.Message = "Choose Pair iPhone for a fresh code, then compare and confirm on both devices.";
+                        StatusBar.Severity = InfoBarSeverity.Warning;
+                        StatusBar.IsOpen = true;
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    args.Submit(false);
+                }
+                finally
+                {
+                    showing = false;
+                    _pairingConfirmationOpen = false;
+                }
             }))
         {
             args.Submit(false);

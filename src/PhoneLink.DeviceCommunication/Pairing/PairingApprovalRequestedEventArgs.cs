@@ -10,13 +10,15 @@ public sealed class PairingApprovalRequestedEventArgs : EventArgs
         Guid clientDeviceId,
         string clientDisplayName,
         string comparisonPhrase,
-        DateTimeOffset expiresAt)
+        DateTimeOffset expiresAt,
+        CancellationToken attemptEnded)
     {
         SessionId = sessionId;
         ClientDeviceId = clientDeviceId;
         ClientDisplayName = clientDisplayName;
         ComparisonPhrase = comparisonPhrase;
         ExpiresAt = expiresAt;
+        AttemptEnded = attemptEnded;
     }
 
     public Guid SessionId { get; }
@@ -28,8 +30,9 @@ public sealed class PairingApprovalRequestedEventArgs : EventArgs
     public string ComparisonPhrase { get; }
 
     public DateTimeOffset ExpiresAt { get; }
+    public CancellationToken AttemptEnded { get; }
 
-    public bool Submit(bool approved) => _completion.TrySetResult(approved);
+    public bool Submit(bool approved) => !AttemptEnded.IsCancellationRequested && _completion.TrySetResult(approved);
 
     internal Task<bool> WaitAsync(CancellationToken cancellationToken)
     {

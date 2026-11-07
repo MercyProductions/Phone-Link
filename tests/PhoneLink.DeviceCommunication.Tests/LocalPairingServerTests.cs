@@ -13,8 +13,10 @@ namespace PhoneLink.DeviceCommunication.Tests;
 
 public sealed class LocalPairingServerTests
 {
-    [Fact]
-    public async Task AuthenticatedPairingPersistsTrustedDevice()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AuthenticatedPairingRequiresPhoneConfirmationBeforeExpiry(bool stallPhoneConfirmation)
     {
         var secretStore = new InMemorySecretStore();
         var certificate = await new LocalTlsCertificateProvider(secretStore)
@@ -27,10 +29,15 @@ public sealed class LocalPairingServerTests
             serverIdentity,
             trustedDevices,
             serverDeviceId);
-        server.PairingApprovalRequested += (_, args) => args.Submit(true);
+        var requested = new TaskCompletionSource<PairingApprovalRequestedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        server.PairingApprovalRequested += (_, args) =>
+        {
+            args.Submit(true);
+            requested.TrySetResult(args);
+        };
         await server.StartAsync(CancellationToken.None);
 
-        var display = server.CreateOffer(DateTimeOffset.UtcNow);
+        var display = server.CreateOffer(stallPhoneConfirmation ? DateTimeOffset.UtcNow.AddSeconds(-112) : DateTimeOffset.UtcNow);
         using var artifact = PairingOfferCodec.Decode(display.QrPayload);
         var endpoint = artifact.Offer.Endpoints.First(candidate => candidate.Host.Contains('.'));
 
@@ -80,6 +87,25 @@ public sealed class LocalPairingServerTests
                 artifact.Offer.ServerIdentityKey.Span,
                 serverInput,
                 signature));
+
+        if (stallPhoneConfirmation)
+        {
+            var approval = await requested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try
+            {
+                var terminal = await socket.ReceiveAsync(new ArraySegment<byte>(new byte[64]), deadline.Token);
+                Assert.Equal(WebSocketMessageType.Close, terminal.MessageType);
+            }
+            catch (WebSocketException)
+            {
+                // A cancelled server receive may abort the upgraded connection without a close frame.
+            }
+            Assert.False(deadline.IsCancellationRequested);
+            Assert.True(approval.AttemptEnded.IsCancellationRequested);
+            Assert.Null(await trustedDevices.FindAsync(new DeviceId(clientDeviceId), CancellationToken.None));
+            return;
+        }
 
         await SendAsync(
             socket,
