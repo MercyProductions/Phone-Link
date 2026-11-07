@@ -69,6 +69,27 @@ public sealed class AmsSessionState
             Array.AsReadOnly(_attributes.Values.OrderBy(value => value.Entity).ThenBy(value => value.Attribute).ToArray()));
     }
 
+    internal bool IsExpandable(AmsAttributeObservation observation, long revision)
+    {
+        lock (_gate) return IsExpandableCore(observation, revision);
+    }
+
+    internal bool TryExpand(AmsAttributeObservation observation, long revision, string expanded, DateTimeOffset receivedAt)
+    {
+        lock (_gate)
+        {
+            if (!IsExpandableCore(observation, revision) || expanded.Length > 4_096 ||
+                !expanded.StartsWith(observation.Value, StringComparison.Ordinal)) return false;
+            _attributes[(observation.Entity, observation.Attribute)] = observation with { Flags = 0, Value = expanded, ReceivedAt = receivedAt };
+            _revision++;
+            return true;
+        }
+    }
+
+    private bool IsExpandableCore(AmsAttributeObservation observation, long revision) =>
+        !_ended && _revision == revision && observation.IsTruncated && !observation.HasUnknownFlags &&
+        _attributes.TryGetValue((observation.Entity, observation.Attribute), out var current) && ReferenceEquals(current, observation);
+
     public void End()
     {
         lock (_gate) { _ended = true; _commands = []; _attributes.Clear(); _received = false; _revision++; }

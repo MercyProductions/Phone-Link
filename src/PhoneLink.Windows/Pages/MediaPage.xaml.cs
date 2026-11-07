@@ -113,11 +113,13 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
     private async Task StopSessionAsync()
     {
         var session = Interlocked.Exchange(ref _session, null);
-        if (session is not null) { session.Changed -= Session_Changed; await session.DisposeAsync(); }
+        if (session is not null) session.Changed -= Session_Changed;
         Observations.Clear();
+        NowPlayingText.Text = "No track metadata received.";
         CommandSelector.Items.Clear();
         SessionText.Text = "Stopped. Session observations and command availability were cleared.";
         if (_loaded) UpdateButtons();
+        if (session is not null) await session.DisposeAsync();
     }
 
     private void Session_Changed(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(() =>
@@ -140,8 +142,18 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
                 if (command == selected) CommandSelector.SelectedItem = row;
             }
         }
+        var selectedAttribute = (ObservationList.SelectedItem as MediaObservationRow)?.Observation;
         Observations.Clear();
-        foreach (var observation in snapshot.Attributes) Observations.Add(new(observation));
+        foreach (var observation in snapshot.Attributes)
+        {
+            var row = new MediaObservationRow(observation);
+            Observations.Add(row);
+            if (selectedAttribute is not null && (observation.Entity, observation.Attribute) == (selectedAttribute.Entity, selectedAttribute.Attribute))
+                ObservationList.SelectedItem = row;
+        }
+        var track = Observations.Where(row => row.Observation.Entity == AmsEntity.Track && row.Observation.Attribute is 0 or 1 or 2).ToArray();
+        NowPlayingText.Text = track.Length == 0 ? "No track metadata received." : string.Join("\n", track.Select(row =>
+            $"{row.Name}: {row.Value}{(row.Observation.IsComplete ? string.Empty : " (partial or unvalidated)")} · {row.Observation.ReceivedAt.LocalDateTime:T}"));
         SessionText.Text = snapshot.Ended ? $"Session ended: {session.EndReason}. No command is available until a fresh session starts."
             : $"{session.DeviceName} · session link usable={session.IsConnected} · {(snapshot.CommandListReceived ? $"{snapshot.Commands.Count} defined command(s) advertised" : "Waiting for a supported-command list; commands disabled")} · {snapshot.Attributes.Count} observed field(s) · {session.InvalidUpdates} malformed update(s). " + string.Join(" ", session.SetupIssues);
         UpdateButtons();
@@ -175,6 +187,19 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
     });
 
     private void Selection_Changed(object sender, SelectionChangedEventArgs args) => UpdateButtons();
+
+    private async void ExpandButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
+    {
+        if (_session is not { CanReadExtended: true } session || ObservationList.SelectedItem is not MediaObservationRow row) return;
+        var revision = session.Capture().ContextRevision;
+        var expanded = await session.ReadExtendedAsync(row.Observation, revision, token);
+        if (!_loaded || App.IsLocked || !ReferenceEquals(session, _session) || token.IsCancellationRequested) return;
+        RefreshState();
+        ShowStatus(expanded ? "The phone returned the complete selected value." :
+            "No complete value was accepted. The field may have changed, or the phone may have refused the read.",
+            expanded ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+    });
+
     private void UpdateButtons()
     {
         if (ScanButton is null) return;
@@ -184,6 +209,9 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         StartButton.IsEnabled = !_busy && !active && DeviceSelector.SelectedItem is AmsDeviceCandidate;
         StopButton.IsEnabled = _busy || _session is not null;
         SendButton.IsEnabled = !_busy && active && CommandSelector.SelectedItem is MediaCommandRow;
+        if (ExpandButton is not null && ObservationList is not null)
+            ExpandButton.IsEnabled = !_busy && _session?.CanReadExtended == true &&
+                ObservationList.SelectedItem is MediaObservationRow { Observation: { IsTruncated: true, HasUnknownFlags: false } };
     }
     private void ShowStatus(string message, InfoBarSeverity severity)
     { StatusBar.Message = message; StatusBar.Severity = severity; StatusBar.IsOpen = true; }
@@ -204,6 +232,7 @@ public sealed class MediaObservationRow
 {
     public MediaObservationRow(AmsAttributeObservation observation)
     {
+        Observation = observation;
         string[] names = observation.Entity switch
         {
             AmsEntity.Player => ["App", "Playback information", "Volume"],
@@ -222,6 +251,7 @@ public sealed class MediaObservationRow
             Detail = "Numeric format invalid; showing raw text, not a validated playback/volume value. " + Detail;
     }
     public string Name { get; }
+    public AmsAttributeObservation Observation { get; }
     public string Value { get; }
     public string Detail { get; }
 }

@@ -22,6 +22,7 @@ public sealed class AmsSession : IAsyncDisposable
     private static readonly Guid ServiceUuid = Guid.Parse("89d3502b-0f36-433a-8ef4-c502ad55f8dc");
     private static readonly Guid RemoteUuid = Guid.Parse("9b3c81d8-57b1-4a8a-b8df-0e56f7ca51c2");
     private static readonly Guid UpdateUuid = Guid.Parse("2f7cabce-808d-411f-9a0c-bb92ba96c102");
+    private static readonly Guid AttributeUuid = Guid.Parse("c6b2f38c-23ab-46d8-a6ab-a3a870bbd5d7");
     private readonly AmsSessionState _state = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
@@ -30,7 +31,7 @@ public sealed class AmsSession : IAsyncDisposable
     private readonly List<string> _issues = [];
     private BluetoothLEDevice? _device;
     private GattDeviceService? _service;
-    private GattCharacteristic? _remote, _updates;
+    private GattCharacteristic? _remote, _updates, _attribute;
     private Task? _disposeTask;
     private int _ended, _invalid;
     private bool _remoteSubscribed, _updatesSubscribed;
@@ -51,6 +52,7 @@ public sealed class AmsSession : IAsyncDisposable
     public event EventHandler? Changed;
     public string DeviceName => _device?.Name ?? "Selected paired device";
     public bool IsConnected => _ready && Volatile.Read(ref _ended) == 0 && _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+    public bool CanReadExtended => IsConnected && _updatesSubscribed && _attribute is not null;
     public int InvalidUpdates => Volatile.Read(ref _invalid);
     public string EndReason { get; private set; } = "Not ended";
     public IReadOnlyList<string> SetupIssues => _issues.AsReadOnly();
@@ -58,6 +60,31 @@ public sealed class AmsSession : IAsyncDisposable
     public AmsCommandRequest CreateRequest(AmsRemoteCommand command) => _state.CreateRequest(command);
     public Task<AmsCommandResult> SendAsync(AmsCommandRequest request, Func<bool> isAuthorized, CancellationToken cancellationToken) =>
         _sender.SendAsync(request, isAuthorized, cancellationToken);
+
+    public async Task<bool> ReadExtendedAsync(AmsAttributeObservation observation, long revision, CancellationToken cancellationToken)
+    {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        lifetime.CancelAfter(TimeSpan.FromSeconds(8));
+        var token = lifetime.Token;
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (!CanReadExtended || _attribute is not { } attribute || !_state.IsExpandable(observation, revision)) return false;
+            var selector = CryptographicBuffer.CreateFromByteArray([(byte)observation.Entity, observation.Attribute]);
+            var write = await attribute.WriteValueWithResultAsync(selector, GattWriteOption.WriteWithResponse).AsTask(token).ConfigureAwait(false);
+            if (write.Status != GattCommunicationStatus.Success || !CanReadExtended || !_state.IsExpandable(observation, revision)) return false;
+            var read = await attribute.ReadValueAsync(BluetoothCacheMode.Uncached).AsTask(token).ConfigureAwait(false);
+            if (read.Status != GattCommunicationStatus.Success || read.Value is null || read.Value.Length > 4_096) return false;
+            CryptographicBuffer.CopyToByteArray(read.Value, out var bytes);
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                return CanReadExtended && _state.TryExpand(observation, revision, AmsProtocol.ParseExtendedValue(bytes), DateTimeOffset.UtcNow);
+            }
+            finally { CryptographicOperations.ZeroMemory(bytes); }
+        }
+        finally { _gate.Release(); }
+    }
 
     public static async Task<AmsDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
     {
@@ -109,6 +136,9 @@ public sealed class AmsSession : IAsyncDisposable
         _service = services.Services[0];
         var access = await _service.RequestAccessAsync().AsTask(cancellationToken);
         if (access != DeviceAccessStatus.Allowed) throw new InvalidOperationException($"Windows denied AMS service access ({access}). No permission was approved automatically.");
+        var opened = await _service.OpenAsync(GattSharingMode.SharedReadAndWrite).AsTask(cancellationToken);
+        if (opened is not (GattOpenStatus.Success or GattOpenStatus.AlreadyOpened))
+            throw new InvalidOperationException($"Windows did not open the AMS service in shared mode ({opened}). No characteristic write was attempted.");
         var characteristics = await _service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(cancellationToken);
         if (characteristics.Status != GattCommunicationStatus.Success)
             throw new InvalidOperationException($"AMS service access was allowed, but characteristic access failed ({characteristics.Status}).");
@@ -117,6 +147,8 @@ public sealed class AmsSession : IAsyncDisposable
             (characteristic.CharacteristicProperties & (GattCharacteristicProperties.Write | GattCharacteristicProperties.WriteWithoutResponse)) != 0);
         _updates = characteristics.Characteristics.FirstOrDefault(characteristic => characteristic.Uuid == UpdateUuid &&
             characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify | GattCharacteristicProperties.Write));
+        _attribute = characteristics.Characteristics.SingleOrDefault(characteristic => characteristic.Uuid == AttributeUuid &&
+            characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Read | GattCharacteristicProperties.Write));
         _device.ConnectionStatusChanged += ConnectionChanged;
         _device.GattServicesChanged += ServicesChanged;
         if (_remote is not null)

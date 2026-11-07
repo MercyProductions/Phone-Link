@@ -29,11 +29,18 @@
                         TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>
+            <Border Padding="16" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Now playing · reported by iPhone" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock x:Name="NowPlayingText" Text="No track metadata received." TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
             <TextBlock Text="Latest player, queue and track observations" FontSize="21" FontWeight="SemiBold" />
-            <TextBlock Text="Fields arrive independently, not as an atomic now-playing snapshot. Received times are shown; no progress or playback change is invented. Truncated/unknown-flag values stay marked. Extended attribute reads are not implemented yet. Data stays in memory and is cleared when the session ends."
+            <TextBlock Text="Fields arrive independently, not as an atomic now-playing snapshot. Select a truncated field to request its full value if the phone exposes that option. Data stays in memory and is cleared when the session ends."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <ItemsControl ItemsSource="{x:Bind Observations}">
-                <ItemsControl.ItemTemplate>
+            <Button x:Name="ExpandButton" Content="Read full selected value" IsEnabled="False" Click="ExpandButton_Click" />
+            <ListView x:Name="ObservationList" ItemsSource="{x:Bind Observations}" SelectionMode="Single" SelectionChanged="Selection_Changed">
+                <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:MediaObservationRow">
                         <Border Padding="16" Margin="0,0,0,8" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                             <StackPanel Spacing="6">
@@ -43,8 +50,8 @@
                             </StackPanel>
                         </Border>
                     </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                </ListView.ItemTemplate>
+            </ListView>
         </StackPanel>
     </ScrollViewer>
 </Page>

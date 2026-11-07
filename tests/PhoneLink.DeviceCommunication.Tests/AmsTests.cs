@@ -243,6 +243,44 @@ public sealed class AmsTests
         Assert.Equal(1, writes);
     }
 
+    [Fact]
+    public void ExtendedReadRequiresTheSameTruncatedObservationAndCompatiblePrefix()
+    {
+        var state = Ready();
+        var truncated = new AmsAttributeObservation(AmsEntity.Track, 2, 1, "Song", DateTimeOffset.UtcNow);
+        state.Update(truncated);
+        var revision = state.Capture().ContextRevision;
+        Assert.True(state.IsExpandable(truncated, revision));
+        Assert.False(state.TryExpand(truncated, revision, "Different track", DateTimeOffset.UtcNow));
+        Assert.True(state.TryExpand(truncated, revision, "Song title", DateTimeOffset.UtcNow));
+        var complete = Assert.Single(state.Capture().Attributes);
+        Assert.True(complete.IsComplete);
+        Assert.Equal("Song title", complete.Value);
+        Assert.False(state.IsExpandable(truncated, revision));
+    }
+
+    [Fact]
+    public void TrackContextAndUnknownFlagsPreventApplyingExtendedValue()
+    {
+        var state = Ready();
+        var truncated = new AmsAttributeObservation(AmsEntity.Track, 2, 1, "Song", DateTimeOffset.UtcNow);
+        state.Update(truncated);
+        var revision = state.Capture().ContextRevision;
+        state.Update(new(AmsEntity.Queue, 0, 0, "2", DateTimeOffset.UtcNow));
+        Assert.False(state.TryExpand(truncated, revision, "Song title", DateTimeOffset.UtcNow));
+        var unknown = truncated with { Flags = 3 };
+        state.Update(unknown);
+        Assert.False(state.IsExpandable(unknown, state.Capture().ContextRevision));
+    }
+
+    [Fact]
+    public void ExtendedValueRejectsInvalidUtf8AndOversizedData()
+    {
+        Assert.Equal("Music 🎵", AmsProtocol.ParseExtendedValue("Music 🎵"u8));
+        Assert.Throws<InvalidDataException>(() => AmsProtocol.ParseExtendedValue([0xff]));
+        Assert.Throws<InvalidDataException>(() => AmsProtocol.ParseExtendedValue(new byte[4_097]));
+    }
+
     private static AmsSessionState Ready() { var state = new AmsSessionState(); state.UpdateCommands([0]); return state; }
     private static AmsAttributeObservation Update(AmsEntity entity, byte attribute, string text, byte flags = 0) =>
         AmsProtocol.ParseUpdate([(byte)entity, attribute, flags, .. Encoding.UTF8.GetBytes(text)], DateTimeOffset.UtcNow);

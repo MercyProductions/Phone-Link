@@ -51,6 +51,13 @@ public static class AmsProtocol
         return new((AmsEntity)payload[0], payload[1], payload[2], value, receivedAt);
     }
 
+    internal static string ParseExtendedValue(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length > 4_096) throw new InvalidDataException("The extended AMS value exceeded its limit.");
+        try { return StrictUtf8.GetString(payload); }
+        catch (DecoderFallbackException) { throw new InvalidDataException("The extended AMS value is not valid UTF-8."); }
+    }
+
     public static double? ParseVolume(AmsAttributeObservation observation) =>
         observation is { Entity: AmsEntity.Player, Attribute: 2, IsComplete: true } &&
         TryNumber(observation.Value, out var value) && value is >= 0 and <= 1 ? value : null;
