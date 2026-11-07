@@ -39,6 +39,7 @@ public sealed partial class DiagnosticsPage : Page
     private async void Page_Loaded(object sender, RoutedEventArgs args)
     {
         _loaded = true;
+        UpdateBatteryButtons();
         await ScanAsync();
     }
 
@@ -49,6 +50,7 @@ public sealed partial class DiagnosticsPage : Page
         StopPresence();
         ClearCompanionHealthForPrivacy();
         _loaded = false;
+        ClearBluetoothBattery();
         _scanCancellation?.Cancel();
         ClearRoundTrip();
         _crashCancellation?.Cancel();
@@ -65,7 +67,8 @@ public sealed partial class DiagnosticsPage : Page
 
     public void SetPrivacyLocked(bool locked)
     {
-        if (!locked) return; // Monitoring requires a fresh explicit start after unlocking.
+        if (!locked) { UpdateBatteryButtons(); return; } // Monitoring requires a fresh explicit start after unlocking.
+        ClearBluetoothBattery();
         ClearMotionForPrivacy();
         ClearConnectionHistory();
         StopPresence();

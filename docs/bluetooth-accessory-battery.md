@@ -1,0 +1,11 @@
+# Bluetooth accessory battery check
+
+In Windows **Troubleshooter → Bluetooth accessory battery**, list paired Bluetooth LE devices, select an accessory you own, and choose **Read selected battery level**. Listing uses Windows pairing inventory and does not probe every device. Reading may establish a Bluetooth connection to the selected device. The tool does not pair or unpair, request a persistent connection, write characteristics, subscribe to notifications, or retry another device.
+
+The check uses the standard Bluetooth Battery Service (`0x180F`) and Battery Level characteristic (`0x2A19`). It requests uncached data and accepts only a single byte in the range 0–100. Up to four service instances can be displayed separately; Phone Link does not infer left, right, case, or an overall percentage from their order. Access denied, unreachable, absent, malformed, ambiguous, and unavailable are distinct from 0%. Battery level is not measured health, maximum capacity, temperature, or an Apple proprietary AirPods status. The result is an observation at check time, not continuous telemetry.
+
+Device names and readings remain in the Troubleshooter UI only, outside copied connection reports. Selection changes clear the reading; navigation and app lock also clear the list and cancel pending work. The CLI option `--bluetooth-battery-inventory` prints an aggregate count and never opens a GATT service or reads a battery value.
+
+Verification: clean Windows solution build and 650 passing .NET tests, including value boundaries, protocol/permission status mapping and pre-cancelled reads. The built CLI enumerated two paired LE devices without selecting or reading either one. No real accessory percentage or WinUI selection/lock race was verified in this pass.
+
+Primary references: [Bluetooth SIG Battery Service](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/BAS_v1.1/out/en/index-en.html#sec-battery-level), [Bluetooth SIG assigned numbers](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Assigned_Numbers/out/en/index-en.html), and [Windows GATT client and connection behavior](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/gatt-client).
