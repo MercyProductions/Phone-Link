@@ -36,9 +36,10 @@ public sealed partial class MainWindow : Window
 
     private LocalPairingServer? _pairingServer;
 
-    public void StopAudioForPrivacy()
+    public void StopBluetoothMediaForPrivacy()
     {
         if (NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
+        if (NavFrame.Content is MediaPage mediaPage) mediaPage.StopForPrivacy();
     }
 
     public void ShowFromTray()
@@ -123,7 +124,7 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
-        if (NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
+        StopBluetoothMediaForPrivacy();
         AppWindow.Closing -= AppWindow_Closing;
         if (_pairingServer is null)
         {
@@ -143,7 +144,7 @@ public sealed partial class MainWindow : Window
         }
 
         args.Cancel = true;
-        if (NavFrame.Content is AudioReceiverPage audioPage) audioPage.StopForPrivacy();
+        StopBluetoothMediaForPrivacy();
         App.LockForPrivacy();
         sender.Hide();
     }

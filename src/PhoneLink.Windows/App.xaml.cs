@@ -343,7 +343,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDisposable
         if (args.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.RemoteDisconnect or
             SessionSwitchReason.ConsoleDisconnect or SessionSwitchReason.SessionLogoff)
         {
-            _window?.DispatcherQueue.TryEnqueue(() => { if (_window is MainWindow main) main.StopAudioForPrivacy(); LockForPrivacy(); });
+            _window?.DispatcherQueue.TryEnqueue(() => { if (_window is MainWindow main) main.StopBluetoothMediaForPrivacy(); LockForPrivacy(); });
         }
     }
 
@@ -351,7 +351,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDisposable
     {
         if (args.Mode == PowerModes.Suspend)
         {
-            _window?.DispatcherQueue.TryEnqueue(() => { if (_window is MainWindow main) main.StopAudioForPrivacy(); LockForPrivacy(); });
+            _window?.DispatcherQueue.TryEnqueue(() => { if (_window is MainWindow main) main.StopBluetoothMediaForPrivacy(); LockForPrivacy(); });
         }
     }
 

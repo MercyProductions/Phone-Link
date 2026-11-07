@@ -9,6 +9,7 @@ namespace PhoneLink.Windows.Pages;
 public sealed partial class MediaPage : Page, IAsyncDisposable
 {
     private AmsSession? _session;
+    private (AmsReconnectAttempt Attempt, AmsDeviceCandidate Candidate)? _reconnect;
     private CancellationTokenSource? _operationCancellation;
     private Task? _operation;
     private ContentDialog? _confirmation;
@@ -36,6 +37,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
     {
         _operationCancellation?.Cancel();
         _confirmation?.Hide();
+        ReconnectBox.IsChecked = false;
         _ = StopForPrivacyAsync();
     }
     private async Task StopForPrivacyAsync()
@@ -72,6 +74,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
                 BusyRing.IsActive = false;
                 BusyRing.Visibility = Visibility.Collapsed;
                 UpdateButtons();
+                if (_reconnect is not null) DispatcherQueue.TryEnqueue(MaybeReconnect);
             }
         }
     }
@@ -91,12 +94,16 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
     private async void StartButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
         if (DeviceSelector.SelectedItem is not AmsDeviceCandidate candidate) return;
+        var allowReconnect = ReconnectBox.IsChecked == true;
+        ReconnectBox.IsChecked = false;
         await StopSessionAsync();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
         var session = await AmsSession.StartAsync(candidate, deadline.Token);
-        if (!_loaded || token.IsCancellationRequested || App.IsLocked) { await session.DisposeAsync(); return; }
+        if (!_loaded || deadline.IsCancellationRequested || App.IsLocked || !ReferenceEquals(DeviceSelector.SelectedItem, candidate))
+        { await session.DisposeAsync(); return; }
         _session = session;
+        if (allowReconnect && session.IsConnected) _reconnect = (new AmsReconnectAttempt(candidate), candidate);
         session.Changed += Session_Changed;
         RefreshState();
         ShowStatus("AMS setup completed. Only reported commands and observations will be shown; no playback command was sent during setup.", InfoBarSeverity.Informational);
@@ -112,6 +119,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
     }
     private async Task StopSessionAsync()
     {
+        _reconnect = null;
         var session = Interlocked.Exchange(ref _session, null);
         if (session is not null) session.Changed -= Session_Changed;
         Observations.Clear();
@@ -124,8 +132,45 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
 
     private void Session_Changed(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(() =>
     {
-        if (_loaded && !App.IsLocked && ReferenceEquals(sender, _session)) RefreshState();
+        if (_loaded && !App.IsLocked && sender is AmsSession session && ReferenceEquals(session, _session))
+        {
+            if (session.EndCause != AmsSessionEndCause.None) _confirmation?.Hide();
+            RefreshState();
+            MaybeReconnect();
+        }
     });
+
+    private void MaybeReconnect()
+    {
+        if (!_loaded || _busy || App.IsLocked || _session is not { EndCause: AmsSessionEndCause.BluetoothDisconnected } previous ||
+            _reconnect is not { } recovery || !ReferenceEquals(DeviceSelector.SelectedItem, recovery.Candidate)) return;
+        _reconnect = null;
+        _ = RunAsync(async token =>
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(30));
+            var replacement = await recovery.Attempt.TryReconnectAsync(previous.EndCause, Current, async () =>
+            {
+                await StopSessionAsync();
+                if (Current()) SessionText.Text = "Bluetooth disconnected. Trying one reconnect to the same phone, as selected…";
+            }, deadline.Token);
+            if (replacement is null) return;
+            if (!Current() || !replacement.IsConnected)
+            {
+                await replacement.DisposeAsync();
+                if (Current()) ShowStatus("The replacement media session did not stay connected. No further retry.", InfoBarSeverity.Warning);
+                return;
+            }
+            _session = replacement;
+            replacement.Changed += Session_Changed;
+            RefreshState();
+            ShowStatus("Media session reopened. Only newly reported commands and observations are shown. No playback command was replayed.",
+                InfoBarSeverity.Informational);
+
+            bool Current() => _loaded && !App.IsLocked && !deadline.IsCancellationRequested &&
+                ReferenceEquals(DeviceSelector.SelectedItem, recovery.Candidate);
+        });
+    }
     private void RefreshState()
     {
         var session = _session;
@@ -200,7 +245,11 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         }, result.Outcome == AmsCommandOutcome.WriteAccepted ? InfoBarSeverity.Informational : InfoBarSeverity.Warning);
     });
 
-    private void Selection_Changed(object sender, SelectionChangedEventArgs args) => UpdateButtons();
+    private void Selection_Changed(object sender, SelectionChangedEventArgs args)
+    {
+        if (ReferenceEquals(sender, DeviceSelector) && ReconnectBox is not null) ReconnectBox.IsChecked = false;
+        UpdateButtons();
+    }
 
     private async void ExpandButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
     {
@@ -222,6 +271,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         ScanButton.IsEnabled = !_busy && !active;
         DeviceSelector.IsEnabled = !_busy && !active;
         StartButton.IsEnabled = !_busy && !active && DeviceSelector.SelectedItem is AmsDeviceCandidate;
+        if (ReconnectBox is not null) ReconnectBox.IsEnabled = _loaded && !App.IsLocked && StartButton.IsEnabled;
         StopButton.IsEnabled = _busy || _session is not null;
         if (SendButton is not null)
             SendButton.IsEnabled = CommandSelector.SelectedItem is MediaCommandRow row && CanSend(row.Command);

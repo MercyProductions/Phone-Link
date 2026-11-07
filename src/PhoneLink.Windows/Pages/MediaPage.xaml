@@ -17,6 +17,10 @@
             </StackPanel>
             <ComboBox x:Name="DeviceSelector" Header="Select your paired phone explicitly" DisplayMemberPath="DisplayName"
                 HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed" />
+            <CheckBox x:Name="ReconnectBox" IsEnabled="False" IsChecked="False"
+                AutomationProperties.Name="Reconnect once after Bluetooth disconnects">
+                <TextBlock Text="After this session opens, try reconnecting to this same phone once if Bluetooth disconnects. Restores subscriptions only; does not replay commands." TextWrapping="Wrap" />
+            </CheckBox>
             <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" />
             <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                 <StackPanel Spacing="12">
