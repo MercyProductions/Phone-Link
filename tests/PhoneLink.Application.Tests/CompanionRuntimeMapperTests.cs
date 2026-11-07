@@ -26,6 +26,32 @@ public sealed class CompanionRuntimeMapperTests
     private static byte[] Bytes(JsonObject snapshot) => JsonSerializer.SerializeToUtf8Bytes(snapshot);
 
     [Fact]
+    public void LooksUpArbitrarySnapshotTextByteWithoutRequiringASymbol()
+    {
+        var result = CompanionRuntimeMapper.LookupAddress(Inspection, Bytes(Snapshot), 0x110000101);
+        Assert.Equal("0x110000101", result.SnapshotAddress);
+        Assert.Equal("0x100000101", result.StaticLookup?.UnslidVirtualAddress);
+        Assert.Equal("0x101", result.StaticLookup?.FileOffset);
+        Assert.False(result.LiveProcessVerified);
+        Assert.False(result.SnapshotOriginAuthenticated);
+    }
+
+    [Theory]
+    [InlineData(0x10ffffffffUL)]
+    [InlineData(0x10fffffffUL)]
+    [InlineData(0x110001000UL)]
+    public void RefusesAddressesOutsideTheCapturedTextRange(ulong address) =>
+        Assert.Null(CompanionRuntimeMapper.LookupAddress(Inspection, Bytes(Snapshot), address).StaticLookup);
+
+    [Fact]
+    public void AddressLookupRejectsAnUnmatchedSnapshot()
+    {
+        var snapshot = Snapshot;
+        snapshot["imageUUID"] = "aaaaaaaa-2222-3333-4444-555555555555";
+        Assert.Throws<InvalidDataException>(() => CompanionRuntimeMapper.LookupAddress(Inspection, Bytes(snapshot), 0x110000101));
+    }
+
+    [Fact]
     public void MapsOnlyMatchedTextAndRetainsUnverifiedStaticSemantics()
     {
         var report = CompanionRuntimeMapper.Map(Inspection, Bytes(Snapshot));

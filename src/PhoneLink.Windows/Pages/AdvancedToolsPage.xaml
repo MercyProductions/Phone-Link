@@ -61,6 +61,9 @@
                     <TextBox x:Name="FileOffsetBox" Header="Look up an offset in the entire file" PlaceholderText="0x204" MaxLength="64" />
                     <Button x:Name="FileOffsetButton" Content="Look up file offset" Click="FileOffsetButton_Click" IsEnabled="False" />
                     <TextBlock x:Name="FileOffsetText" TextWrapping="Wrap" FontFamily="Consolas" />
+                    <TextBox x:Name="VirtualAddressBox" Header="Unslid address in the selected image" PlaceholderText="0x100000204" MaxLength="18" />
+                    <Button x:Name="VirtualAddressButton" Content="Find file offset for address" Click="VirtualAddressButton_Click" IsEnabled="False" />
+                    <TextBlock x:Name="VirtualAddressText" TextWrapping="Wrap" FontFamily="Consolas" />
                     <ListView Height="360" ItemsSource="{x:Bind Rows}" SelectionMode="None">
                         <ListView.Header>
                             <TextBlock Text="Name / source     ·     unslid VA     ·     image-relative offset     ·     outer-file offset" TextWrapping="Wrap" />
@@ -80,7 +83,8 @@
                         TextWrapping="Wrap" />
                     <Button x:Name="RuntimeImportButton" Content="Import reviewed runtime JSON" Click="RuntimeImportButton_Click" IsEnabled="False" />
                     <TextBox x:Name="RuntimeSymbolFilter" Header="Optional exact symbol name (case-sensitive)" PlaceholderText="Blank = bounded preview; example: _phonelink_runtime_probe_marker" MaxLength="4096" TextChanged="RuntimeSymbolFilter_TextChanged" />
-                    <TextBlock Text="Set the filter before importing. Changing it clears the old mapping; import the reviewed JSON again to apply it." TextWrapping="Wrap" />
+                    <TextBox x:Name="RuntimeAddressBox" Header="Or look up one address from that snapshot’s capture" PlaceholderText="0x… (leave symbol name blank)" MaxLength="18" TextChanged="RuntimeSymbolFilter_TextChanged" />
+                    <TextBlock Text="Set at most one lookup field before importing. Changing either clears the previous mapping; import the reviewed JSON again to apply it." TextWrapping="Wrap" />
                     <TextBlock x:Name="RuntimeSummary" Text="No runtime snapshot displayed. Static JSON export never includes imported runtime addresses." TextWrapping="Wrap" />
                     <ListView Height="220" ItemsSource="{x:Bind RuntimeRows}" SelectionMode="None">
                         <ListView.ItemTemplate>

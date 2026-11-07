@@ -40,6 +40,34 @@ public sealed class MachOInspectorTests
         Assert.False(report.RuntimeAddressesAvailable);
     }
 
+    [Fact]
+    public async Task UnslidAddressResolvesAgainstTheChosenUniversalSlice()
+    {
+        using var stream = new MemoryStream(Fat(Thin(), Thin(0x1000007, 3), false));
+        var report = await MachOInspector.InspectAsync(stream);
+        Assert.Equal("0x1204", MachOVirtualAddressLookup.Lookup(report, 0, BaseAddress + 0x204).FileOffset);
+        var result = MachOVirtualAddressLookup.Lookup(report, 1, BaseAddress + 0x204);
+        Assert.Equal(MachOVirtualAddressOutcome.Mapped, result.Outcome);
+        Assert.Equal("0x2204", result.FileOffset);
+        Assert.Equal("0x204", result.SliceRelativeOffset);
+        Assert.Equal("__text", result.Section);
+        Assert.Equal("x86_64", result.Architecture);
+        Assert.Throws<ArgumentOutOfRangeException>(() => MachOVirtualAddressLookup.Lookup(report, 2, BaseAddress));
+    }
+
+    [Theory]
+    [InlineData(0x300, MachOVirtualAddressOutcome.NoFileBacking, null)]
+    [InlineData(0x1000, MachOVirtualAddressOutcome.NoFileBacking, "__bss")]
+    [InlineData(0x2000, MachOVirtualAddressOutcome.NotMapped, null)]
+    public async Task VirtualOnlyRangesDoNotInventOffsets(int displacement, MachOVirtualAddressOutcome expected, string? section)
+    {
+        using var stream = new MemoryStream(Thin());
+        var result = MachOVirtualAddressLookup.Lookup(await MachOInspector.InspectAsync(stream), 0, BaseAddress + (ulong)displacement);
+        Assert.Equal(expected, result.Outcome);
+        Assert.Equal(section, result.Section);
+        Assert.Null(result.FileOffset);
+    }
+
     [Theory]
     [InlineData("file-overlap", MachOFileOffsetOutcome.AmbiguousSegment)]
     [InlineData("virtual-overlap", MachOFileOffsetOutcome.AmbiguousSegment)]
@@ -57,9 +85,14 @@ public sealed class MachOInspectorTests
             case "high-vm": W32(bytes, 100, 1); break;
         }
         using var stream = new MemoryStream(bytes);
-        var result = MachOFileOffsetLookup.Lookup(await MachOInspector.InspectAsync(stream), 0x204);
+        var report = await MachOInspector.InspectAsync(stream);
+        var result = MachOFileOffsetLookup.Lookup(report, 0x204);
         Assert.Equal(expected, result.Outcome);
         Assert.Null(result.UnslidVirtualAddress);
+        var virtualResult = MachOVirtualAddressLookup.Lookup(report, 0, BaseAddress + 0x204);
+        Assert.Equal(expected == MachOFileOffsetOutcome.AmbiguousSegment
+            ? MachOVirtualAddressOutcome.AmbiguousSegment : MachOVirtualAddressOutcome.UnsupportedLayout, virtualResult.Outcome);
+        Assert.Null(virtualResult.FileOffset);
     }
 
     [Fact]

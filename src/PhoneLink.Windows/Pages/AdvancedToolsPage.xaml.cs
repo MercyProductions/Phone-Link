@@ -52,6 +52,7 @@ public sealed partial class AdvancedToolsPage : Page
         ClearSshClientCommand();
         SshProbeText.Text = "No current forwarded SSH observation.";
         ClearRuntimeForPrivacy();
+        RuntimeAddressBox.Text = string.Empty;
         SetLiveRuntime(false);
         _timer.Stop();
         var lifetime = _pageLifetime;
@@ -215,6 +216,7 @@ public sealed partial class AdvancedToolsPage : Page
         if (file is null || token.IsCancellationRequested || !_loaded || App.IsLocked) return;
         _inspection = null;
         FileOffsetBox.Text = FileOffsetText.Text = string.Empty;
+        VirtualAddressBox.Text = VirtualAddressText.Text = string.Empty;
         ImageSelector.Items.Clear();
         Rows.Clear();
         ImageSummary.Text = "Inspecting selected image…";
@@ -244,6 +246,8 @@ public sealed partial class AdvancedToolsPage : Page
     private void ImageSelector_SelectionChanged(object sender, SelectionChangedEventArgs args)
     {
         ClearRuntimeForPrivacy();
+        if (RuntimeAddressBox is not null) RuntimeAddressBox.Text = string.Empty;
+        if (VirtualAddressText is not null) VirtualAddressText.Text = string.Empty;
         Rows.Clear();
         var index = ImageSelector.SelectedIndex;
         if (_inspection is null || index < 0 || index >= _inspection.Images.Count) return;
@@ -284,6 +288,27 @@ public sealed partial class AdvancedToolsPage : Page
         FileOffsetText.Text = $"{result.FileOffset}: {detail}\nStatic file lookup, not a live address.";
     }
 
+    private void VirtualAddressButton_Click(object sender, RoutedEventArgs args)
+    {
+        var index = ImageSelector.SelectedIndex;
+        if (!_loaded || _busy || App.IsLocked || _inspection is not { } report || index < 0 || index >= report.Images.Count) return;
+        VirtualAddressText.Text = MachOFileOffsetLookup.TryParseHex(VirtualAddressBox.Text, out var address)
+            ? DescribeVirtualAddress(MachOVirtualAddressLookup.Lookup(report, index, address)) + "\nStatic lookup, not a live address."
+            : "Enter an unslid hexadecimal address such as 0x100000204.";
+    }
+
+    private static string DescribeVirtualAddress(MachOVirtualAddressResult result) => result.Outcome switch
+    {
+        MachOVirtualAddressOutcome.Mapped => $"{result.Architecture} · unslid VA {result.UnslidVirtualAddress} · " +
+            $"{result.Segment}{(result.Section is { } section ? "," + section : "")}\n" +
+            $"Outer-file offset {result.FileOffset} · slice offset {result.SliceRelativeOffset}",
+        MachOVirtualAddressOutcome.NoFileBacking => "The address is in a virtual range without corresponding file bytes.",
+        MachOVirtualAddressOutcome.AmbiguousSegment or MachOVirtualAddressOutcome.AmbiguousSection =>
+            "Ranges overlap; no file offset was inferred.",
+        MachOVirtualAddressOutcome.UnsupportedLayout => "The image layout does not support a reliable file mapping.",
+        _ => "No segment in the selected slice contains the address.",
+    };
+
     public void ClearRuntimeForPrivacy()
     {
         _runtimeEpoch++;
@@ -298,6 +323,7 @@ public sealed partial class AdvancedToolsPage : Page
         {
             _operationCancellation?.Cancel();
             FileOffsetBox.Text = FileOffsetText.Text = string.Empty;
+            VirtualAddressBox.Text = VirtualAddressText.Text = RuntimeAddressBox.Text = string.Empty;
             RuntimeSymbolFilter.Text = string.Empty;
             ClearRuntimeForPrivacy();
             SetLiveRuntime(false);
@@ -319,6 +345,13 @@ public sealed partial class AdvancedToolsPage : Page
         var epoch = _runtimeEpoch;
         var selectedImage = inspection.Images[index];
         var symbol = RuntimeSymbolFilter.Text.Length == 0 ? null : RuntimeSymbolFilter.Text;
+        var lookupAddress = RuntimeAddressBox.Text.Length != 0;
+        ulong address = 0;
+        if (lookupAddress && (symbol is not null || !MachOFileOffsetLookup.TryParseHex(RuntimeAddressBox.Text, out address)))
+        {
+            RuntimeSummary.Text = "Enter a 0x-prefixed snapshot address and leave the symbol name blank.";
+            return;
+        }
         var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(App.MainWindow.AppWindow.Id);
         picker.FileTypeFilter.Add(".json");
         var file = await picker.PickSingleFileAsync();
@@ -331,6 +364,15 @@ public sealed partial class AdvancedToolsPage : Page
             throw new InvalidDataException("Runtime snapshot exceeds 8 KiB.");
         var bytes = new byte[checked((int)stream.Length)];
         await stream.ReadExactlyAsync(bytes, deadline.Token);
+        if (lookupAddress)
+        {
+            var lookup = await Task.Run(() => CompanionRuntimeMapper.LookupAddress(inspection with { Images = [selectedImage] }, bytes, address), deadline.Token);
+            if (deadline.IsCancellationRequested || !_loaded || App.IsLocked || epoch != _runtimeEpoch) return;
+            RuntimeSummary.Text = $"Snapshot address {lookup.SnapshotAddress} · reported capture {lookup.ReportedCaptureTime:O}\n" +
+                (lookup.StaticLookup is { } result ? DescribeVirtualAddress(result) : "Address is outside the snapshot’s reported text range.") +
+                "\n" + lookup.Warning;
+            return;
+        }
         var mapping = await Task.Run(() => CompanionRuntimeMapper.Map(inspection with { Images = [selectedImage] }, bytes, symbol), deadline.Token);
         if (deadline.IsCancellationRequested || !_loaded || App.IsLocked || epoch != _runtimeEpoch) return;
         RuntimeSummary.Text = $"Reported capture: {mapping.ReportedCaptureTime:O}\nMatched {mapping.Architecture} · UUID {mapping.ImageUuid}. " +
@@ -427,6 +469,7 @@ public sealed partial class AdvancedToolsPage : Page
         DirectSshButton.IsEnabled = !_busy && !App.IsLocked && _tunnel is null;
         ExportButton.IsEnabled = !_busy && _inspection is not null;
         FileOffsetButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
+        VirtualAddressButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null && ImageSelector.SelectedIndex >= 0;
         RuntimeImportButton.IsEnabled = !_busy && !App.IsLocked && _inspection is not null;
         ImageSelector.IsEnabled = !_busy;
         RuntimeSymbolFilter.IsEnabled = !_busy;
