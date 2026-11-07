@@ -73,6 +73,7 @@ public sealed class AppServices : IAsyncDisposable
         _companionHealth.Get(deviceId.Value, activeSessionId, DateTimeOffset.UtcNow);
 
     public DiscoveryRecoveryResult? LastDiscoveryRecovery => Volatile.Read(ref _lastDiscoveryRecovery);
+    public AttachmentStagingRecoveryReport? LastAttachmentStagingRecovery { get; private set; }
 
     public async Task<LocalPairingServer> GetPairingServerAsync(CancellationToken cancellationToken)
     {
@@ -116,6 +117,13 @@ public sealed class AppServices : IAsyncDisposable
                 storageOptions.AttachmentDirectory,
                 protectedSecrets,
                 _attachmentStore);
+            using (var recoveryDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                recoveryDeadline.CancelAfter(TimeSpan.FromSeconds(4));
+                try { LastAttachmentStagingRecovery = await _attachmentManager.RecoverAbandonedStagingAsync(recoveryDeadline.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                { LastAttachmentStagingRecovery = null; }
+            }
             var server = new LocalPairingServer(certificate, identity, _deviceStore, deviceId);
             try
             {

@@ -254,6 +254,18 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         finally { _operations.Release(); }
     }
 
+    public async Task<AttachmentStagingRecoveryReport> RecoverAbandonedStagingAsync(CancellationToken cancellationToken)
+    {
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return await AttachmentStagingRecovery.RunAsync(_attachmentDirectory, _secretStore,
+                DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _operations.Release(); }
+    }
+
     private async Task<AttachmentControlResponse> HandleOfferAsync(
         ReceivedDeviceEnvelope received,
         CancellationToken cancellationToken)
@@ -282,14 +294,19 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         {
             throw new InvalidDataException("The attachment content hash must be SHA-256.");
         }
-        var temporaryPath = Path.Combine(_attachmentDirectory, $".{offer.AttachmentId:N}.incoming");
-        var stream = new FileStream(
-            temporaryPath,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None,
-            offer.ChunkSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var reservationPath = Path.Combine(_attachmentDirectory, $".{offer.AttachmentId:N}.incoming");
+        FileStream reservation;
+        try { reservation = new FileStream(reservationPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose); }
+        catch (IOException) when (File.Exists(reservationPath)) { return Rejected(offer.AttachmentId, "attachment.duplicate"); }
+        var keyId = Guid.NewGuid();
+        var temporaryPath = Path.Combine(_attachmentDirectory, AttachmentStagingRecovery.StagingName(offer.AttachmentId, keyId));
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.Delete,
+                offer.ChunkSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch { reservation.Dispose(); throw; }
         var key = RandomNumberGenerator.GetBytes(32);
         var nonce = RandomNumberGenerator.GetBytes(12);
         nonce.AsSpan(8, 4).Clear();
@@ -300,7 +317,7 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             offer,
             expectedHash,
             temporaryPath,
-            stream, key, nonce, header, _secretStore);
+            stream, reservation, key, nonce, header, _secretStore, AttachmentStagingRecovery.KeyName(offer.AttachmentId, keyId));
         try
         {
             await _secretStore.StoreAsync(state.KeyName, key, cancellationToken).ConfigureAwait(false);
@@ -346,7 +363,6 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         try
         {
             await state.Stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            await state.Stream.DisposeAsync().ConfigureAwait(false);
             var actualHash = state.Hash.GetHashAndReset();
             if (state.BytesReceived != state.Offer.ByteCount ||
                 !CryptographicOperations.FixedTimeEquals(actualHash, state.ExpectedHash))
@@ -386,6 +402,7 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         File.Move(state.TemporaryPath, destination, overwrite: false);
         try
         {
+            await state.Stream.DisposeAsync().ConfigureAwait(false);
             var now = DateTimeOffset.UtcNow;
             await _attachmentStore.SaveVerifiedAsync(
                     new ImportedAttachment(
@@ -444,7 +461,7 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             AttachmentOfferPayload offer,
             byte[] expectedHash,
             string temporaryPath,
-            FileStream stream, byte[] key, byte[] nonce, byte[] header, ISecretStore secretStore)
+            FileStream stream, FileStream reservation, byte[] key, byte[] nonce, byte[] header, ISecretStore secretStore, SecretName keyName)
         {
             OwnerDeviceId = ownerDeviceId;
             SessionId = sessionId;
@@ -452,10 +469,12 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
             ExpectedHash = expectedHash;
             TemporaryPath = temporaryPath;
             Stream = stream;
+            Reservation = reservation;
             Key = key;
             Nonce = nonce;
             Header = header;
             SecretStore = secretStore;
+            KeyName = keyName;
         }
 
         public PhoneLink.Domain.Devices.DeviceId OwnerDeviceId { get; }
@@ -464,12 +483,13 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
         public byte[] ExpectedHash { get; }
         public string TemporaryPath { get; }
         public FileStream Stream { get; }
+        private FileStream Reservation { get; }
         public byte[] Key { get; }
         public byte[] Nonce { get; }
         public byte[] Header { get; }
         public ISecretStore SecretStore { get; }
         public bool Cataloged { get; set; }
-        public SecretName KeyName { get; } = new($"attachment/file-key-v2/{Guid.NewGuid():D}");
+        public SecretName KeyName { get; }
         public IncrementalHash Hash { get; } = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public long BytesReceived { get; set; }
@@ -482,16 +502,19 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
                 return;
             }
             _disposed = true;
-            await Stream.DisposeAsync().ConfigureAwait(false);
-            Hash.Dispose();
-            Gate.Dispose();
-            CryptographicOperations.ZeroMemory(ExpectedHash);
-            CryptographicOperations.ZeroMemory(Key);
-            if (!Cataloged)
-                await SecretStore.DeleteAsync(KeyName, CancellationToken.None).ConfigureAwait(false);
-            if (File.Exists(TemporaryPath))
+            try
             {
+                await Stream.DisposeAsync().ConfigureAwait(false);
+                if (!Cataloged) await SecretStore.DeleteAsync(KeyName, CancellationToken.None).ConfigureAwait(false);
                 File.Delete(TemporaryPath);
+            }
+            finally
+            {
+                Reservation.Dispose();
+                Hash.Dispose();
+                Gate.Dispose();
+                CryptographicOperations.ZeroMemory(ExpectedHash);
+                CryptographicOperations.ZeroMemory(Key);
             }
         }
     }

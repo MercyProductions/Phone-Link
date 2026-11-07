@@ -50,6 +50,8 @@
             <TextBlock x:Name="CrashAnalysisText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             <HyperlinkButton Content="Apple crash-report guidance" NavigateUri="https://developer.apple.com/documentation/xcode/diagnosing-issues-using-crash-reports-and-device-logs" HorizontalAlignment="Left" />
             <TextBlock x:Name="RecoveryText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="StagingRecoveryText" Text="No transfer-staging cleanup result available." TextWrapping="Wrap"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock Text="Background maintenance checks for missing app discovery every 30 seconds while eligible. After three failed recovery attempts, automatic retries pause until a network-address change, successful manual check, or app restart. Healthy registrations and sessions are not restarted. Local registration recovery does not prove an iPhone connection."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

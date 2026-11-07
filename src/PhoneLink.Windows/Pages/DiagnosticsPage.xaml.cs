@@ -335,6 +335,10 @@ public sealed partial class DiagnosticsPage : Page
             SnapshotText.Text = $"{trigger}: {snapshot.CapturedAt.LocalDateTime:g}. {snapshot.UnavailableProbes.Count} unavailable probe(s). No phone changes made.";
             if (AppServices.Current.LastDiscoveryRecovery is { } recovery)
                 RecoveryText.Text = $"Last app discovery recovery this run: {recovery.Outcome}. {recovery.Summary} This is separate from the copied read-only snapshot.";
+            StagingRecoveryText.Text = AppServices.Current.LastAttachmentStagingRecovery is { } staging
+                ? $"Startup transfer cleanup: {staging.Removed} expired temporary transfer(s) removed, {staging.Skipped} skipped, {staging.Unavailable} unavailable. " +
+                    (staging.LimitReached ? "Scan limit reached. " : string.Empty) + "Completed imports and your iPhone were not changed."
+                : "No completed transfer-staging cleanup result available.";
             CopyButton.IsEnabled = true;
         }
         catch (OperationCanceledException)

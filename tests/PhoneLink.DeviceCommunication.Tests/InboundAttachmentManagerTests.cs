@@ -24,6 +24,64 @@ public sealed class InboundAttachmentManagerTests : IDisposable
         "PhoneLink.AttachmentTests",
         Guid.NewGuid().ToString("N"));
 
+    [Fact]
+    public async Task StartupRecoveryRemovesOnlyExpiredUnclaimedV3StagesAndTheirKeys()
+    {
+        var secrets = new InMemorySecretStore();
+        await using var manager = new InboundAttachmentManager(_directory, secrets, new InMemoryAttachmentStore());
+        var now = DateTimeOffset.UtcNow;
+        var expired = await Stage(now.AddDays(-2));
+        var fresh = await Stage(now);
+        var completed = await Stage(now.AddDays(-2));
+        var active = await Stage(now.AddDays(-2));
+        var final = Path.Combine(_directory, $"{completed.Id:N}.pla");
+        await File.WriteAllBytesAsync(final, [1]);
+        var legacy = Path.Combine(_directory, $".{Guid.NewGuid():N}.incoming");
+        await File.WriteAllBytesAsync(legacy, [2]);
+        File.SetLastWriteTimeUtc(legacy, now.UtcDateTime.AddDays(-2));
+        using var activeClaim = new FileStream(active.Path, FileMode.Open, FileAccess.Write, FileShare.Delete);
+
+        var result = await manager.RecoverAbandonedStagingAsync(CancellationToken.None);
+        Assert.Equal(1, result.Removed);
+        Assert.Equal(2, result.Skipped);
+        Assert.Equal(1, result.Unavailable);
+        Assert.False(result.LimitReached);
+        Assert.False(File.Exists(expired.Path));
+        Assert.True(File.Exists(final));
+        Assert.True(File.Exists(legacy));
+        Assert.True(File.Exists(fresh.Path));
+        Assert.True(File.Exists(completed.Path));
+        Assert.True(File.Exists(active.Path));
+        Assert.Equal(3, secrets.Count);
+        using var removedKey = await secrets.RetrieveAsync(expired.Key, CancellationToken.None);
+        Assert.Null(removedKey);
+
+        async Task<(Guid Id, string Path, SecretName Key)> Stage(DateTimeOffset updated)
+        {
+            var id = Guid.NewGuid();
+            var keyId = Guid.NewGuid();
+            var path = Path.Combine(_directory, AttachmentStagingRecovery.StagingName(id, keyId));
+            var key = AttachmentStagingRecovery.KeyName(id, keyId);
+            await File.WriteAllBytesAsync(path, [3]);
+            File.SetLastWriteTimeUtc(path, updated.UtcDateTime);
+            await secrets.StoreAsync(key, new byte[32], CancellationToken.None);
+            return (id, path, key);
+        }
+    }
+
+    [Fact]
+    public async Task TwoManagersDoNotAcceptTheSameAttachmentIdAtOnce()
+    {
+        var secrets = new InMemorySecretStore();
+        await using var first = new InboundAttachmentManager(_directory, secrets, new InMemoryAttachmentStore());
+        await using var second = new InboundAttachmentManager(_directory, secrets, new InMemoryAttachmentStore());
+        var offer = CreateOffer();
+        var frame = Envelope(DeviceId.New(), Guid.NewGuid(), "attachment.offer", offer);
+        Assert.True(Assert.IsType<AttachmentAcceptPayload>((await first.HandleEnvelopeAsync(frame, CancellationToken.None))!.Payload).Accepted);
+        Assert.False(Assert.IsType<AttachmentAcceptPayload>((await second.HandleEnvelopeAsync(frame, CancellationToken.None))!.Payload).Accepted);
+        Assert.Equal(1, secrets.Count);
+    }
+
     [Theory]
     [InlineData("image/jpeg", "selected-photo.jpg")]
     [InlineData("video/mp4", "selected-video.mp4")]
@@ -164,10 +222,11 @@ public sealed class InboundAttachmentManagerTests : IDisposable
         var session = Guid.NewGuid();
         var offer = CreateOffer();
         await manager.HandleEnvelopeAsync(Envelope(owner, session, "attachment.offer", offer), CancellationToken.None);
-        Assert.Single(Directory.GetFiles(_directory));
+        Assert.Single(Directory.GetFiles(_directory, "*.incoming-v3"));
+        Assert.Single(Directory.GetFiles(_directory, "*.incoming"));
         Assert.Equal(1, secrets.Count);
         await manager.PruneSessionsAsync((device, id) => device == owner && id == session);
-        Assert.Single(Directory.GetFiles(_directory));
+        Assert.Equal(2, Directory.GetFiles(_directory).Length);
         await manager.PruneSessionsAsync((_, _) => false);
         Assert.Empty(Directory.GetFiles(_directory));
         Assert.Equal(0, secrets.Count);
