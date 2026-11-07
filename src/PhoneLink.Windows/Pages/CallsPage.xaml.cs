@@ -13,6 +13,7 @@ public sealed partial class CallsPage : Page, IDisposable
     private CancellationTokenSource? _transportCancellation;
     private CancellationTokenSource? _dialCancellation;
     private CancellationTokenSource? _targetsCancellation;
+    private CancellationTokenSource? _historyCancellation;
     private long _epoch;
     private bool _loaded;
 
@@ -22,6 +23,8 @@ public sealed partial class CallsPage : Page, IDisposable
     }
 
     public ObservableCollection<AppleBluetoothCapabilityListItem> Capabilities { get; } = [];
+    public ObservableCollection<ClassicBluetoothPeer> HistoryPeers { get; } = [];
+    public ObservableCollection<BluetoothCallPreview> History { get; } = [];
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
@@ -34,6 +37,7 @@ public sealed partial class CallsPage : Page, IDisposable
     {
         if (locked) ClearPrivateState();
         UpdateDialControls();
+        UpdateHistoryControls();
     }
 
     private void ClearPrivateState()
@@ -43,6 +47,7 @@ public sealed partial class CallsPage : Page, IDisposable
         _targetsCancellation?.Cancel();
         _transportCancellation?.Cancel();
         _probeCancellation?.Cancel();
+        ClearHistory(clearPeers: true);
         DialTargetSelector.Items.Clear();
         PhoneNumberBox.Text = string.Empty;
         CallResultBar.IsOpen = false;
@@ -121,6 +126,74 @@ public sealed partial class CallsPage : Page, IDisposable
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async void ListHistoryPeersButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || App.IsLocked || _historyCancellation is not null) return;
+        ClearHistory(clearPeers: true);
+        await RunHistoryAsync(async token =>
+        {
+            var peers = await WindowsClassicPhoneProfiles.ListPairedAsync(token);
+            if (!_loaded || App.IsLocked || token.IsCancellationRequested) return;
+            foreach (var peer in peers) HistoryPeers.Add(peer);
+            HistoryStatus.Text = peers.Count == 0 ? "No paired Classic Bluetooth devices found." : "Select your iPhone. No call history requested.";
+        }, "Listing paired Bluetooth devices…");
+    }
+
+    private void HistoryPeerBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    { if (_loaded) ClearHistory(clearPeers: false); }
+
+    private async void ReadHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || App.IsLocked || _historyCancellation is not null || HistoryPeerBox.SelectedItem is not ClassicBluetoothPeer peer) return;
+        History.Clear();
+        await RunHistoryAsync(async token =>
+        {
+            var observation = await WindowsClassicPhoneProfiles.ReadCallHistoryAsync(peer, token);
+            if (!_loaded || App.IsLocked || token.IsCancellationRequested) return;
+            HistoryStatus.Text = observation.Status;
+            foreach (var entry in observation.Items) History.Add(entry);
+        }, "Requesting the phone’s permitted combined call log…");
+    }
+
+    private async Task RunHistoryAsync(Func<CancellationToken, Task> action, string progress)
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(23));
+        _historyCancellation = cancellation;
+        UpdateHistoryControls();
+        HistoryStatus.Text = progress;
+        try { await action(cancellation.Token); }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (_loaded && !App.IsLocked && ReferenceEquals(_historyCancellation, cancellation))
+                HistoryStatus.Text = "Windows could not complete the Bluetooth check. No call was placed.";
+        }
+        finally
+        {
+            if (ReferenceEquals(_historyCancellation, cancellation))
+            {
+                _historyCancellation = null;
+                UpdateHistoryControls();
+            }
+        }
+    }
+
+    private void ClearHistory(bool clearPeers)
+    {
+        _historyCancellation?.Cancel();
+        _historyCancellation = null;
+        History.Clear();
+        if (clearPeers) HistoryPeers.Clear();
+        HistoryStatus.Text = "No call history requested.";
+        UpdateHistoryControls();
+    }
+
+    private void UpdateHistoryControls()
+    {
+        var ready = _loaded && !App.IsLocked && _historyCancellation is null;
+        ListHistoryPeersButton.IsEnabled = ready;
+        ReadHistoryButton.IsEnabled = ready && HistoryPeerBox.SelectedItem is ClassicBluetoothPeer;
+    }
 
     private void TransportSetupButton_Click(object sender, RoutedEventArgs e)
     {

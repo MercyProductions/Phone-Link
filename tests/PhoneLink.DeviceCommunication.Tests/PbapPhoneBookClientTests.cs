@@ -45,4 +45,33 @@ public sealed class PbapPhoneBookClientTests
         using var input = new MemoryStream(Encoding.UTF8.GetBytes(value));
         Assert.Throws<InvalidDataException>(() => PbapPhoneBookClient.Parse(input));
     }
+
+    [Fact]
+    public async Task ReadsCombinedCallLogWithoutRequestingMissedCallReset()
+    {
+        var vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Test Caller\r\nTEL:+1555\r\nX-IRMC-CALL-DATETIME;TYPE=MISSED:20261107T120000\r\nEND:VCARD\r\n"u8.ToArray();
+        await using var input = new MemoryStream([.. ConnectResponse, 0xA0, 0, (byte)(vcard.Length + 6),
+            0x49, 0, (byte)(vcard.Length + 3), .. vcard, 0xA0, 0, 3]);
+        await using var output = new MemoryStream();
+        var row = Assert.Single(await PbapPhoneBookClient.ReadCallHistoryAsync(input, output, true, CancellationToken.None));
+        Assert.Equal("Missed", row.Direction);
+        Assert.Equal("2026-11-07 12:00:00 phone time", row.PhoneTime);
+        Assert.Equal("+1555", row.Number);
+        var wire = output.ToArray();
+        Assert.True(wire.AsSpan().IndexOf(Encoding.BigEndianUnicode.GetBytes("telecom/cch.vcf\0")) >= 0);
+        Assert.True(wire.AsSpan().IndexOf(new byte[] { 0x4C, 0, 20, 0x04, 2, 0, 30, 0x06, 8, 0, 0, 0, 0, 0x10, 0, 0, 0x87, 0x07, 1, 1 }) >= 0);
+    }
+
+    [Theory]
+    [InlineData("RECEIVED", "", "Received")]
+    [InlineData("DIALED", "not-a-time", "Dialed")]
+    [InlineData("UNKNOWN", "20260230T010101", "Direction unavailable")]
+    public void DoesNotGuessMissingOrInvalidCallTime(string kind, string timestamp, string direction)
+    {
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes($"BEGIN:VCARD\nVERSION:3.0\nX-IRMC-CALL-DATETIME;TYPE={kind}:{timestamp}\nEND:VCARD"));
+        var row = Assert.Single(PbapPhoneBookClient.ParseCallHistory(input));
+        Assert.Equal(direction, row.Direction);
+        Assert.Equal("Time unavailable", row.PhoneTime);
+        Assert.Equal("Number unavailable", row.Number);
+    }
 }

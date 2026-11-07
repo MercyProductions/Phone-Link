@@ -15,6 +15,7 @@ public sealed class ClassicBluetoothPeer(string displayName, string deviceId)
 }
 public sealed record MapInboxObservation(bool Completed, string Status, IReadOnlyList<MapInboxItem> Items);
 public sealed record BluetoothPhoneBookObservation(bool Completed, string Status, IReadOnlyList<BluetoothContactPreview> Items);
+public sealed record BluetoothCallHistoryObservation(bool Completed, string Status, IReadOnlyList<BluetoothCallPreview> Items);
 public sealed record ClassicPhoneProfileObservation(int PairedPeers, int CheckedPeers, int PeersWithMap, int PeersWithPbap, int UnavailablePeers);
 
 public static class WindowsClassicPhoneProfiles
@@ -110,6 +111,24 @@ public static class WindowsClassicPhoneProfiles
 
     public static async Task<BluetoothPhoneBookObservation> ReadPhoneBookAsync(ClassicBluetoothPeer selected, ushort startOffset, CancellationToken token)
     {
+        var result = await ReadPbapAsync(selected, (input, output, features, bounded) =>
+            PbapPhoneBookClient.ReadAsync(input, output, startOffset, features, bounded), token).ConfigureAwait(false);
+        return new(result.Completed, result.Completed
+            ? $"Received {result.Items.Count} permitted Bluetooth contact(s). Nothing was saved or merged."
+            : result.Status, result.Items);
+    }
+
+    public static async Task<BluetoothCallHistoryObservation> ReadCallHistoryAsync(ClassicBluetoothPeer selected, CancellationToken token)
+    {
+        var result = await ReadPbapAsync(selected, PbapPhoneBookClient.ReadCallHistoryAsync, token).ConfigureAwait(false);
+        return new(result.Completed, result.Completed
+            ? $"Received {result.Items.Count} permitted call-history entry(s). Nothing was saved."
+            : result.Status, result.Items);
+    }
+
+    private static async Task<(bool Completed, string Status, IReadOnlyList<T> Items)> ReadPbapAsync<T>(ClassicBluetoothPeer selected,
+        Func<Stream, Stream, bool, CancellationToken, Task<IReadOnlyList<T>>> read, CancellationToken token)
+    {
         ArgumentNullException.ThrowIfNull(selected);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
@@ -133,21 +152,21 @@ public static class WindowsClassicPhoneProfiles
                     SocketProtectionLevel.BluetoothEncryptionWithAuthentication).AsTask(bounded).ConfigureAwait(false);
                 using var input = socket.InputStream.AsStreamForRead();
                 using var output = socket.OutputStream.AsStreamForWrite();
-                var items = await PbapPhoneBookClient.ReadAsync(input, output, startOffset, attributes.ContainsKey(0x0317), bounded).ConfigureAwait(false);
-                return new(true, $"Received {items.Count} permitted Bluetooth contact(s). Nothing was saved or merged.", items);
+                var items = await read(input, output, attributes.ContainsKey(0x0317), bounded).ConfigureAwait(false);
+                return (true, string.Empty, items);
             }
             finally { foreach (var service in result.Services) service.Dispose(); }
         }
         catch (PhoneObexRejectedException exception) when (!token.IsCancellationRequested)
-        { return Failure($"The phone-book server rejected the read (OBEX 0x{exception.Code:X2}). Check contact sharing for this Bluetooth pairing."); }
+        { return Failure($"The PBAP server rejected the read (OBEX 0x{exception.Code:X2}). The requested data may not be shared on this pairing."); }
         catch (UnauthorizedAccessException) when (!token.IsCancellationRequested)
         { return Failure("Windows denied access to this Bluetooth phone-book service."); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
-        { return Failure("The phone-book read timed out. Contact availability is unknown."); }
+        { return Failure("The PBAP read timed out. Data availability is unknown."); }
         catch (Exception exception) when (!token.IsCancellationRequested && exception is IOException or InvalidDataException or System.Text.DecoderFallbackException)
-        { return Failure("The PBAP channel did not return a complete supported contact page."); }
+        { return Failure("The PBAP channel did not return a complete supported page."); }
 
-        static BluetoothPhoneBookObservation Failure(string reason) => new(false, reason, []);
+        static (bool, string, IReadOnlyList<T>) Failure(string reason) => (false, reason, []);
     }
 
     private static bool ReadConnectFeatures(byte[] data) => data[0] == 0x0A && (BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(1)) & (1u << 19)) != 0;
