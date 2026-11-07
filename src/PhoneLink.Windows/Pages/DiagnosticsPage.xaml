@@ -42,8 +42,8 @@
             <Button x:Name="MotionImportButton" Content="Import selected motion-summary JSON" Click="MotionImportButton_Click" HorizontalAlignment="Left" />
             <Button x:Name="MotionCopyButton" Content="Copy imported summary with source warning" Click="MotionCopyButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
             <TextBlock x:Name="MotionReportText" Text="No imported motion summary displayed. Imported files are not authenticated live phone data." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-            <TextBlock Text="Crash-report analysis" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="Select a report you exported from iPhone Analytics Data. Only type-309 JSON crash reports up to 4 MiB are supported. Analysis stays local and does not establish a hardware fault. Other report types, including panic and Jetsam reports, are not yet supported. The original is never uploaded or changed."
+            <TextBlock Text="Crash and Jetsam report analysis" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="Select a report you exported from iPhone Analytics Data. Supports type-309 JSON crashes and type-298 Jetsam reports with a process table, up to 4 MiB. Analysis stays local and does not establish a hardware fault. Panic and other report types are not supported. The original is never uploaded or changed."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button x:Name="CrashImportButton" Content="Analyze selected .ips report" Click="CrashImportButton_Click" />

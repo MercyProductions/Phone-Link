@@ -5,11 +5,66 @@ namespace PhoneLink.Application.Tests;
 
 public sealed class IphoneCrashReportAnalyzerTests
 {
+    private const string Jetsam = """{"bug_type":"298","timestamp":"PRIVATE-TIMESTAMP"}""";
+
     private static async Task<IphoneCrashAnalysis> AnalyzeAsync(string body, string header = "{\"bug_type\":\"309\"}")
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(header + "\n" + body));
         return await IphoneCrashReportAnalyzer.AnalyzeAsync(stream);
     }
+
+    [Theory]
+    [InlineData("per-process-limit", "Jetsam: process memory limit")]
+    [InlineData("vm-pageshortage", "Jetsam: system memory pressure")]
+    [InlineData("vnode-limit", "Jetsam: system open-file pressure")]
+    [InlineData("highwater", "Jetsam: daemon memory threshold")]
+    [InlineData("fc-thrashing", "Jetsam: file-cache pressure")]
+    [InlineData("jettisoned", "Jetsam: termination reported; cause unspecified")]
+    [InlineData("PRIVATE-UNKNOWN-REASON", "Jetsam report; termination reason unresolved")]
+    public async Task JetsamClassifiesOnlyKnownReasonsAndRedactsOriginalFields(string reason, string expected)
+    {
+        var result = await AnalyzeAsync($$$"""
+            {"incident":"PRIVATE-INCIDENT","largestProcess":"PRIVATE-LARGEST","memoryStatus":{"pageSize":16384},
+             "processes":[{"name":"PRIVATE-LARGEST","rpages":999999},{"name":"PRIVATE-PROCESS","reason":"{{{reason}}}","rpages":8}]}
+            """, Jetsam);
+        Assert.Equal(expected, result.Category);
+        Assert.Contains("131,072 bytes", result.Evidence);
+        Assert.DoesNotContain("PRIVATE-", result.ToRedactedText());
+        Assert.Contains("not necessarily the one terminated", result.NextStep);
+        Assert.Contains("not the phone's current state", result.NextStep);
+    }
+
+    [Theory]
+    [InlineData("""{"processes":[{"name":"private","rpages":8}]}""", "No process")]
+    [InlineData("""{"processes":[{"reason":"highwater"},{"reason":"vm-pageshortage"}]}""", "Multiple processes")]
+    [InlineData("""{"processes":[{"reason":null}]}""", "unknown/unrecognized")]
+    public async Task JetsamDoesNotGuessTheReasonOrSelectAmongMultipleProcesses(string report, string evidence)
+    {
+        var result = await AnalyzeAsync(report, Jetsam);
+        Assert.Equal("Jetsam report; termination reason unresolved", result.Category);
+        Assert.Contains(evidence, result.Evidence);
+    }
+
+    [Theory]
+    [InlineData("0", "8")]
+    [InlineData("16383", "8")]
+    [InlineData("\"16384\"", "8")]
+    [InlineData("16384", "-1")]
+    [InlineData("16384", "18446744073709551615")]
+    public async Task JetsamDoesNotComputeMemoryFromInvalidOrOverflowingPageValues(string pageSize, string pages)
+    {
+        var result = await AnalyzeAsync($$$"""
+            {"memoryStatus":{"pageSize":{{{pageSize}}}},"processes":[{"reason":"highwater","rpages":{{{pages}}}}]}
+            """, Jetsam);
+        Assert.Contains("No validated page-to-byte calculation", result.Evidence);
+    }
+
+    [Theory]
+    [InlineData("""{"processes":[]}""")]
+    [InlineData("""{"processes":[1]}""")]
+    [InlineData("""{"processes":[{"reason":"highwater","reason":"jettisoned"}]}""")]
+    public async Task MalformedJetsamProcessTablesAreRejected(string report) =>
+        await Assert.ThrowsAsync<InvalidDataException>(() => AnalyzeAsync(report, Jetsam));
 
     [Theory]
     [InlineData("EXC_BAD_ACCESS", "Invalid memory access signature")]

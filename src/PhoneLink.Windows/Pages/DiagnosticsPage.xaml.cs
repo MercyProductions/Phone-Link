@@ -311,7 +311,7 @@ public sealed partial class DiagnosticsPage : Page
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             if (_loaded && !App.IsLocked)
-                CrashAnalysisText.Text = "Analysis not completed. Choose a complete type-309 JSON .ips report up to 4 MiB. Malformed, ambiguous, oversized and other report formats are not supported. No repair was attempted and the original was not changed.";
+                CrashAnalysisText.Text = "Analysis not completed. Choose a complete type-309 crash or supported type-298 Jetsam JSON .ips report up to 4 MiB. Malformed, ambiguous, oversized and other report formats are not supported. No repair was attempted and the original was not changed.";
         }
         finally
         {
