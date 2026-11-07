@@ -10,12 +10,15 @@ public interface IRemoteAudioConnection : IDisposable
     Task<RemoteAudioOpenOutcome> OpenAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>Owns one explicitly selected connection and one enable/open attempt. Never retries or reconnects.</summary>
+/// <summary>Owns one explicitly selected connection and one enable/open attempt.</summary>
 public sealed class RemoteAudioSession(IRemoteAudioConnection connection) : IDisposable
 {
     private readonly IRemoteAudioConnection _connection = connection ?? throw new ArgumentNullException(nameof(connection));
     private int _attempted;
     private int _disposed;
+    private int _openSucceeded;
+    private int _wasOpened;
+    public bool WasOpened => Volatile.Read(ref _wasOpened) != 0;
 
     public RemoteAudioState State
     {
@@ -27,6 +30,8 @@ public sealed class RemoteAudioSession(IRemoteAudioConnection connection) : IDis
             {
                 var state = _connection.State;
                 release = Volatile.Read(ref _disposed);
+                if (release == 0 && state == RemoteAudioState.Opened && Volatile.Read(ref _openSucceeded) != 0)
+                    Volatile.Write(ref _wasOpened, 1);
                 return release == 0 ? state : release == 2 ? RemoteAudioState.Released : RemoteAudioState.Unknown;
             }
             catch (Exception exception) when (exception is not OutOfMemoryException) { return RemoteAudioState.Unknown; }
@@ -47,6 +52,11 @@ public sealed class RemoteAudioSession(IRemoteAudioConnection connection) : IDis
             var outcome = await _connection.OpenAsync(cancellationToken);
             CheckContext();
             if (outcome != RemoteAudioOpenOutcome.Opened) Dispose();
+            else
+            {
+                Volatile.Write(ref _openSucceeded, 1);
+                _ = State;
+            }
             return outcome;
         }
         catch

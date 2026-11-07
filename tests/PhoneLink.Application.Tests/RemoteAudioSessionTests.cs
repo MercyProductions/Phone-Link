@@ -184,6 +184,109 @@ public sealed class RemoteAudioSessionTests
         Assert.Equal(RemoteAudioState.Released, session.State);
     }
 
+    [Fact]
+    public async Task RecoveryReleasesBeforeCreatingOneReplacementAndNeverRetriesIt()
+    {
+        var original = new FakeConnection();
+        using var previous = new RemoteAudioSession(original);
+        var fresh = new FakeConnection();
+        var attempts = 0;
+        var recovery = new RemoteAudioRecovery(() =>
+        {
+            Assert.Equal(RemoteAudioState.Released, previous.State);
+            attempts++;
+            return new(fresh);
+        }, TimeSpan.Zero);
+        await previous.OpenAsync(() => true, CancellationToken.None);
+        original.ReportedState = RemoteAudioState.Closed;
+        var result = await recovery.TryRecoverAsync(previous, () => true, CancellationToken.None);
+        using var replacement = Assert.IsType<RemoteAudioSession>(result.Session);
+        Assert.Equal(RemoteAudioRecoveryOutcome.Reopened, result.Outcome);
+        Assert.Equal(["enable", "open"], fresh.Calls);
+        fresh.ReportedState = RemoteAudioState.Closed;
+        Assert.Equal(RemoteAudioRecoveryOutcome.NotEligible,
+            (await recovery.TryRecoverAsync(replacement, () => true, CancellationToken.None)).Outcome);
+        Assert.Equal(1, attempts);
+    }
+
+    [Theory]
+    [InlineData(RemoteAudioState.Unknown, true)]
+    [InlineData(RemoteAudioState.Opened, true)]
+    [InlineData(RemoteAudioState.Closed, false)]
+    public async Task RecoveryRequiresConfirmedOpenThenDefiniteClosure(RemoteAudioState current, bool openFirst)
+    {
+        var original = new FakeConnection();
+        using var previous = new RemoteAudioSession(original);
+        var recovery = new RemoteAudioRecovery(() => throw new InvalidOperationException("Unexpected recovery"), TimeSpan.Zero);
+        if (openFirst) await previous.OpenAsync(() => true, CancellationToken.None);
+        original.ReportedState = current;
+        Assert.Equal(RemoteAudioRecoveryOutcome.NotEligible,
+            (await recovery.TryRecoverAsync(previous, () => true, CancellationToken.None)).Outcome);
+        Assert.Equal(0, original.Releases);
+    }
+
+    [Fact]
+    public async Task RecoveryDoesNotReplaceAReceiverWhoseReleaseFailed()
+    {
+        var original = new FakeConnection { ReleaseFails = true };
+        using var previous = new RemoteAudioSession(original);
+        await previous.OpenAsync(() => true, CancellationToken.None);
+        original.ReportedState = RemoteAudioState.Closed;
+        var recovery = new RemoteAudioRecovery(() => throw new InvalidOperationException("Unexpected replacement"), TimeSpan.Zero);
+        Assert.Equal(RemoteAudioRecoveryOutcome.CleanupUnverified,
+            (await recovery.TryRecoverAsync(previous, () => true, CancellationToken.None)).Outcome);
+        Assert.Equal(1, original.Releases);
+    }
+
+    [Fact]
+    public async Task StopDuringRecoveryDelayPreventsCreatingANewReceiver()
+    {
+        var original = new FakeConnection();
+        using var previous = new RemoteAudioSession(original);
+        using var cancellation = new CancellationTokenSource();
+        await previous.OpenAsync(() => true, CancellationToken.None);
+        original.ReportedState = RemoteAudioState.Closed;
+        var recovery = new RemoteAudioRecovery(() => throw new InvalidOperationException("Unexpected replacement"), TimeSpan.FromSeconds(20));
+        var pending = recovery.TryRecoverAsync(previous, () => true, cancellation.Token);
+        Assert.Equal(1, original.Releases);
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+    }
+
+    [Fact]
+    public async Task CancelledRecoveryReleasesTheReplacementAndCannotReportLateSuccess()
+    {
+        var original = new FakeConnection();
+        using var previous = new RemoteAudioSession(original);
+        using var cancellation = new CancellationTokenSource();
+        var nativeOpen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fresh = new FakeConnection { OpenAction = () => nativeOpen.Task };
+        await previous.OpenAsync(() => true, CancellationToken.None);
+        original.ReportedState = RemoteAudioState.Closed;
+        var recovery = new RemoteAudioRecovery(() => new(fresh), TimeSpan.Zero);
+        var pending = recovery.TryRecoverAsync(previous, () => true, cancellation.Token);
+        await cancellation.CancelAsync();
+        nativeOpen.SetResult();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.Equal(1, fresh.Releases);
+    }
+
+    [Fact]
+    public async Task DeniedReplacementDoesNotReturnAnActiveSession()
+    {
+        var original = new FakeConnection();
+        using var previous = new RemoteAudioSession(original);
+        await previous.OpenAsync(() => true, CancellationToken.None);
+        original.ReportedState = RemoteAudioState.Closed;
+        var fresh = new FakeConnection { Outcome = RemoteAudioOpenOutcome.DeniedBySystem };
+        var recovery = new RemoteAudioRecovery(() => new(fresh), TimeSpan.Zero);
+        var result = await recovery.TryRecoverAsync(previous, () => true, CancellationToken.None);
+        Assert.Equal(RemoteAudioRecoveryOutcome.ReopenNotVerified, result.Outcome);
+        Assert.Equal(RemoteAudioOpenOutcome.DeniedBySystem, result.OpenOutcome);
+        Assert.Null(result.Session);
+        Assert.Equal(1, fresh.Releases);
+    }
+
     private sealed class FakeConnection : IRemoteAudioConnection
     {
         public List<string> Calls { get; } = [];
@@ -194,7 +297,8 @@ public sealed class RemoteAudioSessionTests
         public Func<Task>? EnableAction { get; set; }
         public Func<Task>? OpenAction { get; set; }
         public Action? ReleaseAction { get; init; }
-        public RemoteAudioState State => StateFails ? throw new InvalidOperationException() : RemoteAudioState.Opened;
+        public RemoteAudioState ReportedState { get; set; } = RemoteAudioState.Opened;
+        public RemoteAudioState State => StateFails ? throw new InvalidOperationException() : ReportedState;
         public async Task EnableAsync(CancellationToken cancellationToken)
         { Calls.Add("enable"); if (EnableAction is { } action) await action(); }
         public async Task<RemoteAudioOpenOutcome> OpenAsync(CancellationToken cancellationToken)

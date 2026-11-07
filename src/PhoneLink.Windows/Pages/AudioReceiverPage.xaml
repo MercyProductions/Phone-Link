@@ -19,7 +19,7 @@
             <ProgressRing x:Name="BusyRing" IsActive="False" Visibility="Collapsed" Width="24" Height="24" HorizontalAlignment="Left" />
             <TextBlock x:Name="StateText" Text="No audio receiver is enabled by this page." TextWrapping="Wrap" />
             <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" />
-            <TextBlock Text="An Opened connection is not proof that samples are arriving or sound is audible. Start playback and verify sound yourself. This page releases its connection when you stop, navigate away, hide the app, or lock it. Other audio receiver apps may still hold connections; stopping here does not stop playback on the phone. No automatic reconnect or retry is performed."
+            <TextBlock Text="An Opened connection is not proof that samples are arriving or sound is audible. Start playback and verify sound yourself. This page releases its connection when you stop, navigate away, hide the app, or lock it. Other audio receiver apps may still hold connections; stopping here does not stop playback on the phone. One-time reconnect is off unless you opt in when opening the receiver."
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <HyperlinkButton Content="Microsoft remote Bluetooth audio guide" NavigateUri="https://learn.microsoft.com/en-us/windows/apps/develop/media-playback/enable-remote-audio-playback" HorizontalAlignment="Left" />
         </StackPanel>
