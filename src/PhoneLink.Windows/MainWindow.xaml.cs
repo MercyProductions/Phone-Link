@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window
         if (NavFrame.Content is DiagnosticsPage diagnosticsPage) diagnosticsPage.SetPrivacyLocked(isLocked);
         if (NavFrame.Content is PhotosPage photosPage) photosPage.SetPrivacyLocked(isLocked);
         if (NavFrame.Content is MessagesPage messagesPage) messagesPage.SetPrivacyLocked(isLocked);
+        if (NavFrame.Content is ContactsPage contactsPage) contactsPage.SetPrivacyLocked(isLocked);
         if (NavFrame.Content is AdvancedToolsPage advancedToolsPage) advancedToolsPage.SetRuntimePrivacyLocked(isLocked);
         if (isLocked && NavFrame.Content is NotificationsPage notificationsPage) notificationsPage.CancelPendingActionsForPrivacy();
         if (isLocked && NavFrame.Content is MediaPage mediaPage) mediaPage.StopForPrivacy();

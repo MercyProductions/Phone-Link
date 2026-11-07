@@ -14,10 +14,12 @@ public sealed class ClassicBluetoothPeer(string displayName, string deviceId)
     internal string DeviceId { get; } = deviceId;
 }
 public sealed record MapInboxObservation(bool Completed, string Status, IReadOnlyList<MapInboxItem> Items);
+public sealed record BluetoothPhoneBookObservation(bool Completed, string Status, IReadOnlyList<BluetoothContactPreview> Items);
 public sealed record ClassicPhoneProfileObservation(int PairedPeers, int CheckedPeers, int PeersWithMap, int PeersWithPbap, int UnavailablePeers);
 
 public static class WindowsClassicPhoneProfiles
 {
+    public const ushort PhoneBookPageSize = PbapPhoneBookClient.PageSize;
     private static readonly RfcommServiceId MessageAccess = RfcommServiceId.FromShortId(0x1132);
     private static readonly RfcommServiceId PhoneBook = RfcommServiceId.FromShortId(0x112F);
 
@@ -94,7 +96,7 @@ public static class WindowsClassicPhoneProfiles
             }
             finally { foreach (var service in result.Services) service.Dispose(); }
         }
-        catch (MapObexRejectedException exception) when (!token.IsCancellationRequested)
+        catch (PhoneObexRejectedException exception) when (!token.IsCancellationRequested)
         {
             return Unavailable($"The Bluetooth message server rejected the read (OBEX 0x{exception.Code:X2}). No message was sent or changed.");
         }
@@ -104,6 +106,48 @@ public static class WindowsClassicPhoneProfiles
         { return Unavailable("The Bluetooth inbox check timed out. The phone’s message availability is unknown."); }
         catch (Exception exception) when (!token.IsCancellationRequested && exception is IOException or XmlException or InvalidDataException)
         { return Unavailable("The MAP channel did not return a complete supported inbox listing."); }
+    }
+
+    public static async Task<BluetoothPhoneBookObservation> ReadPhoneBookAsync(ClassicBluetoothPeer selected, ushort startOffset, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(selected);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var bounded = deadline.Token;
+        try
+        {
+            using var device = await BluetoothDevice.FromIdAsync(selected.DeviceId).AsTask(bounded).ConfigureAwait(false);
+            if (device is null || !device.DeviceInformation.Pairing.IsPaired)
+                return Failure("Windows cannot access the selected paired Bluetooth device.");
+            var result = await device.GetRfcommServicesForIdAsync(PhoneBook, BluetoothCacheMode.Uncached).AsTask(bounded).ConfigureAwait(false);
+            try
+            {
+                if (result.Error != BluetoothError.Success) return Failure($"Windows did not complete PBAP discovery ({result.Error}).");
+                if (result.Services.Count != 1) return Failure(result.Services.Count == 0
+                    ? "The selected phone did not expose a Bluetooth phone-book server through Windows RFCOMM."
+                    : "Multiple phone-book servers were reported; no service was selected automatically.");
+                var service = result.Services[0];
+                var attributes = await service.GetSdpRawAttributesAsync(BluetoothCacheMode.Cached).AsTask(bounded).ConfigureAwait(false);
+                using var socket = new StreamSocket();
+                await socket.ConnectAsync(service.ConnectionHostName, service.ConnectionServiceName,
+                    SocketProtectionLevel.BluetoothEncryptionWithAuthentication).AsTask(bounded).ConfigureAwait(false);
+                using var input = socket.InputStream.AsStreamForRead();
+                using var output = socket.OutputStream.AsStreamForWrite();
+                var items = await PbapPhoneBookClient.ReadAsync(input, output, startOffset, attributes.ContainsKey(0x0317), bounded).ConfigureAwait(false);
+                return new(true, $"Received {items.Count} permitted Bluetooth contact(s). Nothing was saved or merged.", items);
+            }
+            finally { foreach (var service in result.Services) service.Dispose(); }
+        }
+        catch (PhoneObexRejectedException exception) when (!token.IsCancellationRequested)
+        { return Failure($"The phone-book server rejected the read (OBEX 0x{exception.Code:X2}). Check contact sharing for this Bluetooth pairing."); }
+        catch (UnauthorizedAccessException) when (!token.IsCancellationRequested)
+        { return Failure("Windows denied access to this Bluetooth phone-book service."); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { return Failure("The phone-book read timed out. Contact availability is unknown."); }
+        catch (Exception exception) when (!token.IsCancellationRequested && exception is IOException or InvalidDataException or System.Text.DecoderFallbackException)
+        { return Failure("The PBAP channel did not return a complete supported contact page."); }
+
+        static BluetoothPhoneBookObservation Failure(string reason) => new(false, reason, []);
     }
 
     private static bool ReadConnectFeatures(byte[] data) => data[0] == 0x0A && (BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(1)) & (1u << 19)) != 0;

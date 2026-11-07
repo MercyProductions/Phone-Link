@@ -31,7 +31,7 @@ public sealed class MapInboxClientTests
     {
         await using var input = new MemoryStream([0xC1, 0, 3]);
         await using var output = new MemoryStream();
-        var error = await Assert.ThrowsAsync<MapObexRejectedException>(() => MapInboxClient.ReadAsync(input, output, false, CancellationToken.None));
+        var error = await Assert.ThrowsAsync<PhoneObexRejectedException>(() => MapInboxClient.ReadAsync(input, output, false, CancellationToken.None));
         Assert.Equal(0xC1, error.Code);
         var wire = output.ToArray();
         Assert.Equal(wire.Length, (wire[1] << 8) + wire[2]);
