@@ -21,6 +21,9 @@
                 AutomationProperties.Name="Reconnect once after Bluetooth disconnects">
                 <TextBlock Text="After this session opens, try reconnecting to this same phone once if Bluetooth disconnects. Restores subscriptions only; does not replay commands." TextWrapping="Wrap" />
             </CheckBox>
+            <Button x:Name="DeliveryCheckButton" Content="Check media data delivery" Click="DeliveryCheckButton_Click" IsEnabled="False" />
+            <TextBlock Text="A short check using existing access only. Requests a playback-state update and reports whether it arrived, without displaying its value, reading track titles, or sending playback commands."
+                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" />
             <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                 <StackPanel Spacing="12">

@@ -15,6 +15,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
     private ContentDialog? _confirmation;
     private volatile bool _loaded;
     private bool _busy;
+    private bool _deliveryCheckShown;
     public ObservableCollection<MediaObservationRow> Observations { get; } = [];
 
     public MediaPage() { InitializeComponent(); }
@@ -60,6 +61,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         BusyRing.IsActive = true;
         BusyRing.Visibility = Visibility.Visible;
         StatusBar.IsOpen = false;
+        _deliveryCheckShown = false;
         try { await action(cancellation.Token); }
         catch (OperationCanceledException)
         { if (_loaded && !App.IsLocked) ShowStatus("Operation cancelled or timed out. No playback command was retried.", InfoBarSeverity.Warning); }
@@ -117,8 +119,43 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         catch (Exception exception) when (exception is not OutOfMemoryException)
         { if (_loaded && !App.IsLocked) ShowStatus("Media cleanup could not be fully verified.", InfoBarSeverity.Warning); }
     }
+
+    private async void DeliveryCheckButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
+    {
+        if (DeviceSelector.SelectedItem is not AmsDeviceCandidate candidate || _session?.IsConnected == true) return;
+        await StopSessionAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        SessionText.Text = "Checking for one valid playback-state update. No playback command will be sent.";
+        try
+        {
+            var result = await AmsSession.CheckDeliveryAsync(candidate, deadline.Token);
+            if (!Current()) return;
+            var detail = result.Outcome switch
+            {
+                AmsDeliveryOutcome.PlaybackStateReceived => "A valid playback-state update arrived from the selected iPhone.",
+                AmsDeliveryOutcome.NoUsableUpdate => "Registration was accepted, but no usable playback-state update arrived within the observation window.",
+                AmsDeliveryOutcome.Ended => "The temporary media session ended before a valid playback-state update arrived.",
+                AmsDeliveryOutcome.NotExposed => "Windows did not expose a readable notification path for this media update.",
+                AmsDeliveryOutcome.SubscriptionRejected => "Windows did not accept the media-update subscription.",
+                _ => "The playback-state registration was not accepted.",
+            };
+            SessionText.Text = "Temporary media check ended. No playback command was sent.";
+            _deliveryCheckShown = true;
+            ShowStatus($"{detail} Unusable frames: {result.UnusableUpdates}. No media details were retained in the report.",
+                result.Outcome == AmsDeliveryOutcome.PlaybackStateReceived ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        }
+        finally
+        {
+            if (Current() && SessionText.Text.StartsWith("Checking for one valid", StringComparison.Ordinal))
+                SessionText.Text = "Temporary media check could not complete.";
+        }
+
+        bool Current() => _loaded && !App.IsLocked && !token.IsCancellationRequested && ReferenceEquals(DeviceSelector.SelectedItem, candidate);
+    });
     private async Task StopSessionAsync()
     {
+        ClearDeliveryResult();
         _reconnect = null;
         var session = Interlocked.Exchange(ref _session, null);
         if (session is not null) session.Changed -= Session_Changed;
@@ -247,8 +284,20 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
 
     private void Selection_Changed(object sender, SelectionChangedEventArgs args)
     {
-        if (ReferenceEquals(sender, DeviceSelector) && ReconnectBox is not null) ReconnectBox.IsChecked = false;
+        if (ReferenceEquals(sender, DeviceSelector))
+        {
+            if (ReconnectBox is not null) ReconnectBox.IsChecked = false;
+            ClearDeliveryResult();
+        }
         UpdateButtons();
+    }
+
+    private void ClearDeliveryResult()
+    {
+        if (!_deliveryCheckShown) return;
+        _deliveryCheckShown = false;
+        StatusBar.IsOpen = false;
+        SessionText.Text = "No media delivery result for this selection.";
     }
 
     private async void ExpandButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
@@ -272,6 +321,7 @@ public sealed partial class MediaPage : Page, IAsyncDisposable
         DeviceSelector.IsEnabled = !_busy && !active;
         StartButton.IsEnabled = !_busy && !active && DeviceSelector.SelectedItem is AmsDeviceCandidate;
         if (ReconnectBox is not null) ReconnectBox.IsEnabled = _loaded && !App.IsLocked && StartButton.IsEnabled;
+        if (DeliveryCheckButton is not null) DeliveryCheckButton.IsEnabled = _loaded && !App.IsLocked && StartButton.IsEnabled;
         StopButton.IsEnabled = _busy || _session is not null;
         if (SendButton is not null)
             SendButton.IsEnabled = CommandSelector.SelectedItem is MediaCommandRow row && CanSend(row.Command);

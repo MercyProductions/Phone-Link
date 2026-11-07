@@ -38,9 +38,12 @@ public sealed class AmsSession : IAsyncDisposable
     private int _ended, _invalid;
     private bool _remoteSubscribed, _updatesSubscribed;
     private volatile bool _ready;
+    private readonly AmsDeliveryObservation? _delivery;
+    private AmsDeliveryOutcome? _deliverySetupFailure;
 
-    private AmsSession()
+    private AmsSession(AmsDeliveryObservation? delivery = null)
     {
+        _delivery = delivery;
         _sender = new(_gate, request => IsConnected && _state.IsCurrent(request), async (command, token) =>
         {
             token.ThrowIfCancellationRequested();
@@ -125,11 +128,20 @@ public sealed class AmsSession : IAsyncDisposable
     public static Task<AmsSession> StartAsync(AmsDeviceCandidate candidate, CancellationToken cancellationToken) =>
         StartAsync(candidate, existingAccessOnly: false, cancellationToken);
 
+    public static async Task<AmsDeliveryResult> CheckDeliveryAsync(AmsDeviceCandidate candidate, CancellationToken cancellationToken)
+    {
+        var observation = new AmsDeliveryObservation();
+        await using var session = await StartAsync(candidate, existingAccessOnly: true, cancellationToken, observation);
+        cancellationToken.ThrowIfCancellationRequested();
+        return session._deliverySetupFailure is { } failure ? observation.Report(failure) :
+            await observation.WaitAsync(TimeSpan.FromSeconds(6), cancellationToken);
+    }
+
     private static async Task<AmsSession> StartAsync(AmsDeviceCandidate candidate, bool existingAccessOnly,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, AmsDeliveryObservation? delivery = null)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-        var session = new AmsSession();
+        var session = new AmsSession(delivery);
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, session._lifetime.Token);
         try { await session.ConnectAsync(candidate, existingAccessOnly, lifetime.Token); return session; }
         catch { await session.DisposeAsync().ConfigureAwait(false); throw; }
@@ -183,11 +195,16 @@ public sealed class AmsSession : IAsyncDisposable
                 "No media command was sent.");
         }
         if (retried) _issues.Add("An initial unreachable characteristic read recovered on one read-only retry.");
+        _updates = characteristics.Characteristics.FirstOrDefault(characteristic => characteristic.Uuid == UpdateUuid &&
+            characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify | GattCharacteristicProperties.Write));
+        if (_delivery is not null)
+        {
+            await PrepareDeliveryCheckAsync(cancellationToken);
+            return;
+        }
         _remote = characteristics.Characteristics.FirstOrDefault(characteristic => characteristic.Uuid == RemoteUuid &&
             characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify) &&
             (characteristic.CharacteristicProperties & (GattCharacteristicProperties.Write | GattCharacteristicProperties.WriteWithoutResponse)) != 0);
-        _updates = characteristics.Characteristics.FirstOrDefault(characteristic => characteristic.Uuid == UpdateUuid &&
-            characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify | GattCharacteristicProperties.Write));
         _attribute = characteristics.Characteristics.SingleOrDefault(characteristic => characteristic.Uuid == AttributeUuid &&
             characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Read | GattCharacteristicProperties.Write));
         _device.ConnectionStatusChanged += ConnectionChanged;
@@ -222,6 +239,28 @@ public sealed class AmsSession : IAsyncDisposable
         _ready = true;
     }
 
+    private async Task PrepareDeliveryCheckAsync(CancellationToken token)
+    {
+        if (_updates is not { } updates)
+        {
+            _deliverySetupFailure = AmsDeliveryOutcome.NotExposed;
+            return;
+        }
+        _device!.ConnectionStatusChanged += ConnectionChanged;
+        _device.GattServicesChanged += ServicesChanged;
+        updates.ValueChanged += UpdateChanged;
+        if (!await SubscribeAsync(updates, token))
+        {
+            _deliverySetupFailure = AmsDeliveryOutcome.SubscriptionRejected;
+            return;
+        }
+        token.ThrowIfCancellationRequested();
+        _delivery!.Arm();
+        var status = await updates.WriteValueAsync(CryptographicBuffer.CreateFromByteArray(AmsDeliveryObservation.CreateRegistration()),
+            GattWriteOption.WriteWithResponse).AsTask(token);
+        if (status != GattCommunicationStatus.Success) _deliverySetupFailure = AmsDeliveryOutcome.RegistrationRejected;
+    }
+
     private static async Task<bool> SubscribeAsync(GattCharacteristic characteristic, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -237,12 +276,17 @@ public sealed class AmsSession : IAsyncDisposable
         byte[]? bytes = null;
         try
         {
+            if (_delivery is not null && args.CharacteristicValue.Length > 4_099) { _delivery.Reject(); return; }
             CryptographicBuffer.CopyToByteArray(args.CharacteristicValue, out bytes);
-            if (commands) _state.UpdateCommands(bytes);
+            if (_delivery is not null) _delivery.Observe(bytes);
+            else if (commands) _state.UpdateCommands(bytes);
             else _state.Update(AmsProtocol.ParseUpdate(bytes, DateTimeOffset.UtcNow));
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
-        { Interlocked.Increment(ref _invalid); _state.Invalidate(); }
+        {
+            if (_delivery is not null) _delivery.Reject();
+            else { Interlocked.Increment(ref _invalid); _state.Invalidate(); }
+        }
         finally { if (bytes is not null) CryptographicOperations.ZeroMemory(bytes); }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -258,6 +302,7 @@ public sealed class AmsSession : IAsyncDisposable
         if (Interlocked.CompareExchange(ref _ended, (int)cause, 0) != 0) return;
         _ready = false;
         _state.End();
+        _delivery?.End();
         _lifetime.Cancel();
         Changed?.Invoke(this, EventArgs.Empty);
     }

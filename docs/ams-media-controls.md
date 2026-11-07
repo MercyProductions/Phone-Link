@@ -24,6 +24,12 @@ Commands are serialized and recheck session authorization, current availability,
 
 Write-with-response and write-without-response characteristics are distinguished. Results are `NotSent`, `WriteAccepted`, `SubmittedUnacknowledged`, `DeviceRejected` with an available protocol error, or `OutcomeUnknown`. An ambiguous in-flight write is never automatically retried. An already submitted command cannot be recalled. The UI never optimistically changes playback/volume to match a requested command.
 
+## Media delivery check
+
+After scanning and selecting your own phone, choose **Check media data delivery** instead of starting a regular media session. This temporarily uses the same shared-open path with existing Allowed access only. It subscribes to Entity Update and registers one field, Player Playback Info, using the [AMS Entity Update format](https://developer.apple.com/library/archive/documentation/CoreBluetooth/Reference/AppleMediaService_Reference/Specification/Specification.html). It never subscribes to the Remote Command characteristic, requests track/title metadata, reads extended values, or issues a playback command.
+
+After registration is acknowledged it waits up to six seconds for a valid callback, including callbacks that arrived during the registration write. The result distinguishes a valid update from silence, a closed session, missing characteristic properties, and rejected subscription or registration. It displays a classification and an unusable-frame count only; received playback details are not retained, and unsolicited metadata is not decoded. Stop, lock, or leaving the page cancel the attempt; the temporary session is released before the result displays. A quiet check does not diagnose a phone fault or prove remote controls cannot work.
+
 Input buffers and text are bounded, UTF-8 is validated, and truncated/unknown-flag numeric observations are not interpreted as complete values. Non-finite/out-of-range volume and malformed playback data remain unvalidated. Fields arrive independently with individual received times; they are not an atomic now-playing snapshot. No playback clock, progress, battery health or command effect is invented. Metadata remains in memory, is not exported/logged/persisted, and raw incoming byte copies are cleared after parsing. Cleanup does not send a delayed CCCD-disable write or forcibly disconnect other Windows clients; system-level link teardown is not claimed.
 
 ## Evidence, November 3, 2026
