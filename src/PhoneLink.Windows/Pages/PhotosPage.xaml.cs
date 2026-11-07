@@ -4,13 +4,17 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
 using PhoneLink.Application.Features.Attachments;
 using System.Runtime.InteropServices.WindowsRuntime;
-using System.Security.Cryptography;
 using Windows.Graphics.Imaging;
+using Windows.Media.Core;
+using Windows.Media.Playback;
 using Windows.Storage.Pickers;
+using Windows.Storage.Streams;
 using WinRT.Interop;
 
 namespace PhoneLink.Windows.Pages;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "WinUI owns the page. Unload, privacy lock and preview close release the player, source and stream.")]
 public sealed partial class PhotosPage : Page
 {
     private const int MaximumPreviewBytes = 25 * 1024 * 1024;
@@ -18,6 +22,9 @@ public sealed partial class PhotosPage : Page
     private CancellationTokenSource? _listCancellation;
     private CancellationTokenSource? _previewCancellation;
     private SoftwareBitmap? _previewBitmap;
+    private InMemoryRandomAccessStream? _videoStream;
+    private MediaSource? _videoSource;
+    private MediaPlayer? _videoPlayer;
     private bool _loaded;
 
     public PhotosPage()
@@ -110,22 +117,35 @@ public sealed partial class PhotosPage : Page
         PreviewPanel.Visibility = Visibility.Visible;
         PhotosList.Visibility = Visibility.Collapsed;
         PreviewImage.Source = null;
-        PreviewStatus.Text = "Verifying and decoding the selected photo…";
+        PreviewStatus.Text = "Verifying the selected file…";
         ClosePreviewButton.Focus(FocusState.Programmatic);
-        byte[]? bytes = null;
+        InMemoryRandomAccessStream? stream = null;
         SoftwareBitmap? bitmap = null;
         SoftwareBitmapSource? source = null;
         try
         {
             if (photo.ByteCount is <= 0 or > MaximumPreviewBytes) throw new InvalidDataException("Preview input is oversized.");
-            bytes = new byte[checked((int)photo.ByteCount)];
-            using var plaintext = new MemoryStream(bytes, writable: true);
-            plaintext.SetLength(0);
-            await AppServices.Current.ExportAttachmentAsync(attachmentId, plaintext, cancellation.Token);
+            stream = new InMemoryRandomAccessStream();
+            using (var plaintext = stream.GetOutputStreamAt(0).AsStreamForWrite())
+                await AppServices.Current.ExportAttachmentAsync(attachmentId, plaintext, cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
-            if (plaintext.Length != bytes.Length) throw new InvalidDataException("Preview input length changed.");
-            plaintext.Position = 0;
-            using var stream = plaintext.AsRandomAccessStream();
+            if (stream.Size != (ulong)photo.ByteCount) throw new InvalidDataException("Preview input length changed.");
+            stream.Seek(0);
+            if (photo.IsVideo)
+            {
+                if (!_loaded || App.IsLocked || PreviewPanel.Visibility != Visibility.Visible) return;
+                _videoStream = stream;
+                stream = null;
+                _videoSource = MediaSource.CreateFromStream(_videoStream, photo.MediaType);
+                _videoPlayer = new MediaPlayer { AutoPlay = false };
+                _videoPlayer.CommandManager.IsEnabled = false;
+                _videoPlayer.MediaFailed += PreviewVideo_MediaFailed;
+                PreviewVideo.SetMediaPlayer(_videoPlayer);
+                PreviewVideo.Source = _videoSource;
+                PreviewVideoPanel.Visibility = Visibility.Visible;
+                PreviewStatus.Text = $"{photo.DisplayName} — press Play to watch.";
+                return;
+            }
             var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(cancellation.Token);
             var width = decoder.PixelWidth;
             var height = decoder.PixelHeight;
@@ -151,11 +171,14 @@ public sealed partial class PhotosPage : Page
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             if (_loaded && !App.IsLocked && PreviewPanel.Visibility == Visibility.Visible)
-                PreviewStatus.Text = "Preview unavailable. The photo could not be verified or decoded within the preview limits. For HEIC, check whether Windows has the required image codec.";
+            {
+                ClearVideo();
+                PreviewStatus.Text = "Preview unavailable. The file could not be verified or decoded within the preview limits, or Windows is missing the required codec.";
+            }
         }
         finally
         {
-            if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
+            stream?.Dispose();
             source?.Dispose();
             bitmap?.Dispose();
             _previewCancellation = null;
@@ -163,6 +186,13 @@ public sealed partial class PhotosPage : Page
     }
 
     private void ClosePreviewButton_Click(object sender, RoutedEventArgs e) => ClearPreview();
+
+    private void PlayPreviewButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loaded && !App.IsLocked) _videoPlayer?.Play();
+    }
+
+    private void PausePreviewButton_Click(object sender, RoutedEventArgs e) => _videoPlayer?.Pause();
 
     private void ClearPreview()
     {
@@ -172,9 +202,35 @@ public sealed partial class PhotosPage : Page
         source?.Dispose();
         _previewBitmap?.Dispose();
         _previewBitmap = null;
+        ClearVideo();
         PreviewStatus.Text = string.Empty;
         PreviewPanel.Visibility = Visibility.Collapsed;
         PhotosList.Visibility = Photos.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void PreviewVideo_MediaFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args) =>
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!ReferenceEquals(_videoPlayer, sender) || !_loaded || App.IsLocked) return;
+            ClearVideo();
+            PreviewStatus.Text = "Windows could not play this clip. The video or audio codec may not be installed.";
+        });
+
+    private void ClearVideo()
+    {
+        if (_videoPlayer is { } player)
+        {
+            _videoPlayer = null;
+            player.MediaFailed -= PreviewVideo_MediaFailed;
+            PreviewVideo.Source = null;
+            PreviewVideo.SetMediaPlayer(null);
+            player.Dispose();
+        }
+        PreviewVideoPanel.Visibility = Visibility.Collapsed;
+        _videoSource?.Dispose();
+        _videoSource = null;
+        _videoStream?.Dispose();
+        _videoStream = null;
     }
 
     private async void SaveCopyButton_Click(object sender, RoutedEventArgs e)
@@ -193,7 +249,7 @@ public sealed partial class PhotosPage : Page
         {
             SuggestedFileName = ImportedPhotoListItem.GetSafeSuggestedName(photo.DisplayName),
         };
-        picker.FileTypeChoices.Add("Image", [ImportedPhotoListItem.GetExtension(photo.MediaType)]);
+        picker.FileTypeChoices.Add(photo.IsVideo ? "Video" : "Image", [ImportedPhotoListItem.GetExtension(photo.MediaType)]);
         InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
         var file = await picker.PickSaveFileAsync();
         if (file is null || !_loaded || App.IsLocked)
@@ -239,13 +295,14 @@ public sealed class ImportedPhotoListItem
 
     public string Detail { get; set; } = string.Empty;
     public long ByteCount { get; set; }
+    public bool IsVideo => MediaType is "video/mp4" or "video/quicktime";
 
     public static ImportedPhotoListItem FromAttachment(ImportedAttachment attachment) =>
         new()
         {
             AttachmentId = attachment.AttachmentId,
             DisplayName = attachment.DisplayName,
-            MediaType = attachment.MediaType,
+            MediaType = attachment.MediaType.ToLowerInvariant(),
             ByteCount = attachment.ByteCount,
             Detail = $"{attachment.MediaType}  •  {FormatBytes(attachment.ByteCount)}  •  {attachment.VerifiedAt.LocalDateTime:g}",
         };
@@ -264,6 +321,8 @@ public sealed class ImportedPhotoListItem
         "image/heic" => ".heic",
         "image/heif" => ".heif",
         "image/webp" => ".webp",
+        "video/mp4" => ".mp4",
+        "video/quicktime" => ".mov",
         _ => ".img",
     };
 

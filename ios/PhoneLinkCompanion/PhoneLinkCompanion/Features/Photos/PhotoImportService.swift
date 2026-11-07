@@ -1,4 +1,5 @@
 import Foundation
+import CoreTransferable
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -17,24 +18,31 @@ final class PhotoImportService: ObservableObject {
     @Published private(set) var state: State = .idle
 
     func importSelected(_ items: [PhotosPickerItem], using session: CompanionSession) async {
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty, let destination = session.connectedSession else { return }
         do {
             for (index, item) in items.enumerated() {
                 state = .loading(current: index + 1, total: items.count)
-                guard let original = try await item.loadTransferable(type: Data.self) else {
-                    throw PhotoImportError.unreadable
+                let prepared: (data: Data, displayName: String, mediaType: String)
+                if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+                    guard destination.capabilities.contains("videos.import.v1") else {
+                        throw PhotoImportError.windowsUpdateRequired
+                    }
+                    guard let video = try await item.loadTransferable(type: SelectedVideo.self) else {
+                        throw PhotoImportError.unsupportedFormat
+                    }
+                    prepared = (video.data, "iPhone Video \(index + 1).\(video.fileExtension)", video.mediaType)
+                } else {
+                    guard let original = try await item.loadTransferable(type: Data.self) else {
+                        throw PhotoImportError.unreadable
+                    }
+                    prepared = try prepare(original, type: item.supportedContentTypes.first, index: index + 1)
                 }
-
-                let prepared = try prepare(
-                    original,
-                    type: item.supportedContentTypes.first,
-                    index: index + 1
-                )
                 state = .sending(current: index + 1, total: items.count, progress: 0)
-                try await session.sendPhoto(
+                try await session.sendSelectedMedia(
                     data: prepared.data,
                     displayName: prepared.displayName,
-                    mediaType: prepared.mediaType
+                    mediaType: prepared.mediaType,
+                    expected: destination
                 ) { [weak self] progress in
                     self?.state = .sending(
                         current: index + 1,
@@ -68,14 +76,52 @@ final class PhotoImportService: ObservableObject {
     }
 }
 
+struct SelectedVideo: Transferable {
+    static let maximumBytes = 25 * 1024 * 1024
+    let data: Data
+    let mediaType: String
+    let fileExtension: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .mpeg4Movie, shouldAttemptToOpenInPlace: true) { received in
+            try read(received.file, mediaType: "video/mp4", fileExtension: "mp4")
+        }
+        FileRepresentation(importedContentType: .quickTimeMovie, shouldAttemptToOpenInPlace: true) { received in
+            try read(received.file, mediaType: "video/quicktime", fileExtension: "mov")
+        }
+    }
+
+    static func read(_ url: URL, mediaType: String, fileExtension: String) throws -> Self {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let size = try file.seekToEnd()
+        guard size > 0 else { throw PhotoImportError.unreadable }
+        guard size <= UInt64(maximumBytes) else { throw PhotoTransferError.tooLarge }
+        try file.seek(toOffset: 0)
+        var data = Data()
+        data.reserveCapacity(Int(size))
+        while data.count < Int(size) {
+            try Task.checkCancellation()
+            guard let chunk = try file.read(upToCount: min(256 * 1024, Int(size) - data.count)), !chunk.isEmpty else {
+                throw PhotoImportError.unreadable
+            }
+            data.append(chunk)
+        }
+        guard (try file.read(upToCount: 1))?.isEmpty != false else { throw PhotoImportError.unreadable }
+        return Self(data: data, mediaType: mediaType, fileExtension: fileExtension)
+    }
+}
+
 enum PhotoImportError: LocalizedError {
     case unreadable
     case unsupportedFormat
+    case windowsUpdateRequired
 
     var errorDescription: String? {
         switch self {
-        case .unreadable: "The selected photo could not be loaded."
-        case .unsupportedFormat: "The selected image format could not be converted for import."
+        case .unreadable: "The selected file could not be loaded."
+        case .unsupportedFormat: "The selected format could not be imported. Videos must be MP4 or MOV."
+        case .windowsUpdateRequired: "This Windows version does not accept video imports. Update Phone Link on Windows."
         }
     }
 }

@@ -14,7 +14,7 @@ public sealed class InboundAttachmentManager : IAsyncDisposable
 {
     private const long MaximumAttachmentBytes = 25 * 1024 * 1024;
     private static readonly HashSet<string> AllowedMediaTypes = new(
-        ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"],
+        ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp", "video/mp4", "video/quicktime"],
         StringComparer.OrdinalIgnoreCase);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {

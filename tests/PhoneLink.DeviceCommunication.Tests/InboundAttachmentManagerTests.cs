@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.InteropServices.WindowsRuntime;
 using PhoneLink.Application.Features.Attachments;
 using PhoneLink.Application.Ports;
 using PhoneLink.DeviceCommunication.Attachments;
@@ -11,6 +12,7 @@ using PhoneLink.Protocol;
 using PhoneLink.Protocol.Attachments;
 using PhoneLink.Protocol.Messages;
 using PhoneLink.Protocol.Pairing;
+using Windows.Storage.Streams;
 
 namespace PhoneLink.DeviceCommunication.Tests;
 
@@ -22,8 +24,11 @@ public sealed class InboundAttachmentManagerTests : IDisposable
         "PhoneLink.AttachmentTests",
         Guid.NewGuid().ToString("N"));
 
-    [Fact]
-    public async Task VerifiesEncryptsAndCatalogsOrderedPhotoChunks()
+    [Theory]
+    [InlineData("image/jpeg", "selected-photo.jpg")]
+    [InlineData("video/mp4", "selected-video.mp4")]
+    [InlineData("video/quicktime", "selected-video.mov")]
+    public async Task VerifiesEncryptsAndCatalogsOrderedMediaChunks(string mediaType, string displayName)
     {
         var secretStore = new InMemorySecretStore();
         var catalog = new InMemoryAttachmentStore();
@@ -36,8 +41,8 @@ public sealed class InboundAttachmentManagerTests : IDisposable
         var offer = new AttachmentOfferPayload
         {
             AttachmentId = attachmentId,
-            DisplayName = "selected-photo.jpg",
-            MediaType = "image/jpeg",
+            DisplayName = displayName,
+            MediaType = mediaType,
             ByteCount = photo.Length,
             ContentSha256 = Base64Url.Encode(contentHash),
             ChunkSize = 32_768,
@@ -89,6 +94,8 @@ public sealed class InboundAttachmentManagerTests : IDisposable
         Assert.True(completion.Verified);
 
         var saved = Assert.Single(catalog.Attachments);
+        Assert.Equal(mediaType, saved.MediaType);
+        Assert.Equal(displayName, saved.DisplayName);
         var encrypted = await File.ReadAllBytesAsync(Path.Combine(_directory, saved.StorageName));
         Assert.Equal("PLA2", Encoding.ASCII.GetString(encrypted, 0, 4));
         Assert.DoesNotContain("pppppppp", Encoding.UTF8.GetString(encrypted));
@@ -100,6 +107,17 @@ public sealed class InboundAttachmentManagerTests : IDisposable
         await manager.CopyDecryptedAsync(saved, exported, CancellationToken.None);
         Assert.Equal(photo, exported.ToArray());
         Assert.InRange(exported.MaximumWriteBytes, 1, offer.ChunkSize);
+
+        // Use the preview's actual native stream adapter; playback requires independent seeking.
+        using var preview = new InMemoryRandomAccessStream();
+        using (var writer = preview.GetOutputStreamAt(0).AsStreamForWrite())
+            await manager.CopyDecryptedAsync(saved, writer, CancellationToken.None);
+        Assert.Equal((ulong)photo.Length, preview.Size);
+        using var clone = preview.CloneStream();
+        using var tail = clone.GetInputStreamAt((ulong)photo.Length - 8).AsStreamForRead();
+        var sample = new byte[8];
+        await tail.ReadExactlyAsync(sample);
+        Assert.Equal(photo[^8..], sample);
 
         // Header, ciphertext, truncation, extra data, and chunk reordering are all authenticated.
         foreach (var mutation in new[] { "header", "first", "last", "truncate", "append", "reorder" })

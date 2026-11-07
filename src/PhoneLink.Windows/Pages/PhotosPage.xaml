@@ -13,11 +13,11 @@
         </Grid.RowDefinitions>
 
         <StackPanel Spacing="6">
-            <TextBlock FontSize="32" FontWeight="SemiBold" Text="Imported photos" />
+            <TextBlock FontSize="32" FontWeight="SemiBold" Text="Imported photos and videos" />
             <TextBlock
                 MaxWidth="760"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Photos explicitly selected in the iPhone system picker appear here after integrity verification. Files remain encrypted in Phone Link storage."
+                Text="Photos and short videos selected in the iPhone system picker appear here after verification. Files remain encrypted in Phone Link storage."
                 TextWrapping="Wrap" />
             <Button x:Name="RefreshButton" Content="Refresh imports" Click="RefreshButton_Click" HorizontalAlignment="Left" />
         </StackPanel>
@@ -45,10 +45,10 @@
                 Spacing="10"
                 Visibility="Collapsed">
                 <FontIcon FontSize="52" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xEB9F;" />
-                <TextBlock FontSize="18" FontWeight="SemiBold" Text="No imported photos" />
+                <TextBlock FontSize="18" FontWeight="SemiBold" Text="No imported media" />
                 <TextBlock
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="On iPhone, open Sync and choose photos to import."
+                    Text="On iPhone, open Sync and choose photos or videos to import."
                     TextAlignment="Center" />
             </StackPanel>
 
@@ -106,9 +106,20 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Button x:Name="ClosePreviewButton" Content="Back to imported photos" Click="ClosePreviewButton_Click" />
+                <Button x:Name="ClosePreviewButton" Content="Back to imports" Click="ClosePreviewButton_Click" />
                 <TextBlock x:Name="PreviewStatus" Grid.Row="1" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 <Image x:Name="PreviewImage" Grid.Row="2" Stretch="Uniform" AutomationProperties.Name="Selected imported photo" />
+                <Grid x:Name="PreviewVideoPanel" Grid.Row="2" Visibility="Collapsed" RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <MediaPlayerElement x:Name="PreviewVideo" AutoPlay="False" AutomationProperties.Name="Selected imported video" />
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                        <Button Content="Play" Click="PlayPreviewButton_Click" />
+                        <Button Content="Pause" Click="PausePreviewButton_Click" />
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Grid>
     </Grid>

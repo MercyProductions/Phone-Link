@@ -333,6 +333,7 @@ public sealed class LocalPairingServer : IAsyncDisposable
                             "contacts.sync",
                             "contacts.sync.v2",
                             "photos.import",
+                            "videos.import.v1",
                             "command.call.start.confirmed",
                             "diagnostics.health.v1",
                         ],

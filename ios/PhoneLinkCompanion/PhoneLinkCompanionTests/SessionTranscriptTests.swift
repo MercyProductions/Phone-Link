@@ -3,6 +3,23 @@ import Testing
 @testable import PhoneLinkCompanion
 
 struct SessionTranscriptTests {
+    @Test func selectedVideoReadPreservesBytesAndRejectsOversizedFiles() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let sample = Data(repeating: 42, count: 300_000)
+        try sample.write(to: url)
+        let video = try SelectedVideo.read(url, mediaType: "video/mp4", fileExtension: "mp4")
+        #expect(video.data == sample)
+        #expect(video.mediaType == "video/mp4")
+        #expect(video.fileExtension == "mp4")
+        let writer = try FileHandle(forWritingTo: url)
+        defer { try? writer.close() }
+        try writer.truncate(atOffset: UInt64(SelectedVideo.maximumBytes + 1))
+        #expect(throws: PhotoTransferError.self) {
+            try SelectedVideo.read(url, mediaType: "video/mp4", fileExtension: "mp4")
+        }
+    }
+
     @Test func ownLoadedRuntimeImageHasConsistentMarkerAndNoPaths() throws {
         let result = try RuntimeImageProbe.capture()
         let base = try #require(RuntimeImageSnapshot.hexValue(result.preferredTextAddress))

@@ -115,6 +115,7 @@ public sealed class AuthenticatedSessionTests
         Assert.Equal(challenge.SessionId, ready.SessionId);
         Assert.Equal(ProtocolConstants.CurrentVersion, ready.ProtocolVersion);
         Assert.Contains("diagnostics.health.v1", ready.Capabilities);
+        Assert.Contains("videos.import.v1", ready.Capabilities);
 
         var ping = new ProtocolEnvelope
         {

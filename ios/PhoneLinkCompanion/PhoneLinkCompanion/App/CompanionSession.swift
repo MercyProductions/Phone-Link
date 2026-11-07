@@ -309,13 +309,15 @@ final class CompanionSession: ObservableObject {
         )
     }
 
-    func sendPhoto(
+    func sendSelectedMedia(
         data: Data,
         displayName: String,
         mediaType: String,
+        expected: ConnectedWindowsSession,
         progress: @MainActor (Double) -> Void
     ) async throws {
-        try await deviceSessionClient.sendPhoto(
+        guard connectedSession == expected else { throw DeviceSessionError.notConnected }
+        try await deviceSessionClient.sendSelectedMedia(
             data: data,
             displayName: displayName,
             mediaType: mediaType,

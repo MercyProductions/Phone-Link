@@ -147,16 +147,16 @@ final class DeviceSessionClient {
         )
     }
 
-    func sendPhoto(
+    func sendSelectedMedia(
         data: Data,
         displayName: String,
         mediaType: String,
         progress: @MainActor (Double) -> Void
     ) async throws {
-        guard data.count <= 25 * 1024 * 1024 else {
+        guard !data.isEmpty, data.count <= 25 * 1024 * 1024 else {
             throw PhotoTransferError.tooLarge
         }
-        guard let webSocket, connection != nil else {
+        guard let webSocket, let connection else {
             throw DeviceSessionError.notConnected
         }
 
@@ -185,6 +185,7 @@ final class DeviceSessionClient {
         var chunkIndex = acceptEnvelope.payload.nextChunkIndex
         var offset = Int(chunkIndex) * chunkSize
         while offset < data.count {
+            guard self.connection == connection else { throw DeviceSessionError.notConnected }
             let end = min(offset + chunkSize, data.count)
             let chunk = data.subdata(in: offset..<end)
             let frame = try AttachmentBinaryFrame.encode(
@@ -198,6 +199,7 @@ final class DeviceSessionClient {
             progress(Double(offset) / Double(data.count))
         }
 
+        guard self.connection == connection else { throw DeviceSessionError.notConnected }
         let completeEnvelope: ProtocolEnvelope<AttachmentCompletePayload> = try await sendAndAwaitResponse(
             kind: "attachment.complete",
             payload: AttachmentCompletePayload(
@@ -637,10 +639,10 @@ enum PhotoTransferError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .tooLarge: "Each selected photo must be 25 MB or smaller."
-        case .invalidChunk: "The photo chunk could not be encoded."
-        case .rejected(let code): "Windows rejected the photo transfer (\(code ?? "policy"))."
-        case .integrityFailed: "Windows could not verify the imported photo."
+        case .tooLarge: "Each selected file must be nonempty and 25 MiB or smaller."
+        case .invalidChunk: "The media chunk could not be encoded."
+        case .rejected(let code): "Windows rejected the media transfer (\(code ?? "policy"))."
+        case .integrityFailed: "Windows could not verify the imported file."
         }
     }
 }

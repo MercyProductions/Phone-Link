@@ -37,17 +37,18 @@ struct ContactSyncView: View {
                     PhotosPicker(
                         selection: $selectedPhotos,
                         maxSelectionCount: 20,
-                        matching: .images
+                        matching: acceptsVideo ? .any(of: [.images, .videos]) : .images,
+                        preferredItemEncoding: .current
                     ) {
-                        Label("Choose photos to import", systemImage: "photo.on.rectangle.angled")
+                        Label(acceptsVideo ? "Choose photos or videos to import" : "Choose photos to import", systemImage: "photo.on.rectangle.angled")
                     }
                     .disabled(!isConnected || isPhotoWorking)
 
                     photoStatusView
                 } header: {
-                    Text("Photos")
+                    Text("Photos and videos")
                 } footer: {
-                    Text("The system picker shares only the photos you select. Each photo is verified, encrypted, and stored in Phone Link’s private data folder on Windows.")
+                    Text(acceptsVideo ? "Only selected items are shared. Photos and MP4 or MOV clips up to 25 MiB each are verified and stored encrypted on Windows." : "Only selected photos are shared. An updated Windows app is required for video imports.")
                 }
             }
             .navigationTitle("Sync")
@@ -65,16 +66,16 @@ struct ContactSyncView: View {
     private var photoStatusView: some View {
         switch photoImport.state {
         case .idle:
-            Text(isConnected ? "Select up to 20 photos" : "Connect to a trusted PC first")
+            Text(isConnected ? "Select up to 20 items" : "Connect to a trusted PC first")
                 .foregroundStyle(.secondary)
         case .loading(let current, let total):
-            ProgressView("Loading photo \(current) of \(total)…")
+            ProgressView("Loading item \(current) of \(total)…")
         case .sending(let current, let total, let progress):
             ProgressView(value: progress) {
-                Text("Importing photo \(current) of \(total)…")
+                Text("Importing item \(current) of \(total)…")
             }
         case .complete(let count):
-            Label("Imported \(count) photos", systemImage: "checkmark.circle.fill")
+            Label("Imported \(count) items", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -107,6 +108,10 @@ struct ContactSyncView: View {
     private var isConnected: Bool {
         if case .connected = session.connectionState { return true }
         return false
+    }
+
+    private var acceptsVideo: Bool {
+        session.connectedSession?.capabilities.contains("videos.import.v1") == true
     }
 
     private var isWorking: Bool {
