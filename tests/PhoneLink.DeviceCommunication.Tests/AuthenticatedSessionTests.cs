@@ -290,6 +290,45 @@ public sealed class AuthenticatedSessionTests
         }
         Assert.Equal(42, healthInbox.Get(clientDeviceId.Value, challenge.SessionId, DateTimeOffset.UtcNow)!.Snapshot.BatteryPercent);
 
+        var runtime = new CompanionRuntimeFeed();
+        bool IsCurrent(DeviceId id, Guid session) => server.TryGetSessionId(id, out var active) && active == session;
+        var runtimeCapturedAt = DateTimeOffset.UtcNow;
+        var runtimePayload = JsonSerializer.SerializeToElement(new
+        {
+            schemaVersion = 1, capturedAt = runtimeCapturedAt, scope = "companion-own-marker-image",
+            imageUUID = Guid.NewGuid(), cpuType = 0x100000c, cpuSubtype = 0,
+            preferredTextAddress = "0x100000000", loadedHeaderAddress = "0x103000000", textVirtualSize = "0x4000",
+            slide = "0x3000000", markerRuntimeAddress = "0x103000200", markerImageOffset = "0x200",
+        });
+        ReceivedDeviceEnvelope? validQueuedRuntime = null;
+        foreach (var armed in new[] { false, true })
+        {
+            runtime.SetArmed(armed);
+            var request = ping with
+            {
+                MessageId = Guid.NewGuid(), Kind = "diagnostics.runtime.sample", RequiresAck = true,
+                SentAt = DateTimeOffset.UtcNow, Payload = runtimePayload,
+            };
+            await socket.SendAsync(ProtocolEnvelopeSerializer.Serialize(request), WebSocketMessageType.Text, true, timeout.Token);
+            Assert.True(await received.MoveNextAsync());
+            var frame = Assert.IsType<ReceivedDeviceEnvelope>(received.Current);
+            validQueuedRuntime = frame;
+            var receipt = runtime.Handle(frame, serverDeviceId, DateTimeOffset.UtcNow, IsCurrent);
+            Assert.NotNull(receipt);
+            await server.SendAsync(clientDeviceId, receipt, timeout.Token);
+            var delivered = ProtocolEnvelopeSerializer.Parse(await ReceiveAsync(socket));
+            Assert.Equal("diagnostics.runtime.receipt", delivered.Kind);
+            Assert.Equal(request.MessageId, delivered.CorrelationId);
+            Assert.Equal(challenge.SessionId, delivered.SessionId);
+            Assert.Equal(serverDeviceId, delivered.OriginDeviceId);
+            Assert.Equal(armed, delivered.Payload.GetProperty("accepted").GetBoolean());
+            Assert.Single(delivered.Payload.EnumerateObject());
+        }
+        var ownSample = runtime.Get(DateTimeOffset.UtcNow, IsCurrent);
+        Assert.NotNull(ownSample);
+        Assert.Equal("0x103000200", ownSample.MarkerAddressHex);
+        Assert.Equal(runtimeCapturedAt, ownSample.CapturedAt);
+
         if (revokeInsteadOfReplay)
         {
             await trustedDevices.RevokeAsync(clientDeviceId, DateTimeOffset.UtcNow, timeout.Token);
@@ -324,6 +363,8 @@ public sealed class AuthenticatedSessionTests
         Assert.Null(healthInbox.Get(clientDeviceId.Value, challenge.SessionId, DateTimeOffset.UtcNow));
         Assert.Null(healthHandler.Handle(validQueuedHealth!, serverDeviceId,
             (id, session) => server.TryGetSessionId(id, out var active) && active == session, false, DateTimeOffset.UtcNow));
+        Assert.Null(runtime.Get(DateTimeOffset.UtcNow, IsCurrent));
+        Assert.Null(runtime.Handle(validQueuedRuntime!, serverDeviceId, DateTimeOffset.UtcNow, IsCurrent));
     }
 
     private static bool CertificateMatchesPin(X509Certificate? presented, ReadOnlySpan<byte> expected)

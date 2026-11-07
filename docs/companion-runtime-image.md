@@ -28,6 +28,8 @@ On Windows open **USB & binary tools → Enable live address view**. On the auth
 
 Neither endpoint starts sharing on entry. The Windows view keeps at most one sample in memory; it drops stale, malformed, replayed or mismatched-session readings and expires the last sample after at most six seconds. A clock difference can cause a refusal. Stopping the Windows view, navigating away, or locking Phone Link clears it immediately. Stopping or leaving the iPhone view prevents further captures; a sample already sent may remain on Windows until it expires. Runtime data is not included in static JSON exports, logs, or the database. No remote capture command, arbitrary memory read, debugger, kernel access or other-app inspection is introduced.
 
+The Windows loopback integration test exercises both runtime message kinds across pinned TLS and the Ed25519-authenticated session, verifies rejection while disarmed, accepts a synthetic sample while armed, checks the correlated receipt does not echo addresses, and verifies no sample survives revocation or a protocol-policy close. This tests the actual wire allowlist and Windows receiver, not the iPhone sender or rendered Windows view.
+
 ## Windows CLI snapshot import
 
 ```powershell

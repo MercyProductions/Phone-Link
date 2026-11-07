@@ -31,6 +31,8 @@ public static class ProtocolConstants
             "command.result",
             "diagnostics.health.snapshot",
             "diagnostics.health.receipt",
+            "diagnostics.runtime.sample",
+            "diagnostics.runtime.receipt",
             "attachment.offer",
             "attachment.accept",
             "attachment.complete",
