@@ -26,7 +26,12 @@ public static class ForwardedSshAvailabilityProbe
         var availability = await ProbeAsync(tunnel, cancellationToken).ConfigureAwait(false);
         await tunnel.DisposeAsync().ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        return new(devicePort, availability, tunnel.CaptureStatistics());
+        var stats = tunnel.CaptureStatistics();
+        if (!availability.ServerIdentified && stats.LastUsbResponseCode is { } code)
+            availability = new(false,
+                "The temporary forwarder recorded a USB channel rejection. No SSH identification or login was established.",
+                null, code);
+        return new(devicePort, availability, stats);
     }
 
     public static async Task<SshAvailability> ProbeAsync(LoopbackDeviceTunnel tunnel, CancellationToken cancellationToken)

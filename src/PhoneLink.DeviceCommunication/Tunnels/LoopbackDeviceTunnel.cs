@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using PhoneLink.DeviceCommunication.Diagnostics;
 
 namespace PhoneLink.DeviceCommunication.Tunnels;
 
@@ -9,6 +10,7 @@ public sealed record TunnelStatistics(int ActiveConnections, long BytesToDevice,
     int FailedConnections, string? LastFailureCategory)
 {
     public long RejectedAtCapacity { get; init; }
+    public int? LastUsbResponseCode { get; init; }
 }
 
 public sealed class TunnelConnection(Stream stream, IDisposable? owner = null, Action? completeWriting = null) : IAsyncDisposable
@@ -34,7 +36,8 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
     private Task? _disposeTask;
     private long _connectionId, _sent, _received, _rejected;
     private int _active, _failed;
-    private string? _lastFailure;
+    private ConnectionFailure? _lastFailure;
+    private sealed record ConnectionFailure(string Category, int? UsbResponseCode);
 
     private LoopbackDeviceTunnel(Func<CancellationToken, Task<TunnelConnection>> connect,
         int localPort, int maximumConnections, CancellationToken cancellationToken)
@@ -70,9 +73,16 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
         return new(connect, localPort, maximumConnections, cancellationToken);
     }
 
-    public TunnelStatistics CaptureStatistics() => new(Volatile.Read(ref _active),
-        Interlocked.Read(ref _sent), Interlocked.Read(ref _received), Volatile.Read(ref _failed), Volatile.Read(ref _lastFailure))
-        { RejectedAtCapacity = Interlocked.Read(ref _rejected) };
+    public TunnelStatistics CaptureStatistics()
+    {
+        var failure = Volatile.Read(ref _lastFailure);
+        return new(Volatile.Read(ref _active), Interlocked.Read(ref _sent), Interlocked.Read(ref _received),
+            Volatile.Read(ref _failed), failure?.Category)
+        {
+            RejectedAtCapacity = Interlocked.Read(ref _rejected),
+            LastUsbResponseCode = failure?.UsbResponseCode,
+        };
+    }
 
     public ValueTask DisposeAsync()
     {
@@ -131,7 +141,8 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             Interlocked.Increment(ref _failed);
-            Volatile.Write(ref _lastFailure, exception.GetType().Name);
+            Volatile.Write(ref _lastFailure, new(exception.GetType().Name,
+                remote is null && exception is UsbMuxChannelUnavailableException rejected ? rejected.ResponseCode : null));
         }
         finally
         {
@@ -141,7 +152,7 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
             {
                 try { await remote.DisposeAsync().ConfigureAwait(false); }
                 catch (Exception exception) when (exception is not OutOfMemoryException)
-                { Volatile.Write(ref _lastFailure, exception.GetType().Name); }
+                { Volatile.Write(ref _lastFailure, new(exception.GetType().Name, null)); }
             }
             try { await Task.WhenAll(new[] { outgoing, incoming }.OfType<Task>()).ConfigureAwait(false); }
             catch (Exception exception) when (exception is not OutOfMemoryException) { /* Observe failed/cancelled pumps; no payload logging. */ }

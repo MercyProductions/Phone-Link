@@ -26,6 +26,8 @@ public sealed class ForwardedSshAvailabilityProbeTests
         await fixture.WaitAsync(deadline.Token);
         Assert.Equal(2222, result.DevicePort);
         Assert.True(result.Availability.ServerIdentified);
+        Assert.Null(result.Availability.TransportResponseCode);
+        Assert.Null(result.Statistics.LastUsbResponseCode);
         Assert.Equal(1, connections);
         Assert.Equal(0, result.Statistics.ActiveConnections);
         Assert.Equal(0, result.Statistics.FailedConnections);
@@ -39,6 +41,9 @@ public sealed class ForwardedSshAvailabilityProbeTests
         var result = await ForwardedSshAvailabilityProbe.VerifyUsbAsync(22,
             (_, _) => throw new UsbMuxChannelUnavailableException(3), deadline.Token);
         Assert.False(result.Availability.ServerIdentified);
+        Assert.Equal(3, result.Availability.TransportResponseCode);
+        Assert.Contains("USB channel rejection", result.Availability.Status);
+        Assert.Equal(3, result.Statistics.LastUsbResponseCode);
         Assert.Equal(nameof(UsbMuxChannelUnavailableException), result.Statistics.LastFailureCategory);
         Assert.Equal(1, result.Statistics.FailedConnections);
         Assert.Equal(0, result.Statistics.ActiveConnections);

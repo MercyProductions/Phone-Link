@@ -137,6 +137,32 @@ public sealed class LoopbackDeviceTunnelTests
     }
 
     [Fact]
+    public async Task LaterNonUsbFailureDoesNotRetainEarlierUsbResponseCode()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var attempts = 0;
+        await using var tunnel = LoopbackDeviceTunnel.Start(_ =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+                throw new PhoneLink.DeviceCommunication.Diagnostics.UsbMuxChannelUnavailableException(3);
+            throw new InvalidOperationException("private-device-identifier");
+        });
+        using var first = new TcpClient();
+        await first.ConnectAsync(IPAddress.Loopback, tunnel.LocalPort, deadline.Token);
+        Assert.Equal(0, await first.GetStream().ReadAsync(new byte[1], deadline.Token));
+        Assert.Equal(3, tunnel.CaptureStatistics().LastUsbResponseCode);
+
+        using var second = new TcpClient();
+        await second.ConnectAsync(IPAddress.Loopback, tunnel.LocalPort, deadline.Token);
+        Assert.Equal(0, await second.GetStream().ReadAsync(new byte[1], deadline.Token));
+        var stats = tunnel.CaptureStatistics();
+        Assert.Equal(2, stats.FailedConnections);
+        Assert.Equal(nameof(InvalidOperationException), stats.LastFailureCategory);
+        Assert.Null(stats.LastUsbResponseCode);
+        Assert.DoesNotContain("private-device", stats.ToString());
+    }
+
+    [Fact]
     public async Task ParentCancellationStopsAcceptingAndClosesActiveStreams()
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
