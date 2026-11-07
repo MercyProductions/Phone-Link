@@ -3,6 +3,33 @@ import XCTest
 @testable import PhoneLinkCompanion
 
 final class PairingProtocolTests: XCTestCase {
+    func testMessageDraftReplayWindowDoesNotEvictLiveRequests() {
+        var window = MessageDraftReplayWindow()
+        let now = Date(timeIntervalSince1970: 10_000)
+        let expiry = now.addingTimeInterval(120)
+        let first = UUID()
+        XCTAssertEqual(window.record(first, expiresAt: expiry, now: now), .accepted)
+        for _ in 1..<128 {
+            XCTAssertEqual(window.record(UUID(), expiresAt: expiry, now: now), .accepted)
+        }
+        XCTAssertEqual(window.record(UUID(), expiresAt: expiry, now: now), .full)
+        XCTAssertEqual(window.record(first, expiresAt: expiry, now: now), .duplicate)
+        XCTAssertEqual(window.record(UUID(), expiresAt: expiry.addingTimeInterval(120), now: expiry), .accepted)
+    }
+
+    func testLegacySessionProofOmitsUnnegotiatedComposerFlag() throws {
+        let connection = UUID()
+        let session = UUID()
+        let legacy = SessionClientProof(kind: "session.clientProof", connectionId: connection, sessionId: session,
+                                        signature: "fixture", supportsMessageCompose: nil)
+        let current = SessionClientProof(kind: "session.clientProof", connectionId: connection, sessionId: session,
+                                         signature: "fixture", supportsMessageCompose: true)
+        let legacyJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: PhoneLinkJSON.encoder.encode(legacy)) as? [String: Any])
+        let currentJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: PhoneLinkJSON.encoder.encode(current)) as? [String: Any])
+        XCTAssertNil(legacyJSON["supportsMessageCompose"])
+        XCTAssertEqual(currentJSON["supportsMessageCompose"] as? Bool, true)
+    }
+
     func testMessageDraftRequiresOneCanonicalRecipientAndBoundedUtf8() {
         XCTAssertEqual(MessageDraftInput(arguments: ["recipient": "+15550101000", "body": "Hello\n👩‍👩‍👦"])?.recipient, "+15550101000")
         XCTAssertNotNil(MessageDraftInput(arguments: ["recipient": "123", "body": String(repeating: "é", count: 500)]))

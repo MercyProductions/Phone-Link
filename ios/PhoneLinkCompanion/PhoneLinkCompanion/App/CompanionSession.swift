@@ -49,6 +49,7 @@ final class CompanionSession: ObservableObject {
     private var manuallyDisconnected: Bool
     private var contactSyncInProgress = false
     private var draftExpiry: Task<Void, Never>?
+    private var draftReplayWindow = MessageDraftReplayWindow()
 
     init(
         identityStore: DeviceIdentityStore = DeviceIdentityStore(),
@@ -66,7 +67,7 @@ final class CompanionSession: ObservableObject {
         }
         self.deviceSessionClient.onConnectionFailure = { [weak self] message in
             self?.pendingDialRequest = nil
-            self?.clearMessageDraft()
+            self?.resetMessageDraftSession()
             self?.connectionState = .failed(message)
             self?.scheduleReconnect()
         }
@@ -123,7 +124,7 @@ final class CompanionSession: ObservableObject {
         guard isForeground, networkAvailable, !manuallyDisconnected, trustedPeers.contains(peer) else { return }
         reconnectTask?.cancel()
         reconnectTask = nil
-        clearMessageDraft()
+        resetMessageDraftSession()
         connectionAttemptID = UUID()
         let attemptID = connectionAttemptID
         reconnectStatus = nil
@@ -154,7 +155,7 @@ final class CompanionSession: ObservableObject {
         reconnectTask = nil
         deviceSessionClient.disconnect()
         pendingDialRequest = nil
-        clearMessageDraft()
+        resetMessageDraftSession()
         connectionState = .disconnected
     }
 
@@ -406,6 +407,13 @@ final class CompanionSession: ObservableObject {
             rejectDraft(request, "command.invalid-or-expired")
             return
         }
+        switch draftReplayWindow.record(request.payload.commandId, expiresAt: expiry, now: now) {
+        case .accepted: break
+        case .duplicate: return // Do not replace the pending request or its result.
+        case .full:
+            rejectDraft(request, "command.busy")
+            return
+        }
         guard pendingDialRequest == nil, pendingMessageDraft == nil else {
             rejectDraft(request, "command.busy")
             return
@@ -440,6 +448,11 @@ final class CompanionSession: ObservableObject {
         draftExpiry?.cancel()
         draftExpiry = nil
         pendingMessageDraft = nil
+    }
+
+    private func resetMessageDraftSession() {
+        clearMessageDraft()
+        draftReplayWindow = MessageDraftReplayWindow()
     }
 
     private func isSafeDialString(_ value: String) -> Bool {
@@ -491,5 +504,18 @@ struct MessageDraftInput {
         guard digits.count >= 3, digits.allSatisfy({ (48...57).contains($0) }) else { return nil }
         self.recipient = recipient
         self.body = body
+    }
+}
+
+struct MessageDraftReplayWindow {
+    enum Decision: Equatable { case accepted, duplicate, full }
+    private var expiresByCommand: [UUID: Date] = [:]
+
+    mutating func record(_ id: UUID, expiresAt: Date, now: Date) -> Decision {
+        expiresByCommand = expiresByCommand.filter { $0.value > now }
+        if expiresByCommand[id] != nil { return .duplicate }
+        guard expiresByCommand.count < 128 else { return .full }
+        expiresByCommand[id] = expiresAt
+        return .accepted
     }
 }
