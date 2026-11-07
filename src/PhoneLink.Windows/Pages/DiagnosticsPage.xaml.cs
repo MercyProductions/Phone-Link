@@ -23,7 +23,7 @@ public sealed partial class DiagnosticsPage : Page
     private ImportedMotionReport? _motionReport;
     private long _motionEpoch;
     private CancellationTokenSource? _crashCancellation;
-    private IphoneCrashAnalysis? _crashAnalysis;
+    private string? _crashSummary;
     private bool _loaded;
     private WindowsUsbPresenceMonitor? _presenceMonitor;
     private CancellationTokenSource? _presenceCancellation;
@@ -52,7 +52,7 @@ public sealed partial class DiagnosticsPage : Page
         _scanCancellation?.Cancel();
         ClearRoundTrip();
         _crashCancellation?.Cancel();
-        _crashAnalysis = null;
+        _crashSummary = null;
         CrashAnalysisText.Text = string.Empty;
         CrashCopyButton.IsEnabled = false;
         PhoneInfoText.Text = string.Empty;
@@ -73,7 +73,7 @@ public sealed partial class DiagnosticsPage : Page
         ClearRoundTrip();
         _crashCancellation?.Cancel();
         ClearCompanionHealthForPrivacy();
-        _crashAnalysis = null;
+        _crashSummary = null;
         _report = null;
         Findings.Clear();
         CrashAnalysisText.Text = PhoneInfoText.Text = RecoveryText.Text = string.Empty;
@@ -281,52 +281,90 @@ public sealed partial class DiagnosticsPage : Page
         PresenceText.Text = "USB monitor stopped; in-memory history cleared. Start explicitly to observe new changes.";
     }
 
-    private async void CrashImportButton_Click(object sender, RoutedEventArgs args)
+    private async void CrashImportButton_Click(object sender, RoutedEventArgs args) => await ImportCrashReportsAsync(false);
+
+    private async void CrashBatchButton_Click(object sender, RoutedEventArgs args) => await ImportCrashReportsAsync(true);
+
+    private async Task ImportCrashReportsAsync(bool compare)
     {
         if (!_loaded || App.IsLocked || _crashCancellation is not null) return;
         using var cancellation = new CancellationTokenSource();
         _crashCancellation = cancellation;
-        CrashImportButton.IsEnabled = CrashCopyButton.IsEnabled = false;
-        _crashAnalysis = null;
+        CrashImportButton.IsEnabled = CrashBatchButton.IsEnabled = CrashCopyButton.IsEnabled = false;
+        _crashSummary = null;
         CrashAnalysisText.Text = string.Empty;
         try
         {
             var picker = new FileOpenPicker(App.MainWindow.AppWindow.Id);
             picker.FileTypeFilter.Add(".ips");
             picker.FileTypeFilter.Add(".json");
-            var file = await picker.PickSingleFileAsync();
-            if (file is null || cancellation.IsCancellationRequested || !_loaded || App.IsLocked) return;
-            cancellation.CancelAfter(TimeSpan.FromSeconds(20));
-            CrashAnalysisText.Text = "Analyzing locally…";
-            await using var stream = new FileStream(file.Path, FileMode.Open, FileAccess.Read, FileShare.Read,
-                16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            if (stream.Length > IphoneCrashReportAnalyzer.MaximumBytes)
-                throw new InvalidDataException("Report exceeds the 4 MiB analysis limit.");
-            var analysis = await Task.Run(() => IphoneCrashReportAnalyzer.AnalyzeAsync(stream, cancellation.Token), cancellation.Token);
-            if (!_loaded || cancellation.IsCancellationRequested || App.IsLocked) return;
-            _crashAnalysis = analysis;
-            CrashAnalysisText.Text = analysis.ToRedactedText();
+            string summary;
+            if (compare)
+            {
+                var files = await picker.PickMultipleFilesAsync();
+                if (files is null || files.Count == 0 || !CanPublish()) return;
+                if (files.Count is < 2 or > IphoneCrashReportAnalyzer.MaximumBatchFiles)
+                {
+                    CrashAnalysisText.Text = "Select 2–12 reports to compare. No files were opened.";
+                    return;
+                }
+                var openers = files.Select(file =>
+                {
+                    var path = file.Path;
+                    return (Func<Stream>)(() => OpenReport(path));
+                }).ToArray();
+                cancellation.CancelAfter(TimeSpan.FromSeconds(30));
+                CrashAnalysisText.Text = "Comparing selected reports locally…";
+                var analysis = await Task.Run(() => IphoneCrashReportAnalyzer.AnalyzeBatchAsync(openers, cancellation.Token), cancellation.Token);
+                summary = analysis.ToRedactedText();
+            }
+            else
+            {
+                var file = await picker.PickSingleFileAsync();
+                if (file is null || !CanPublish()) return;
+                cancellation.CancelAfter(TimeSpan.FromSeconds(20));
+                CrashAnalysisText.Text = "Analyzing locally…";
+                var path = file.Path;
+                summary = await Task.Run(async () =>
+                {
+                    await using var stream = OpenReport(path);
+                    return (await IphoneCrashReportAnalyzer.AnalyzeAsync(stream, cancellation.Token)).ToRedactedText();
+                }, cancellation.Token);
+            }
+            if (!CanPublish()) return;
+            _crashSummary = summary;
+            CrashAnalysisText.Text = summary;
             CrashCopyButton.IsEnabled = true;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            if (_loaded && !App.IsLocked)
+            if (CanPublish())
                 CrashAnalysisText.Text = "Analysis not completed. Choose a complete type-309 crash or supported type-298 Jetsam JSON .ips report up to 4 MiB. Malformed, ambiguous, oversized and other report formats are not supported. No repair was attempted and the original was not changed.";
         }
         finally
         {
             _crashCancellation = null;
-            if (_loaded) CrashImportButton.IsEnabled = true;
+            if (_loaded)
+            {
+                CrashImportButton.IsEnabled = CrashBatchButton.IsEnabled = true;
+                if (!App.IsLocked && cancellation.IsCancellationRequested &&
+                    CrashAnalysisText.Text is "Analyzing locally…" or "Comparing selected reports locally…")
+                    CrashAnalysisText.Text = "Analysis stopped before completion. No partial summary was retained.";
+            }
         }
+
+        bool CanPublish() => _loaded && !App.IsLocked && !cancellation.IsCancellationRequested;
+        static FileStream OpenReport(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
     }
 
     private void CrashCopyButton_Click(object sender, RoutedEventArgs args)
     {
-        if (!_loaded || App.IsLocked || _crashAnalysis is null) return;
+        if (!_loaded || App.IsLocked || _crashSummary is null) return;
         try
         {
             var data = new DataPackage();
-            data.SetText(_crashAnalysis.ToRedactedText());
+            data.SetText(_crashSummary);
             Clipboard.SetContent(data);
             ShowStatus("Redacted analysis copied", "Only the analysis shown here was copied, not the source report. Review it before sharing.", InfoBarSeverity.Success);
         }
@@ -504,7 +542,7 @@ public sealed partial class DiagnosticsPage : Page
             var batteryText = information.BatteryPercentage is { } level ? $"{level}%" : "unknown";
             PhoneInfoText.Text = $"Read at {DateTimeOffset.Now:t}: {information.DeviceClass ?? "unknown class"} · {information.ProductType ?? "unknown hardware identifier"} · iOS {information.IosVersion ?? "unknown"} · build {information.BuildVersion ?? "unknown"}. " +
                 $"Battery: {batteryText} · charging: {Flag(information.IsCharging)} · external power: {Flag(information.ExternalPowerConnected)}. " +
-                $"{information.UnavailableFields} unavailable field(s). No pairing credentials were read and no phone changes were made. These values are not included in the copied report.\n" +
+                $"{information.UnavailableFields} unavailable field(s). This limited USB probe does not verify Apple Devices Trust or Phone Link companion pairing. No pairing credentials were read and no phone changes were made. These values are not included in the copied report.\n" +
                 string.Join("\n", information.Fields.Where(field => field.Status != IphoneInformationFieldStatus.Available)
                     .Select(field => $"{field.Key}: {field.Status}" + (field.DeviceErrorCode is null ? "." : $" ({field.DeviceErrorCode})."))) +
                 "\nAn unavailable value is not a battery-health or hardware-failure diagnosis.";

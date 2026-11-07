@@ -7,6 +7,61 @@ public sealed class IphoneCrashReportAnalyzerTests
 {
     private const string Jetsam = """{"bug_type":"298","timestamp":"PRIVATE-TIMESTAMP"}""";
 
+    [Fact]
+    public async Task BatchGroupsRecognizedCategoriesAndDoesNotCountExactDuplicateFilesTwice()
+    {
+        const string crashA = """
+            {"bug_type":"309","incident":"PRIVATE-1"}
+            {"exception":{"type":"EXC_BAD_ACCESS","signal":"SIGBUS"}}
+            """;
+        const string crashB = """
+            {"bug_type":"309","incident":"PRIVATE-2"}
+            {"exception":{"type":"EXC_BAD_ACCESS","signal":"SIGSEGV"}}
+            """;
+        const string jetsam = """
+            {"bug_type":"298"}
+            {"processes":[{"name":"PRIVATE-PROCESS","reason":"highwater"}]}
+            """;
+        var result = await IphoneCrashReportAnalyzer.AnalyzeBatchAsync([
+            Report(crashA), Report(crashB), Report(crashA), Report(jetsam),
+            Report("{\"bug_type\":\"309\"}\n{}"), Report("{\"bug_type\":\"309\"}\n{\"exception\":{\"type\":\"UNKNOWN\"}}"),
+            Report("not JSON"), () => throw new IOException("PRIVATE-PATH"),
+        ]);
+        Assert.Equal(8, result.Selected);
+        Assert.Equal(5, result.Analyzed);
+        Assert.Equal(1, result.DuplicateFiles);
+        Assert.Equal(2, result.Unavailable);
+        Assert.Equal(2, result.Unclassified);
+        Assert.Equal(new IphoneDiagnosticRepeat("Invalid memory access signature", 2), Assert.Single(result.RepeatedCategories));
+        Assert.DoesNotContain("PRIVATE-", result.ToRedactedText());
+        Assert.Contains("not verified unique incidents", result.ToRedactedText());
+    }
+
+    [Fact]
+    public async Task BatchCancellationDoesNotReturnPartialResultsOrOpenRemainingFiles()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var started = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => IphoneCrashReportAnalyzer.AnalyzeBatchAsync([
+            () => { started++; cancellation.Cancel(); return new MemoryStream(); },
+            () => { started++; return new MemoryStream(); },
+        ], cancellation.Token));
+        Assert.Equal(1, started);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(13)]
+    public async Task BatchBoundsAreCheckedBeforeOpeningFiles(int count)
+    {
+        var started = 0;
+        var openers = Enumerable.Repeat<Func<Stream>>(() => { started++; return new MemoryStream(); }, count).ToArray();
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => IphoneCrashReportAnalyzer.AnalyzeBatchAsync(openers));
+        Assert.Equal(0, started);
+    }
+
+    private static Func<Stream> Report(string contents) => () => new MemoryStream(Encoding.UTF8.GetBytes(contents));
+
     private static async Task<IphoneCrashAnalysis> AnalyzeAsync(string body, string header = "{\"bug_type\":\"309\"}")
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(header + "\n" + body));

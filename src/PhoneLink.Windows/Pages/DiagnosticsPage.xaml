@@ -47,6 +47,7 @@
                 TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button x:Name="CrashImportButton" Content="Analyze selected .ips report" Click="CrashImportButton_Click" />
+                <Button x:Name="CrashBatchButton" Content="Compare 2–12 reports" Click="CrashBatchButton_Click" />
                 <Button x:Name="CrashCopyButton" Content="Copy redacted analysis" Click="CrashCopyButton_Click" IsEnabled="False" />
             </StackPanel>
             <TextBlock x:Name="CrashAnalysisText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />

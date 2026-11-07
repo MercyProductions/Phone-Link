@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -6,34 +7,99 @@ namespace PhoneLink.Application.Features.Diagnostics;
 
 public sealed record IphoneCrashAnalysis(string Category, string Evidence, string NextStep)
 {
+    internal bool HasComparableCategory { get; init; }
+
     public string ToRedactedText() => $"Phone Link — local iPhone diagnostic-report analysis\n{Category}\n{Evidence}\n{NextStep}\n" +
         "No app names, timestamps, paths, incident/device identifiers, stack traces or original log content included. " +
         "This is not a hardware diagnosis. No phone change or repair was performed.";
+}
+
+public sealed record IphoneDiagnosticRepeat(string Category, int ReportCount);
+
+public sealed record IphoneDiagnosticBatchAnalysis(int Selected, int Analyzed, int DuplicateFiles, int Unavailable,
+    int Unclassified, IReadOnlyList<IphoneDiagnosticRepeat> RepeatedCategories)
+{
+    public string ToRedactedText() =>
+        $"Phone Link — local iPhone report comparison\nSelected: {Selected}; analyzed: {Analyzed}; exact duplicates skipped: {DuplicateFiles}; unavailable: {Unavailable}; analyzed without a comparable category: {Unclassified}.\n" +
+        (RepeatedCategories.Count == 0 ? "No recognized category appeared in more than one analyzed file." :
+            string.Join("\n", RepeatedCategories.Select(item => $"{item.Category}: {item.ReportCount} reports"))) +
+        "\nCounts describe selected files, not verified unique incidents, the same app or phone, or a common root cause. " +
+        "No file names, hashes, timestamps, device identifiers or process names are included. No repair was attempted.";
 }
 
 /// <summary>Analyzes a bounded type-309 crash or type-298 Jetsam IPS file without echoing arbitrary report strings.</summary>
 public static class IphoneCrashReportAnalyzer
 {
     public const int MaximumBytes = 4 * 1024 * 1024;
+    public const int MaximumBatchFiles = 12;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private const string GeneralAdvice = "Preserve the original report privately and reproduce the symptom if safe. " +
         "Check for app/iOS updates and share the original only with a support recipient you choose. " +
         "A report category alone does not establish the cause or justify a reset, restore or part replacement.";
 
-    public static async Task<IphoneCrashAnalysis> AnalyzeAsync(Stream stream, CancellationToken cancellationToken = default)
+    public static async Task<IphoneCrashAnalysis> AnalyzeAsync(Stream stream, CancellationToken cancellationToken = default) =>
+        (await ReadAndAnalyzeAsync(stream, null, cancellationToken).ConfigureAwait(false))!;
+
+    public static async Task<IphoneDiagnosticBatchAnalysis> AnalyzeBatchAsync(IReadOnlyList<Func<Stream>> openReports,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(openReports);
+        if (openReports.Count is < 2 or > MaximumBatchFiles)
+            throw new ArgumentOutOfRangeException(nameof(openReports), "Select 2–12 files for comparison.");
+        Dictionary<string, int> categories = new(StringComparer.Ordinal);
+        HashSet<string> fingerprints = new(StringComparer.Ordinal);
+        int analyzed = 0, duplicates = 0, unavailable = 0, unclassified = 0;
+        foreach (var open in openReports)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                IphoneCrashAnalysis? result;
+                await using (var stream = open())
+                    result = await ReadAndAnalyzeAsync(stream, fingerprints, cancellationToken).ConfigureAwait(false);
+                if (result is null) { duplicates++; continue; }
+                analyzed++;
+                if (result.HasComparableCategory)
+                    categories[result.Category] = categories.GetValueOrDefault(result.Category) + 1;
+                else unclassified++;
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                unavailable++;
+            }
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(openReports.Count, analyzed, duplicates, unavailable, unclassified, categories
+            .Where(item => item.Value > 1).OrderByDescending(item => item.Value).ThenBy(item => item.Key, StringComparer.Ordinal)
+            .Select(item => new IphoneDiagnosticRepeat(item.Key, item.Value)).ToArray());
+    }
+
+    private static async Task<IphoneCrashAnalysis?> ReadAndAnalyzeAsync(Stream stream, HashSet<string>? fingerprints,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stream);
         using var buffer = new MemoryStream();
         var chunk = new byte[16 * 1024];
-        while (true)
+        try
         {
-            var count = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
-            if (count == 0) break;
-            if (buffer.Length + count > MaximumBytes) throw new InvalidDataException("Report exceeds the 4 MiB analysis limit.");
-            buffer.Write(chunk, 0, count);
+            while (true)
+            {
+                var count = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
+                if (count == 0) break;
+                if (buffer.Length + count > MaximumBytes) throw new InvalidDataException("Report exceeds the 4 MiB analysis limit.");
+                buffer.Write(chunk, 0, count);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            var contents = buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length));
+            if (fingerprints is not null && !fingerprints.Add(Convert.ToHexString(SHA256.HashData(contents)))) return null;
+            return Analyze(contents, cancellationToken);
         }
-        cancellationToken.ThrowIfCancellationRequested();
-        return Analyze(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length)), cancellationToken);
+        finally
+        {
+            CryptographicOperations.ZeroMemory(chunk);
+            CryptographicOperations.ZeroMemory(buffer.GetBuffer());
+        }
     }
 
     private static IphoneCrashAnalysis Analyze(ReadOnlySpan<byte> bytes, CancellationToken token)
@@ -94,7 +160,10 @@ public static class IphoneCrashReportAnalyzer
                 "Arithmetic exception signature" => "An arithmetic exception was reported. A developer needs the failing instruction and stack context; this is not evidence of a damaged processor. ",
                 _ => "The recognized fields do not establish a specific cause. Do not infer a hardware fault or a successful repair. ",
             };
-            return new(category, evidence, guidance + GeneralAdvice);
+            return new(category, evidence, guidance + GeneralAdvice)
+            {
+                HasComparableCategory = category is not ("Unrecognized or missing crash signature" or "Process termination; cause unresolved"),
+            };
         }
         catch (JsonException)
         {
@@ -154,7 +223,10 @@ public static class IphoneCrashReportAnalyzer
         var memory = bytes is { } value
             ? $" Reported memory of the marked process: {value.ToString("N0", CultureInfo.InvariantCulture)} bytes."
             : " No validated page-to-byte calculation is available.";
-        return new(category, $"Reported reason: {reason ?? "unknown/unrecognized"}.{memory}", guidance + scope + GeneralAdvice);
+        return new(category, $"Reported reason: {reason ?? "unknown/unrecognized"}.{memory}", guidance + scope + GeneralAdvice)
+        {
+            HasComparableCategory = reason is not (null or "jettisoned"),
+        };
     }
 
     private static ulong? ReadUnsigned(JsonElement parent, string name) =>

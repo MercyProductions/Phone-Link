@@ -8,6 +8,8 @@ The Troubleshooter can analyze an explicitly selected `.ips`/`.json` file contai
 2. In Phone Link → Troubleshooter, choose **Analyze selected .ips report** and select that file. Both supported formats are bounded to 4 MiB and JSON nesting depth 64. Panic, stackshot and translated text remain unsupported.
 3. Review the category, redacted evidence, limitations and next steps. **Copy redacted analysis** is separate from the connection-scan copy button and copies only the displayed summary.
 
+Use **Compare 2–12 reports** to count repeated recognized categories in one selection. Each file has the same 4 MiB limit. Byte-identical files count only once; unreadable, unsupported and unclassified inputs do not count toward a category. The summary does not establish unique incidents, a shared device or app, or a common cause. Neither filenames nor content hashes are displayed.
+
 The analyzer does not upload, modify or persist the source. Unknown strings are not echoed; app names, paths, timestamps, report/device identifiers, log messages and stack traces are not in the result. Raw JSON parser errors are not displayed. Input bytes exist transiently in process memory; secure memory erasure and exclusion from operating-system crash dumps are not claimed. The clipboard is managed by Windows and is not cleared automatically; review before sharing. Original reports may contain private information and must be handled separately.
 
 The included [synthetic fixture](fixtures/synthetic-app-crash.ips) contains no actual device data. Its expected category is **Invalid memory access signature**, and its artificial process/incident labels must not appear in the result.
@@ -18,7 +20,7 @@ Known exception families produce narrowly worded signatures, not a root-cause ve
 
 For Jetsam, a bounded table of process objects is required. An allowlisted reason is reported only if exactly one entry has a reason field. The reported resident-memory calculation uses `memoryStatus.pageSize × rpages` for that same marked entry, with bounds and overflow checks. Missing or ambiguous data does not produce a guessed reason or memory measurement; the largest process is not assumed to have been terminated or to have caused the event. No process names or other original log identifiers are included. This is historical file evidence, not current memory usage or a diagnosis of the owner’s phone.
 
-Memory-access, resource, trap, arithmetic and abort reports do not prove defective RAM, battery, storage, processor or motherboard. The app does not run commands, reset trust, restore firmware or replace drivers based on a report. Repeated-incident grouping, time/symptom correlation, symbolication, real owner-report validation and justified repair actions remain open.
+Memory-access, resource, trap, arithmetic and abort reports do not prove defective RAM, battery, storage, processor or motherboard. The app does not run commands, reset trust, restore firmware or replace drivers based on a report. Verified incident grouping, time/symptom correlation, symbolication, real owner-report validation and justified repair actions remain open.
 
 ## Verification
 
