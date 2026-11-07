@@ -129,6 +129,27 @@ public sealed partial class ContactsPage : Page, IDisposable
     private void BluetoothPeerBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     { if (_loaded) ClearBluetooth(clearPeers: false); }
 
+    private async void BluetoothSizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || App.IsLocked || !_bluetoothExpanded || _bluetoothCancellation is not null ||
+            BluetoothPeerBox.SelectedItem is not ClassicBluetoothPeer peer) return;
+        using var cancellation = new CancellationTokenSource();
+        _bluetoothCancellation = cancellation;
+        BluetoothSizeStatus.Text = "Requesting the count only, not contact details…";
+        UpdateBluetoothButtons();
+        try
+        {
+            var result = await WindowsClassicPhoneProfiles.CheckPhoneBookSizeAsync(peer, cancellation.Token);
+            if (IsCurrentBluetoothOperation(cancellation)) BluetoothSizeStatus.Text = result.Status;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (IsCurrentBluetoothOperation(cancellation))
+                BluetoothSizeStatus.Text = "Windows could not complete the count-only check. No fallback contact read was attempted.";
+        }
+        finally { FinishBluetoothOperation(cancellation); }
+    }
+
     private async void BluetoothReadButton_Click(object sender, RoutedEventArgs e) => await ReadBluetoothAsync(0);
     private async void BluetoothPreviousButton_Click(object sender, RoutedEventArgs e)
     {
@@ -185,6 +206,7 @@ public sealed partial class ContactsPage : Page, IDisposable
         BluetoothContacts.Clear();
         if (clearPeers) BluetoothPeers.Clear();
         BluetoothStatus.Text = "No contacts requested.";
+        BluetoothSizeStatus.Text = string.Empty;
         UpdateBluetoothButtons();
     }
 
@@ -192,7 +214,7 @@ public sealed partial class ContactsPage : Page, IDisposable
     {
         var ready = _loaded && !App.IsLocked && _bluetoothExpanded && _bluetoothCancellation is null &&
             BluetoothPeerBox.SelectedItem is ClassicBluetoothPeer;
-        BluetoothReadButton.IsEnabled = ready;
+        BluetoothReadButton.IsEnabled = BluetoothSizeButton.IsEnabled = ready;
         BluetoothPreviousButton.IsEnabled = ready && _offset is > 0;
         BluetoothNextButton.IsEnabled = ready && _offset is <= ushort.MaxValue - WindowsClassicPhoneProfiles.PhoneBookPageSize &&
             BluetoothContacts.Count == WindowsClassicPhoneProfiles.PhoneBookPageSize;

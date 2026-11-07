@@ -15,6 +15,7 @@ public sealed class ClassicBluetoothPeer(string displayName, string deviceId)
 }
 public sealed record MapInboxObservation(bool Completed, string Status, IReadOnlyList<MapInboxItem> Items);
 public sealed record BluetoothPhoneBookObservation(bool Completed, string Status, IReadOnlyList<BluetoothContactPreview> Items);
+public sealed record BluetoothPhoneBookSizeObservation(bool Completed, string Status, ushort? ReportedEntryCount);
 public sealed record BluetoothCallHistoryObservation(bool Completed, string Status, IReadOnlyList<BluetoothCallPreview> Items);
 public sealed record ClassicPhoneProfileObservation(int PairedPeers, int CheckedPeers, int PeersWithMap, int PeersWithPbap, int UnavailablePeers);
 
@@ -113,21 +114,31 @@ public static class WindowsClassicPhoneProfiles
     {
         var result = await ReadPbapAsync(selected, (input, output, features, bounded) =>
             PbapPhoneBookClient.ReadAsync(input, output, startOffset, features, bounded), token).ConfigureAwait(false);
+        var items = result.Value ?? [];
         return new(result.Completed, result.Completed
-            ? $"Received {result.Items.Count} permitted Bluetooth contact(s). Nothing was saved or merged."
-            : result.Status, result.Items);
+            ? $"Received {items.Count} permitted Bluetooth contact(s). Nothing was saved or merged."
+            : result.Status, items);
+    }
+
+    public static async Task<BluetoothPhoneBookSizeObservation> CheckPhoneBookSizeAsync(ClassicBluetoothPeer selected, CancellationToken token)
+    {
+        var result = await ReadPbapAsync(selected, PbapPhoneBookClient.ReadSizeAsync, token).ConfigureAwait(false);
+        return new(result.Completed, result.Completed
+            ? $"The phone reported {result.Value} phone-book entries over Bluetooth. No contact records were requested. A count does not verify access to contact details."
+            : result.Status + " No fallback contact read was attempted.", result.Value);
     }
 
     public static async Task<BluetoothCallHistoryObservation> ReadCallHistoryAsync(ClassicBluetoothPeer selected, CancellationToken token)
     {
         var result = await ReadPbapAsync(selected, PbapPhoneBookClient.ReadCallHistoryAsync, token).ConfigureAwait(false);
+        var items = result.Value ?? [];
         return new(result.Completed, result.Completed
-            ? $"Received {result.Items.Count} permitted call-history entry(s). Nothing was saved."
-            : result.Status, result.Items);
+            ? $"Received {items.Count} permitted call-history entry(s). Nothing was saved."
+            : result.Status, items);
     }
 
-    private static async Task<(bool Completed, string Status, IReadOnlyList<T> Items)> ReadPbapAsync<T>(ClassicBluetoothPeer selected,
-        Func<Stream, Stream, bool, CancellationToken, Task<IReadOnlyList<T>>> read, CancellationToken token)
+    private static async Task<(bool Completed, string Status, T? Value)> ReadPbapAsync<T>(ClassicBluetoothPeer selected,
+        Func<Stream, Stream, bool, CancellationToken, Task<T>> read, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(selected);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -164,9 +175,9 @@ public static class WindowsClassicPhoneProfiles
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         { return Failure("The PBAP read timed out. Data availability is unknown."); }
         catch (Exception exception) when (!token.IsCancellationRequested && exception is IOException or InvalidDataException or System.Text.DecoderFallbackException)
-        { return Failure("The PBAP channel did not return a complete supported page."); }
+        { return Failure("The PBAP channel did not return a complete supported response."); }
 
-        static (bool, string, IReadOnlyList<T>) Failure(string reason) => (false, reason, []);
+        static (bool, string, T?) Failure(string reason) => (false, reason, default);
     }
 
     private static bool ReadConnectFeatures(byte[] data) => data[0] == 0x0A && (BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(1)) & (1u << 19)) != 0;

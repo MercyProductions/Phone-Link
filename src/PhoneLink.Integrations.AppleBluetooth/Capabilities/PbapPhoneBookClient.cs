@@ -25,6 +25,14 @@ internal static class PbapPhoneBookClient
     private const int MaximumLine = 4096;
     private static readonly byte[] Target = Convert.FromHexString("796135F0F0C511D809660800200C9A66");
 
+    internal static async Task<ushort?> ReadSizeAsync(Stream input, Stream output, bool includeFeatures, CancellationToken token)
+    {
+        var obex = new ObexPhoneClient(input, output);
+        await obex.ConnectAsync(Target, includeFeatures ? [0x10, 4, 0, 0, 0, 1] : [], token).ConfigureAwait(false);
+        try { return await obex.ReadPhoneBookSizeAsync(token).ConfigureAwait(false); }
+        finally { await obex.DisconnectAsync(token).ConfigureAwait(false); }
+    }
+
     internal static Task<IReadOnlyList<BluetoothContactPreview>> ReadAsync(Stream input, Stream output,
         ushort startOffset, bool includeFeatures, CancellationToken token) => ReadObjectAsync(input, output, "telecom/pb.vcf",
             [0x04, 2, 0, (byte)PageSize, 0x05, 2, (byte)(startOffset >> 8), (byte)startOffset,

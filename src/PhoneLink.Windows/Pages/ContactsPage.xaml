@@ -32,10 +32,12 @@
                 <ComboBox x:Name="BluetoothPeerBox" Header="Select your paired iPhone" ItemsSource="{x:Bind BluetoothPeers}"
                     DisplayMemberPath="DisplayName" SelectionChanged="BluetoothPeerBox_SelectionChanged" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="BluetoothSizeButton" Content="Check count only" Click="BluetoothSizeButton_Click" IsEnabled="False" />
                     <Button x:Name="BluetoothReadButton" Content="Read phone book" Click="BluetoothReadButton_Click" IsEnabled="False" />
                     <Button x:Name="BluetoothPreviousButton" Content="Previous page" Click="BluetoothPreviousButton_Click" IsEnabled="False" />
                     <Button x:Name="BluetoothNextButton" Content="Next page" Click="BluetoothNextButton_Click" IsEnabled="False" />
                 </StackPanel>
+                <TextBlock x:Name="BluetoothSizeStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 <TextBlock x:Name="BluetoothStatus" Text="No contacts requested." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 <ListView ItemsSource="{x:Bind BluetoothContacts}" SelectionMode="None" MaxHeight="210">
                     <ListView.ItemTemplate>

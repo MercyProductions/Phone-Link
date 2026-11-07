@@ -8,6 +8,54 @@ public sealed class PbapPhoneBookClientTests
     private static readonly byte[] ConnectResponse = Convert.FromHexString("A0001F100010004A0013796135F0F0C511D809660800200C9A66CB01020304");
     private static readonly string[] ExpectedNumbers = ["123", "456"];
 
+    [Theory]
+    [InlineData(0, 0, 0)]
+    [InlineData(0x12, 0x34, 0x1234)]
+    public async Task CountOnlyRequestsNoContactBodyAndReadsBigEndianSize(byte high, byte low, ushort expected)
+    {
+        await using var input = new MemoryStream([.. ConnectResponse, 0xA0, 0, 10, 0x4C, 0, 7,
+            0x08, 2, high, low, 0xA0, 0, 3]);
+        await using var output = new MemoryStream();
+        Assert.Equal(expected, await PbapPhoneBookClient.ReadSizeAsync(input, output, true, CancellationToken.None));
+        var wire = output.ToArray();
+        var get = (wire[1] << 8) + wire[2];
+        var end = get + (wire[get + 1] << 8) + wire[get + 2];
+        Assert.Equal(0x83, wire[get]);
+        Assert.True(wire.AsSpan(get, end - get).EndsWith(new byte[] { 0x4C, 0, 7, 0x04, 2, 0, 0 }));
+        Assert.True(wire.AsSpan(get, end - get).IndexOf(Encoding.BigEndianUnicode.GetBytes("telecom/pb.vcf\0")) >= 0);
+        Assert.Equal(0x81, wire[end]);
+        Assert.Equal(wire.Length, end + (wire[end + 1] << 8) + wire[end + 2]);
+    }
+
+    [Theory]
+    [InlineData("A00003")] // no parameters
+    [InlineData("A0000A4C000708030001")] // truncated TLV
+    [InlineData("A0000E4C000B0802000108020002")] // duplicate count
+    [InlineData("A0000E4C00070802000149000458")] // unsolicited body
+    [InlineData("900003")] // no continuation needed or allowed
+    public async Task MalformedCountReplyIsRejectedWithoutFallback(string reply)
+    {
+        await using var input = new MemoryStream([.. ConnectResponse, .. Convert.FromHexString(reply), 0xA0, 0, 3]);
+        await using var output = new MemoryStream();
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            PbapPhoneBookClient.ReadSizeAsync(input, output, false, CancellationToken.None));
+        var wire = output.ToArray();
+        var get = (wire[1] << 8) + wire[2];
+        var end = get + (wire[get + 1] << 8) + wire[get + 2];
+        Assert.Equal(0x81, wire[end]);
+        Assert.Equal(wire.Length, end + (wire[end + 1] << 8) + wire[end + 2]);
+    }
+
+    [Fact]
+    public async Task CountDenialIsNotReportedAsZero()
+    {
+        await using var input = new MemoryStream([.. ConnectResponse, 0xC3, 0, 3, 0xA0, 0, 3]);
+        await using var output = new MemoryStream();
+        var error = await Assert.ThrowsAsync<PhoneObexRejectedException>(() =>
+            PbapPhoneBookClient.ReadSizeAsync(input, output, false, CancellationToken.None));
+        Assert.Equal(0xC3, error.Code);
+    }
+
     [Fact]
     public async Task PullsOnlyTheRequestedContactPageAndFieldMask()
     {

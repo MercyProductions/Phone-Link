@@ -34,6 +34,44 @@ internal sealed class ObexPhoneClient(Stream input, Stream output)
     public async Task SetExistingFolderAsync(string folder, CancellationToken token) =>
         RequireSuccess((await ExchangeAsync(0x85, [0x02, 0, .. Connection, .. Name(folder)], token).ConfigureAwait(false)).Code);
 
+    public async Task<ushort> ReadPhoneBookSizeAsync(CancellationToken token)
+    {
+        var response = await ExchangeAsync(0x83, [.. Connection, .. Name("telecom/pb.vcf"),
+            .. Variable(0x42, "x-bt/phonebook\0"u8), .. Variable(0x4C, [0x04, 2, 0, 0])], token).ConfigureAwait(false);
+        try
+        {
+            if (response.Code == 0x90) throw new InvalidDataException("Unexpected continuation for a count-only request.");
+            RequireSuccess(response.Code);
+            ushort? count = null;
+            var sawParameters = false;
+            foreach (var (kind, value) in Headers(response.Payload))
+            {
+                try
+                {
+                    if (kind is 0x48 or 0x49) throw new InvalidDataException("The count-only response included a body.");
+                    if (kind != 0x4C) continue;
+                    if (sawParameters) throw new InvalidDataException("Duplicate application parameter headers.");
+                    sawParameters = true;
+                    for (var offset = 0; offset < value.Length;)
+                    {
+                        if (value.Length - offset < 2 || value[offset + 1] > value.Length - offset - 2)
+                            throw new InvalidDataException("The phone-book size parameter was truncated.");
+                        var length = value[offset + 1];
+                        if (value[offset] == 0x08)
+                        {
+                            if (count is not null || length != 2) throw new InvalidDataException("Ambiguous phone-book size.");
+                            count = BinaryPrimitives.ReadUInt16BigEndian(value.AsSpan(offset + 2, 2));
+                        }
+                        offset += 2 + length;
+                    }
+                }
+                finally { CryptographicOperations.ZeroMemory(value); }
+            }
+            return count ?? throw new InvalidDataException("The phone did not report a phone-book size.");
+        }
+        finally { CryptographicOperations.ZeroMemory(response.Payload); }
+    }
+
     public async Task<T> ReadObjectAsync<T>(string name, byte[] type, byte[] parameters, int maximumBody,
         Func<Stream, T> parse, CancellationToken token)
     {
