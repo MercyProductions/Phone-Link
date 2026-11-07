@@ -14,11 +14,14 @@ if (args.Length == 2 && args[0] == "--forward" && ushort.TryParse(args[1], out v
     {
         using var setup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var connector = await PinnedUsbDeviceConnector.SelectSingleAsync(setup.Token);
-        await using var tunnel = LoopbackDeviceTunnel.Start(token => connector.OpenChannelAsync(port, token), cancellationToken: lifetime.Token);
+        await using var tunnel = connector.StartMonitoredForwarder(port, lifetime.Token);
         Console.WriteLine($"Loopback forwarder: 127.0.0.1:{tunnel.LocalPort} -> pinned USB device port {port}. Ctrl+C stops it.");
+        Console.WriteLine("Two consecutive inventories without exactly one matching USB target also stop it.");
         Console.WriteLine("Forwarding does not install a server, authenticate SSH, or bypass device permissions. Use normal SSH host-key verification.");
         await tunnel.Completion;
         await tunnel.DisposeAsync();
+        if (tunnel.TargetState == TunnelTargetState.StoppedAfterTargetLoss)
+            Console.WriteLine("Stopped automatically: pinned USB device was no longer uniquely present. No port is listening.");
         Console.WriteLine(JsonSerializer.Serialize(tunnel.CaptureStatistics()));
         return 0;
     }

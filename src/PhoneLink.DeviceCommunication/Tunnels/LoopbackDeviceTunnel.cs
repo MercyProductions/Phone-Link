@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Xml;
 using PhoneLink.DeviceCommunication.Diagnostics;
 
 namespace PhoneLink.DeviceCommunication.Tunnels;
@@ -24,6 +25,8 @@ public sealed class TunnelConnection(Stream stream, IDisposable? owner = null, A
     }
 }
 
+public enum TunnelTargetState { Unknown, Present, MissingOrAmbiguous, StoppedAfterTargetLoss }
+
 public sealed class LoopbackDeviceTunnel : IAsyncDisposable
 {
     private readonly TcpListener _listener;
@@ -33,14 +36,16 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
     private readonly ConcurrentDictionary<long, Task> _connections = new();
     private readonly object _disposeGate = new();
     private readonly Task _acceptTask;
+    private readonly Task _monitorTask;
     private Task? _disposeTask;
     private long _connectionId, _sent, _received, _rejected;
-    private int _active, _failed;
+    private int _active, _failed, _targetState;
     private ConnectionFailure? _lastFailure;
     private sealed record ConnectionFailure(string Category, int? UsbResponseCode);
 
     private LoopbackDeviceTunnel(Func<CancellationToken, Task<TunnelConnection>> connect,
-        int localPort, int maximumConnections, CancellationToken cancellationToken)
+        int localPort, int maximumConnections, CancellationToken cancellationToken,
+        Func<CancellationToken, Task<bool>>? isTargetPresent = null, TimeSpan monitorInterval = default)
     {
         _connect = connect;
         _stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -55,12 +60,14 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
         catch { _listener.Dispose(); _stop.Dispose(); _slots.Dispose(); throw; }
         LocalPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptTask = AcceptAsync();
+        _monitorTask = isTargetPresent is null ? Task.CompletedTask : MonitorTargetAsync(isTargetPresent, monitorInterval);
     }
 
     public int LocalPort { get; }
-    public bool IsRunning => !_acceptTask.IsCompleted;
+    public bool IsRunning => !StoppingToken.IsCancellationRequested && !_acceptTask.IsCompleted;
     public Task Completion => _acceptTask;
     public CancellationToken StoppingToken { get; }
+    public TunnelTargetState TargetState => (TunnelTargetState)Volatile.Read(ref _targetState);
 
     public static LoopbackDeviceTunnel Start(Func<CancellationToken, Task<TunnelConnection>> connect,
         int localPort = 0, int maximumConnections = 4, CancellationToken cancellationToken = default)
@@ -71,6 +78,54 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
         if (maximumConnections is < 1 or > 16) throw new ArgumentOutOfRangeException(nameof(maximumConnections));
         cancellationToken.ThrowIfCancellationRequested();
         return new(connect, localPort, maximumConnections, cancellationToken);
+    }
+
+    internal static LoopbackDeviceTunnel StartWithTargetMonitoring(Func<CancellationToken, Task<TunnelConnection>> connect,
+        Func<CancellationToken, Task<bool>> isTargetPresent, TimeSpan interval, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(connect);
+        ArgumentNullException.ThrowIfNull(isTargetPresent);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(connect, 0, 4, cancellationToken, isTargetPresent, interval);
+    }
+
+    private async Task MonitorTargetAsync(Func<CancellationToken, Task<bool>> isTargetPresent, TimeSpan interval)
+    {
+        var misses = 0;
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(interval, StoppingToken).ConfigureAwait(false);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(StoppingToken);
+                deadline.CancelAfter(TimeSpan.FromSeconds(2));
+                TunnelTargetState state;
+                try
+                {
+                    var present = await isTargetPresent(deadline.Token).ConfigureAwait(false);
+                    deadline.Token.ThrowIfCancellationRequested();
+                    misses = present ? 0 : misses + 1;
+                    state = present ? TunnelTargetState.Present : misses == 1 ?
+                        TunnelTargetState.MissingOrAmbiguous : TunnelTargetState.StoppedAfterTargetLoss;
+                }
+                catch (Exception exception) when (exception is IOException or SocketException or
+                    InvalidDataException or XmlException or OperationCanceledException)
+                {
+                    StoppingToken.ThrowIfCancellationRequested();
+                    misses = 0;
+                    state = TunnelTargetState.Unknown;
+                }
+                StoppingToken.ThrowIfCancellationRequested();
+                Volatile.Write(ref _targetState, (int)state);
+                if (state == TunnelTargetState.StoppedAfterTargetLoss)
+                {
+                    await _stop.CancelAsync().ConfigureAwait(false);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (StoppingToken.IsCancellationRequested) { }
     }
 
     public TunnelStatistics CaptureStatistics()
@@ -194,9 +249,8 @@ public sealed class LoopbackDeviceTunnel : IAsyncDisposable
         try { await _acceptTask.ConfigureAwait(false); }
         finally
         {
-            await Task.WhenAll(_connections.Values.ToArray()).ConfigureAwait(false);
-            _slots.Dispose();
-            _stop.Dispose();
+            try { await Task.WhenAll(_connections.Values.Append(_monitorTask).ToArray()).ConfigureAwait(false); }
+            finally { _slots.Dispose(); _stop.Dispose(); }
         }
     }
 }

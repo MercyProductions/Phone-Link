@@ -188,6 +188,66 @@ public sealed class LoopbackDeviceTunnelTests
     }
 
     [Fact]
+    public async Task RepeatedMissingTargetAutomaticallyClosesListenerAndExistingConnection()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        using var remoteListener = new TcpListener(IPAddress.Loopback, 0);
+        remoteListener.Start();
+        var remotePort = ((IPEndPoint)remoteListener.LocalEndpoint).Port;
+        var allowMissing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var tunnel = LoopbackDeviceTunnel.StartWithTargetMonitoring(token => ConnectAsync(remotePort, token),
+            async token => { await allowMissing.Task.WaitAsync(token); return false; },
+            TimeSpan.FromMilliseconds(25), deadline.Token);
+        using var local = new TcpClient();
+        await local.ConnectAsync(IPAddress.Loopback, tunnel.LocalPort, deadline.Token);
+        using var remote = await remoteListener.AcceptTcpClientAsync(deadline.Token);
+
+        allowMissing.SetResult();
+        await tunnel.Completion.WaitAsync(deadline.Token);
+        await tunnel.DisposeAsync().AsTask().WaitAsync(deadline.Token);
+
+        Assert.Equal(TunnelTargetState.StoppedAfterTargetLoss, tunnel.TargetState);
+        Assert.False(tunnel.IsRunning);
+        Assert.Equal(0, tunnel.CaptureStatistics().ActiveConnections);
+        Assert.Equal(0, await local.GetStream().ReadAsync(new byte[1], deadline.Token));
+        Assert.Equal(0, await remote.GetStream().ReadAsync(new byte[1], deadline.Token));
+        using var lateClient = new TcpClient();
+        await Assert.ThrowsAsync<SocketException>(async () =>
+            await lateClient.ConnectAsync(IPAddress.Loopback, tunnel.LocalPort, deadline.Token));
+    }
+
+    [Fact]
+    public async Task UnknownAndPresentInventoriesBreakTheConsecutiveMissCount()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var startedFinalProbe = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelledFinalProbe = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var probes = 0;
+        await using var tunnel = LoopbackDeviceTunnel.StartWithTargetMonitoring(
+            _ => throw new InvalidOperationException("Inventory must not open a device service."),
+            async token =>
+            {
+                switch (Interlocked.Increment(ref probes))
+                {
+                    case 1 or 3 or 5: return false;
+                    case 2: throw new InvalidDataException("Malformed fixture inventory.");
+                    case 4: return true;
+                    default:
+                        startedFinalProbe.TrySetResult();
+                        try { await Task.Delay(Timeout.InfiniteTimeSpan, token); }
+                        finally { cancelledFinalProbe.TrySetResult(); }
+                        return true;
+                }
+            }, TimeSpan.FromMilliseconds(25), deadline.Token);
+        await startedFinalProbe.Task.WaitAsync(deadline.Token);
+        Assert.True(tunnel.IsRunning);
+        Assert.Equal(TunnelTargetState.MissingOrAmbiguous, tunnel.TargetState);
+        await tunnel.DisposeAsync().AsTask().WaitAsync(deadline.Token);
+        Assert.True(cancelledFinalProbe.Task.IsCompletedSuccessfully);
+        Assert.NotEqual(TunnelTargetState.StoppedAfterTargetLoss, tunnel.TargetState);
+    }
+
+    [Fact]
     public void RejectsInvalidListenerOptions()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => LoopbackDeviceTunnel.Start(_ => throw new InvalidOperationException(), localPort: -1));

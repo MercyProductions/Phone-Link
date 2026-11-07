@@ -22,11 +22,27 @@ public sealed class PinnedUsbDeviceConnector
         return new(targets[0].IdentityHash);
     }
 
+    public LoopbackDeviceTunnel StartMonitoredForwarder(ushort remotePort, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(remotePort);
+        return LoopbackDeviceTunnel.StartWithTargetMonitoring(token => OpenChannelAsync(remotePort, token),
+            IsUniquelyPresentAsync, TimeSpan.FromSeconds(2), cancellationToken);
+    }
+
+    private async Task<bool> IsUniquelyPresentAsync(CancellationToken cancellationToken)
+    {
+        var targets = await GetTargetsAsync(cancellationToken).ConfigureAwait(false);
+        return targets.Count(MatchesIdentity) == 1;
+    }
+
+    private bool MatchesIdentity(UsbTarget target) =>
+        CryptographicOperations.FixedTimeEquals(target.IdentityHash, _identityHash);
+
     public async Task<TunnelConnection> OpenChannelAsync(ushort remotePort, CancellationToken cancellationToken)
     {
         if (remotePort == 0) throw new ArgumentOutOfRangeException(nameof(remotePort));
         var targets = await GetTargetsAsync(cancellationToken).ConfigureAwait(false);
-        var matches = targets.Where(target => CryptographicOperations.FixedTimeEquals(target.IdentityHash, _identityHash)).ToArray();
+        var matches = targets.Where(MatchesIdentity).ToArray();
         if (matches.Length != 1) throw new InvalidOperationException("The pinned USB device is absent or ambiguous; no replacement device was selected.");
         var client = new TcpClient(AddressFamily.InterNetwork);
         try
@@ -66,9 +82,13 @@ public sealed class PinnedUsbDeviceConnector
         foreach (var entry in entries)
         {
             var item = ExperimentalUsbMuxProbe.ReadDictionary(entry);
-            if (!item.TryGetValue("Properties", out var properties)) continue;
+            if (!item.TryGetValue("Properties", out var properties))
+                throw new InvalidDataException("A transport entry is missing its properties.");
             var details = ExperimentalUsbMuxProbe.ReadDictionary(properties);
-            if (!details.TryGetValue("ConnectionType", out var type) || type.Name != "string" || type.Value != "USB") continue;
+            if (!details.TryGetValue("ConnectionType", out var type) || type.Name != "string" || type.HasElements ||
+                type.Value is not ("USB" or "Network"))
+                throw new InvalidDataException("A transport entry has an unrecognized connection type.");
+            if (type.Value != "USB") continue;
             if (!item.TryGetValue("DeviceID", out var id) || id.Name != "integer" ||
                 !int.TryParse(id.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number <= 0 ||
                 !details.TryGetValue("SerialNumber", out var serial) || serial.Name != "string" || serial.HasElements ||

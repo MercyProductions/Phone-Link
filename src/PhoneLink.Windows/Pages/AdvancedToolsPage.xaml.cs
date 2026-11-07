@@ -114,7 +114,7 @@ public sealed partial class AdvancedToolsPage : Page
         var connector = await PinnedUsbDeviceConnector.SelectSingleAsync(setup.Token);
         token.ThrowIfCancellationRequested();
         if (!_loaded || App.IsLocked) return;
-        _tunnel = LoopbackDeviceTunnel.Start(ct => connector.OpenChannelAsync(port, ct), cancellationToken: _pageLifetime.Token);
+        _tunnel = connector.StartMonitoredForwarder(port, _pageLifetime.Token);
         _forwardedPort = port;
         SshProbeText.Text = "This forwarder's target service has not been checked. Identification will not establish host-key trust or login.";
         TunnelText.Text = $"127.0.0.1:{_tunnel.LocalPort} → selected USB device port {port}. Target service and authentication are not verified.";
@@ -134,7 +134,13 @@ public sealed partial class AdvancedToolsPage : Page
         SshProbeText.Text = "No current forwarded SSH observation. Stopping invalidates earlier results.";
         var tunnel = Interlocked.Exchange(ref _tunnel, null);
         if (tunnel is not null) await tunnel.DisposeAsync();
-        if (_loaded) { TunnelText.Text = "Stopped. No ports are listening."; UpdateButtons(); }
+        if (_loaded && _tunnel is null)
+        {
+            TunnelText.Text = tunnel?.TargetState == TunnelTargetState.StoppedAfterTargetLoss && !App.IsLocked
+                ? "Stopped automatically: two USB inventories did not identify exactly one match for the pinned device. No port is listening. Reconnect and start a new forwarder if needed."
+                : "Stopped. No ports are listening.";
+            UpdateButtons();
+        }
     }
 
     private async void VerifyButton_Click(object sender, RoutedEventArgs args) => await RunAsync(async token =>
@@ -386,9 +392,16 @@ public sealed partial class AdvancedToolsPage : Page
         var stats = tunnel.CaptureStatistics();
         var lastFailure = stats.LastUsbResponseCode is { } code ? $"last failure: USB channel rejected (code {code})" :
             stats.LastFailureCategory ?? "no failure recorded";
+        var targetState = tunnel.TargetState switch
+        {
+            TunnelTargetState.Present => "Pinned USB device seen.",
+            TunnelTargetState.MissingOrAmbiguous => "Pinned USB device not uniquely seen; waiting for a second inventory.",
+            TunnelTargetState.StoppedAfterTargetLoss => "Stopping after the pinned USB device was not uniquely seen.",
+            _ => "Current pinned USB presence is unknown.",
+        };
         TunnelText.Text = $"127.0.0.1:{tunnel.LocalPort} → USB port {_forwardedPort} · {stats.ActiveConnections} active · " +
             $"{stats.BytesToDevice:N0} bytes sent / {stats.BytesFromDevice:N0} received · {stats.FailedConnections} failed · {stats.RejectedAtCapacity} declined at capacity · {lastFailure}. " +
-            "Forwarding active; remote service and SSH authentication are not verified.";
+            $"{targetState} Remote service and SSH authentication are not verified.";
     }
 
     private void LiveRuntimeButton_Click(object sender, RoutedEventArgs args)
