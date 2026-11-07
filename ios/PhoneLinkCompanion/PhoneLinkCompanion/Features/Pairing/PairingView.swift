@@ -7,6 +7,7 @@ struct PairingView: View {
     @State private var isShowingScanner = false
     @State private var scannedOffer: PairingOfferArtifact?
     @State private var pendingConnection: PendingPairingConnection?
+    @State private var connectTask: Task<Void, Never>?
     @State private var isWorking = false
     @State private var errorMessage: String?
     @State private var didPair = false
@@ -67,6 +68,7 @@ struct PairingView: View {
             }
         }
         .onDisappear {
+            connectTask?.cancel()
             pendingConnection?.cancel()
         }
     }
@@ -114,7 +116,8 @@ struct PairingView: View {
                 .foregroundStyle(.secondary)
 
             Button("Connect securely") {
-                Task { await connect(artifact) }
+                guard connectTask == nil else { return }
+                connectTask = Task { await connect(artifact) }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -173,11 +176,14 @@ struct PairingView: View {
 
     private func connect(_ artifact: PairingOfferArtifact) async {
         isWorking = true
-        defer { isWorking = false }
+        defer { isWorking = false; connectTask = nil }
         do {
-            pendingConnection = try await client.connect(to: artifact)
+            let connection = try await client.connect(to: artifact)
+            if Task.isCancelled { connection.cancel(); return }
+            pendingConnection = connection
             errorMessage = nil
         } catch {
+            if Task.isCancelled { return }
             errorMessage = error.localizedDescription
         }
     }

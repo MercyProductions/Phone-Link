@@ -17,6 +17,8 @@ final class PairingClient {
     }
 
     func connect(to artifact: PairingOfferArtifact) async throws -> PendingPairingConnection {
+        try Task.checkCancellation()
+        guard Date() < artifact.offer.expiresAt else { throw PairingClientError.offerExpired }
         let identity = try identityStore.loadOrCreate()
         let deviceID = try identityStore.loadOrCreateDeviceID()
         let clientNonce = try randomData(count: 32)
@@ -42,74 +44,72 @@ final class PairingClient {
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         )
 
-        var lastError: Error = PairingClientError.noReachableEndpoint
-        for endpoint in artifact.offer.endpoints {
+        let helloData = try JSONEncoder.phoneLink.encode(hello)
+        return try await PairingEndpointAttempts.firstReachable(artifact.offer) { endpoint, timeout in
+            let url = try webSocketURL(endpoint)
+            let delegate = PinnedTLSDelegate(expectedSPKIHash: artifact.offer.tlsSPKISHA256)
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 20
+            configuration.waitsForConnectivity = false
+            configuration.allowsCellularAccess = false
+            let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+            let task = session.webSocketTask(with: url)
+            task.maximumMessageSize = 16_384
+            task.resume()
+
             do {
-                let delegate = PinnedTLSDelegate(expectedSPKIHash: artifact.offer.tlsSPKISHA256)
-                let configuration = URLSessionConfiguration.ephemeral
-                configuration.timeoutIntervalForRequest = 20
-                configuration.waitsForConnectivity = true
-                let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-                let task = session.webSocketTask(with: try webSocketURL(endpoint))
-                task.resume()
-
-                do {
-                    try await task.send(.data(JSONEncoder.phoneLink.encode(hello)))
-                    let proofData = try await Self.receiveData(task)
-                    try StrictJSON.validateNoDuplicateObjectKeys(proofData)
-                    let serverProof = try JSONDecoder.phoneLink.decode(PairingServerProof.self, from: proofData)
-                    guard serverProof.kind == "pairing.serverProof",
-                          serverProof.sessionId == artifact.offer.sessionID else {
-                        throw PairingClientError.invalidServerProof
-                    }
-
-                    let serverNonce = try Base64URL.decode(serverProof.serverNonce)
-                    let signature = try Base64URL.decode(serverProof.signature)
-                    guard serverNonce.count == 32, signature.count == 64 else {
-                        throw PairingClientError.invalidServerProof
-                    }
-
-                    let signatureInput = PairingTranscript.serverSignatureInput(
-                        rawOfferJSON: artifact.rawJSON,
-                        clientDeviceID: deviceID.uuidString.lowercased(),
-                        clientIdentityPublicKey: identity.publicKey,
-                        clientNonce: clientNonce,
-                        serverNonce: serverNonce
-                    )
-                    let publicKey = try Curve25519.Signing.PublicKey(
-                        rawRepresentation: artifact.offer.serverIdentityKey
-                    )
-                    guard publicKey.isValidSignature(signature, for: signatureInput) else {
-                        throw PairingClientError.invalidServerSignature
-                    }
-
-                    let comparisonDigest = PairingTranscript.comparisonDigest(
-                        serverSignatureInput: signatureInput,
-                        serverSignature: signature
-                    )
-                    let phrase = try ComparisonPhrase.create(from: comparisonDigest)
-                    return PendingPairingConnection(
-                        sessionID: artifact.offer.sessionID,
-                        comparisonPhrase: phrase,
-                        task: task,
-                        session: session,
-                        delegate: delegate,
-                        trustedPeerStore: trustedPeerStore,
-                        serverIdentityPublicKey: artifact.offer.serverIdentityKey,
-                        tlsSPKISHA256: artifact.offer.tlsSPKISHA256,
-                        endpoints: artifact.offer.endpoints
-                    )
-                } catch {
-                    task.cancel(with: .goingAway, reason: nil)
-                    session.invalidateAndCancel()
-                    throw error
+                let proofData = try await Self.exchangeProof(task, hello: helloData, timeout: timeout)
+                try StrictJSON.validateNoDuplicateObjectKeys(proofData)
+                let serverProof = try JSONDecoder.phoneLink.decode(PairingServerProof.self, from: proofData)
+                guard serverProof.kind == "pairing.serverProof",
+                      serverProof.sessionId == artifact.offer.sessionID else {
+                    throw PairingClientError.invalidServerProof
                 }
+
+                let serverNonce = try Base64URL.decode(serverProof.serverNonce)
+                let signature = try Base64URL.decode(serverProof.signature)
+                guard serverNonce.count == 32, signature.count == 64 else {
+                    throw PairingClientError.invalidServerProof
+                }
+
+                let signatureInput = PairingTranscript.serverSignatureInput(
+                    rawOfferJSON: artifact.rawJSON,
+                    clientDeviceID: deviceID.uuidString.lowercased(),
+                    clientIdentityPublicKey: identity.publicKey,
+                    clientNonce: clientNonce,
+                    serverNonce: serverNonce
+                )
+                let publicKey = try Curve25519.Signing.PublicKey(
+                    rawRepresentation: artifact.offer.serverIdentityKey
+                )
+                guard publicKey.isValidSignature(signature, for: signatureInput) else {
+                    throw PairingClientError.invalidServerSignature
+                }
+
+                let comparisonDigest = PairingTranscript.comparisonDigest(
+                    serverSignatureInput: signatureInput,
+                    serverSignature: signature
+                )
+                let phrase = try ComparisonPhrase.create(from: comparisonDigest)
+                try Task.checkCancellation()
+                guard Date() < artifact.offer.expiresAt else { throw PairingClientError.offerExpired }
+                return PendingPairingConnection(
+                    sessionID: artifact.offer.sessionID,
+                    comparisonPhrase: phrase,
+                    task: task,
+                    session: session,
+                    delegate: delegate,
+                    trustedPeerStore: trustedPeerStore,
+                    serverIdentityPublicKey: artifact.offer.serverIdentityKey,
+                    tlsSPKISHA256: artifact.offer.tlsSPKISHA256,
+                    endpoints: artifact.offer.endpoints
+                )
             } catch {
-                lastError = error
+                task.cancel(with: .goingAway, reason: nil)
+                session.invalidateAndCancel()
+                throw error
             }
         }
-
-        throw lastError
     }
 
     private func webSocketURL(_ endpoint: PairingEndpoint) throws -> URL {
@@ -131,7 +131,34 @@ final class PairingClient {
         return Data(bytes)
     }
 
-    fileprivate static func receiveData(_ task: URLSessionWebSocketTask) async throws -> Data {
+    private nonisolated static func exchangeProof(_ task: URLSessionWebSocketTask, hello: Data, timeout: Duration) async throws -> Data {
+        try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: Data.self) { group in
+                group.addTask {
+                    try await task.send(.data(hello))
+                    return try await Self.receiveData(task)
+                }
+                group.addTask {
+                    try await Task.sleep(for: timeout)
+                    throw PairingClientError.endpointTimedOut
+                }
+                defer { group.cancelAll() }
+                do {
+                    guard let proof = try await group.next() else { throw PairingClientError.invalidServerMessage }
+                    try Task.checkCancellation()
+                    return proof
+                } catch {
+                    // Cancel the WebSocket before leaving the group so its pending send/receive unwinds.
+                    task.cancel(with: .goingAway, reason: nil)
+                    throw error
+                }
+            }
+        } onCancel: {
+            task.cancel(with: .goingAway, reason: nil)
+        }
+    }
+
+    fileprivate nonisolated static func receiveData(_ task: URLSessionWebSocketTask) async throws -> Data {
         switch try await task.receive() {
         case .data(let data):
             return data
@@ -303,8 +330,37 @@ fileprivate final class PinnedTLSDelegate: NSObject, URLSessionDelegate, @unchec
     }
 }
 
-enum PairingClientError: LocalizedError {
+@MainActor
+enum PairingEndpointAttempts {
+    static func firstReachable<T>(_ offer: PairingOffer, now: () -> Date = Date.init,
+        attempt: @MainActor (PairingEndpoint, Duration) async throws -> T) async throws -> T {
+        for endpoint in offer.endpoints {
+            try Task.checkCancellation()
+            let remaining = offer.expiresAt.timeIntervalSince(now())
+            guard remaining > 0 else { throw PairingClientError.offerExpired }
+            do {
+                return try await attempt(endpoint, .seconds(min(6, remaining)))
+            } catch {
+                try Task.checkCancellation()
+                guard isRetryableTransportFailure(error) else { throw error }
+            }
+        }
+        guard now() < offer.expiresAt else { throw PairingClientError.offerExpired }
+        throw PairingClientError.noReachableEndpoint
+    }
+
+    private static func isRetryableTransportFailure(_ error: Error) -> Bool {
+        if let pairingError = error as? PairingClientError { return pairingError == .endpointTimedOut }
+        guard let urlError = error as? URLError else { return false }
+        return [.timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+            .networkConnectionLost, .notConnectedToInternet].contains(urlError.code)
+    }
+}
+
+enum PairingClientError: LocalizedError, Equatable {
     case noReachableEndpoint
+    case endpointTimedOut
+    case offerExpired
     case invalidEndpoint
     case invalidServerMessage
     case invalidServerProof
@@ -314,7 +370,9 @@ enum PairingClientError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noReachableEndpoint: "The Windows PC could not be reached on the local network."
+        case .noReachableEndpoint: "No address in this code completed a pairing connection. Check that both devices are on the same local network and that Phone Link has Local Network access on the iPhone, then generate a fresh code."
+        case .endpointTimedOut: "Windows did not respond before the connection deadline."
+        case .offerExpired: "The pairing code expired. Generate a fresh code on Windows and scan it again."
         case .invalidEndpoint: "The Windows pairing endpoint is invalid."
         case .invalidServerMessage: "Windows returned an invalid pairing message."
         case .invalidServerProof: "Windows returned an invalid pairing proof."

@@ -65,6 +65,89 @@ final class PairingProtocolTests: XCTestCase {
         XCTAssertEqual(decoded.rawJSON, rawOfferJSON)
         XCTAssertEqual(decoded.qrPayload, payload)
     }
+
+    @MainActor
+    func testPairingFallbackAfterTransportTimeoutUsesRemainingOfferTime() async throws {
+        let start = Date(timeIntervalSince1970: 1000)
+        let offer = endpointOffer(expiresAt: start.addingTimeInterval(8))
+        var now = start
+        var attempted: [PairingEndpoint] = []
+        var budgets: [Duration] = []
+        let chosen = try await PairingEndpointAttempts.firstReachable(offer, now: { now }) { endpoint, budget in
+            attempted.append(endpoint)
+            budgets.append(budget)
+            if attempted.count == 1 {
+                now = start.addingTimeInterval(6)
+                throw PairingClientError.endpointTimedOut
+            }
+            return endpoint
+        }
+        XCTAssertEqual(chosen, offer.endpoints[1])
+        XCTAssertEqual(attempted, offer.endpoints)
+        XCTAssertEqual(budgets, [.seconds(6), .seconds(2)])
+    }
+
+    @MainActor
+    func testPairingDoesNotRetryAfterIdentityOrCertificateFailure() async {
+        let offer = endpointOffer(expiresAt: Date().addingTimeInterval(30))
+        let failures: [any Error] = [PairingClientError.invalidServerSignature, URLError(.serverCertificateUntrusted)]
+        for failure in failures {
+            var attempts = 0
+            do {
+                let _: Void = try await PairingEndpointAttempts.firstReachable(offer) { _, _ in
+                    attempts += 1
+                    throw failure
+                }
+                XCTFail("An identity error must end the attempt")
+            } catch {
+                XCTAssertEqual((error as NSError).code, (failure as NSError).code)
+                XCTAssertEqual((error as NSError).domain, (failure as NSError).domain)
+            }
+            XCTAssertEqual(attempts, 1)
+        }
+    }
+
+    @MainActor
+    func testPairingDoesNotAttemptAnotherAddressAfterExpiry() async {
+        let start = Date(timeIntervalSince1970: 1000)
+        let offer = endpointOffer(expiresAt: start.addingTimeInterval(1))
+        var now = start
+        var attempts = 0
+        do {
+            let _: Void = try await PairingEndpointAttempts.firstReachable(offer, now: { now }) { _, _ in
+                attempts += 1
+                now = offer.expiresAt
+                throw URLError(.cannotConnectToHost)
+            }
+            XCTFail("Expired offers cannot try another address")
+        } catch {
+            XCTAssertEqual(error as? PairingClientError, .offerExpired)
+        }
+        XCTAssertEqual(attempts, 1)
+    }
+
+    @MainActor
+    func testPairingDoesNotStartAnAddressWhenCancelled() async {
+        let offer = endpointOffer(expiresAt: Date().addingTimeInterval(30))
+        let pending = Task { @MainActor in
+            let _: Void = try await PairingEndpointAttempts.firstReachable(offer) { _, _ in
+                XCTFail("Cancellation must be checked before starting a connection")
+            }
+        }
+        pending.cancel()
+        do {
+            try await pending.value
+            XCTFail("Expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+    }
+
+    private func endpointOffer(expiresAt: Date) -> PairingOffer {
+        PairingOffer(version: 1, sessionID: UUID(), expiresAt: expiresAt,
+            endpoints: [PairingEndpoint(host: "192.168.1.2", port: 1234), PairingEndpoint(host: "10.0.0.2", port: 1234)],
+            tlsSPKISHA256: Data(), serverIdentityKey: Data(), offerNonce: Data(), pairingSecret: Data())
+    }
 }
 
 private extension Data {
