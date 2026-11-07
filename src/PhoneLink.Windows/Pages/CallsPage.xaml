@@ -47,10 +47,16 @@
             <Border Padding="18" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12">
                 <StackPanel Spacing="10">
                     <TextBlock FontSize="18" FontWeight="SemiBold" Text="Bluetooth call history (read-only)" />
-                    <TextBlock Text="Read up to 30 entries from the selected phone’s combined call log, if it shares that log. This does not place or answer calls and nothing is saved." TextWrapping="Wrap" />
+                    <TextBlock Text="Read up to 30 entries from one Bluetooth call-history folder. The phone controls what it shares. This does not place or answer calls, reset missed calls, or save records." TextWrapping="Wrap" />
                     <Button x:Name="ListHistoryPeersButton" Content="List paired Bluetooth devices" Click="ListHistoryPeersButton_Click" />
                     <ComboBox x:Name="HistoryPeerBox" Header="Select your paired iPhone" DisplayMemberPath="DisplayName"
                         ItemsSource="{x:Bind HistoryPeers}" SelectionChanged="HistoryPeerBox_SelectionChanged" />
+                    <ComboBox x:Name="HistoryFolderBox" Header="Call-history folder" SelectedIndex="0"
+                        SelectionChanged="HistoryPeerBox_SelectionChanged">
+                        <ComboBoxItem Content="Combined" />
+                        <ComboBoxItem Content="Incoming" />
+                        <ComboBoxItem Content="Outgoing" />
+                    </ComboBox>
                     <Button x:Name="ReadHistoryButton" Content="Read permitted call history" Click="ReadHistoryButton_Click" IsEnabled="False" />
                     <TextBlock x:Name="HistoryStatus" Text="No call history requested." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                     <ListView ItemsSource="{x:Bind History}" SelectionMode="None" MaxHeight="280">

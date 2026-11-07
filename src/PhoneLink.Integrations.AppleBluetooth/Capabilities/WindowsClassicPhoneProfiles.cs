@@ -18,10 +18,10 @@ public sealed record BluetoothPhoneBookObservation(bool Completed, string Status
 public sealed record BluetoothPhoneBookSizeObservation(bool Completed, string Status, ushort? ReportedEntryCount);
 public sealed record BluetoothCallHistoryObservation(bool Completed, string Status, IReadOnlyList<BluetoothCallPreview> Items)
 {
-    internal static BluetoothCallHistoryObservation FromPermittedEntries(IReadOnlyList<BluetoothCallPreview> items) =>
+    internal static BluetoothCallHistoryObservation FromPermittedEntries(BluetoothCallHistoryFolder folder, IReadOnlyList<BluetoothCallPreview> items) =>
         new(true, items.Count == 0
-            ? "The phone answered the Bluetooth combined call-history request but shared no entries. This does not mean the iPhone’s Recents list is empty. Nothing was saved."
-            : $"Received {items.Count} permitted Bluetooth call-history entry(s). Nothing was saved.", items);
+            ? $"The phone answered the Bluetooth {folder.ToString().ToLowerInvariant()} call-history request but shared no entries. This does not mean the iPhone’s Recents list is empty. Nothing was saved."
+            : $"Received {items.Count} permitted Bluetooth {folder.ToString().ToLowerInvariant()} call-history entry(s). Nothing was saved.", items);
 }
 public sealed record ClassicPhoneProfileObservation(int PairedPeers, int CheckedPeers, int PeersWithMap, int PeersWithPbap, int UnavailablePeers);
 
@@ -134,11 +134,17 @@ public static class WindowsClassicPhoneProfiles
             : result.Status + " No fallback contact read was attempted.", result.Value);
     }
 
-    public static async Task<BluetoothCallHistoryObservation> ReadCallHistoryAsync(ClassicBluetoothPeer selected, CancellationToken token)
+    public static Task<BluetoothCallHistoryObservation> ReadCallHistoryAsync(ClassicBluetoothPeer selected, CancellationToken token) =>
+        ReadCallHistoryAsync(selected, BluetoothCallHistoryFolder.Combined, token);
+
+    public static async Task<BluetoothCallHistoryObservation> ReadCallHistoryAsync(ClassicBluetoothPeer selected,
+        BluetoothCallHistoryFolder folder, CancellationToken token)
     {
-        var result = await ReadPbapAsync(selected, PbapPhoneBookClient.ReadCallHistoryAsync, token).ConfigureAwait(false);
-        return result.Completed ? BluetoothCallHistoryObservation.FromPermittedEntries(result.Value ?? [])
-            : new(false, result.Status, []);
+        _ = PbapPhoneBookClient.GetCallHistoryPath(folder); // Reject unsupported folders before opening Bluetooth.
+        var result = await ReadPbapAsync(selected, (input, output, features, bounded) =>
+            PbapPhoneBookClient.ReadCallHistoryAsync(input, output, folder, features, bounded), token).ConfigureAwait(false);
+        return result.Completed ? BluetoothCallHistoryObservation.FromPermittedEntries(folder, result.Value ?? [])
+            : new(false, result.Status + " No other call-history folder was requested.", []);
     }
 
     private static async Task<(bool Completed, string Status, T? Value)> ReadPbapAsync<T>(ClassicBluetoothPeer selected,

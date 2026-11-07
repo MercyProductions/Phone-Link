@@ -3,6 +3,8 @@ using System.Globalization;
 
 namespace PhoneLink.Integrations.AppleBluetooth.Capabilities;
 
+public enum BluetoothCallHistoryFolder { Combined, Incoming, Outgoing }
+
 public sealed class BluetoothContactPreview(string name, IReadOnlyList<string> phoneNumbers)
 {
     public string Name { get; } = name;
@@ -39,9 +41,18 @@ internal static class PbapPhoneBookClient
                 0x06, 8, 0, 0, 0, 0, 0, 0, 0, 0x87, 0x07, 1, 1], includeFeatures, Parse, token);
 
     internal static Task<IReadOnlyList<BluetoothCallPreview>> ReadCallHistoryAsync(Stream input, Stream output,
-        bool includeFeatures, CancellationToken token) => ReadObjectAsync(input, output, "telecom/cch.vcf",
+        BluetoothCallHistoryFolder folder, bool includeFeatures, CancellationToken token) =>
+        ReadObjectAsync(input, output, GetCallHistoryPath(folder),
             [0x04, 2, 0, CallHistoryLimit, 0x06, 8, 0, 0, 0, 0, 0x10, 0, 0, 0x87, 0x07, 1, 1],
             includeFeatures, ParseCallHistory, token);
+
+    internal static string GetCallHistoryPath(BluetoothCallHistoryFolder folder) => folder switch
+    {
+        BluetoothCallHistoryFolder.Combined => "telecom/cch.vcf",
+        BluetoothCallHistoryFolder.Incoming => "telecom/ich.vcf",
+        BluetoothCallHistoryFolder.Outgoing => "telecom/och.vcf",
+        _ => throw new ArgumentOutOfRangeException(nameof(folder)),
+    };
 
     private static async Task<T> ReadObjectAsync<T>(Stream input, Stream output, string path, byte[] parameters,
         bool includeFeatures, Func<Stream, T> parse, CancellationToken token)

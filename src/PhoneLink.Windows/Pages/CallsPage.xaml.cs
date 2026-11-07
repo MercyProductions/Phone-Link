@@ -145,16 +145,26 @@ public sealed partial class CallsPage : Page, IDisposable
 
     private async void ReadHistoryButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_loaded || App.IsLocked || _historyCancellation is not null || HistoryPeerBox.SelectedItem is not ClassicBluetoothPeer peer) return;
+        if (!_loaded || App.IsLocked || _historyCancellation is not null || HistoryPeerBox.SelectedItem is not ClassicBluetoothPeer peer ||
+            GetSelectedHistoryFolder() is not { } folder) return;
         History.Clear();
         await RunHistoryAsync(async token =>
         {
-            var observation = await WindowsClassicPhoneProfiles.ReadCallHistoryAsync(peer, token);
-            if (!_loaded || App.IsLocked || token.IsCancellationRequested) return;
+            var observation = await WindowsClassicPhoneProfiles.ReadCallHistoryAsync(peer, folder, token);
+            if (!_loaded || App.IsLocked || token.IsCancellationRequested ||
+                !ReferenceEquals(HistoryPeerBox.SelectedItem, peer) || GetSelectedHistoryFolder() != folder) return;
             HistoryStatus.Text = observation.Status;
             foreach (var entry in observation.Items) History.Add(entry);
-        }, "Requesting the phone’s permitted combined call log…");
+        }, $"Requesting the phone’s permitted {folder.ToString().ToLowerInvariant()} call log…");
     }
+
+    private BluetoothCallHistoryFolder? GetSelectedHistoryFolder() => HistoryFolderBox.SelectedIndex switch
+    {
+        0 => BluetoothCallHistoryFolder.Combined,
+        1 => BluetoothCallHistoryFolder.Incoming,
+        2 => BluetoothCallHistoryFolder.Outgoing,
+        _ => null,
+    };
 
     private async Task RunHistoryAsync(Func<CancellationToken, Task> action, string progress)
     {
@@ -192,7 +202,8 @@ public sealed partial class CallsPage : Page, IDisposable
     {
         var ready = _loaded && !App.IsLocked && _historyCancellation is null;
         ListHistoryPeersButton.IsEnabled = ready;
-        ReadHistoryButton.IsEnabled = ready && HistoryPeerBox.SelectedItem is ClassicBluetoothPeer;
+        HistoryFolderBox.IsEnabled = ready;
+        ReadHistoryButton.IsEnabled = ready && HistoryPeerBox.SelectedItem is ClassicBluetoothPeer && GetSelectedHistoryFolder() is not null;
     }
 
     private void TransportSetupButton_Click(object sender, RoutedEventArgs e)

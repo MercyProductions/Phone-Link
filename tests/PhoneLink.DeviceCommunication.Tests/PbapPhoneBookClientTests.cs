@@ -7,14 +7,15 @@ public sealed class PbapPhoneBookClientTests
 {
     private static readonly byte[] ConnectResponse = Convert.FromHexString("A0001F100010004A0013796135F0F0C511D809660800200C9A66CB01020304");
     private static readonly string[] ExpectedNumbers = ["123", "456"];
+    private static readonly string[] CallPaths = ["telecom/cch.vcf", "telecom/ich.vcf", "telecom/och.vcf", "telecom/mch.vcf"];
 
     [Fact]
     public async Task SuccessfulEmptyCombinedCallLogIsNotAClaimThatRecentsAreEmpty()
     {
         await using var input = new MemoryStream([.. ConnectResponse, 0xA0, 0, 6, 0x49, 0, 3, 0xA0, 0, 3]);
         await using var output = new MemoryStream();
-        var entries = await PbapPhoneBookClient.ReadCallHistoryAsync(input, output, true, CancellationToken.None);
-        var result = BluetoothCallHistoryObservation.FromPermittedEntries(entries);
+        var entries = await PbapPhoneBookClient.ReadCallHistoryAsync(input, output, BluetoothCallHistoryFolder.Combined, true, CancellationToken.None);
+        var result = BluetoothCallHistoryObservation.FromPermittedEntries(BluetoothCallHistoryFolder.Combined, entries);
         Assert.True(result.Completed);
         Assert.Empty(result.Items);
         Assert.Contains("shared no entries", result.Status);
@@ -107,20 +108,41 @@ public sealed class PbapPhoneBookClientTests
         Assert.Throws<InvalidDataException>(() => PbapPhoneBookClient.Parse(input));
     }
 
-    [Fact]
-    public async Task ReadsCombinedCallLogWithoutRequestingMissedCallReset()
+    [Theory]
+    [InlineData(BluetoothCallHistoryFolder.Combined, "telecom/cch.vcf")]
+    [InlineData(BluetoothCallHistoryFolder.Incoming, "telecom/ich.vcf")]
+    [InlineData(BluetoothCallHistoryFolder.Outgoing, "telecom/och.vcf")]
+    public async Task ReadsOnlyTheSelectedCallLogWithoutRequestingMissedCallReset(BluetoothCallHistoryFolder folder, string path)
     {
         var vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Test Caller\r\nTEL:+1555\r\nX-IRMC-CALL-DATETIME;TYPE=MISSED:20261107T120000\r\nEND:VCARD\r\n"u8.ToArray();
         await using var input = new MemoryStream([.. ConnectResponse, 0xA0, 0, (byte)(vcard.Length + 6),
             0x49, 0, (byte)(vcard.Length + 3), .. vcard, 0xA0, 0, 3]);
         await using var output = new MemoryStream();
-        var row = Assert.Single(await PbapPhoneBookClient.ReadCallHistoryAsync(input, output, true, CancellationToken.None));
+        var row = Assert.Single(await PbapPhoneBookClient.ReadCallHistoryAsync(input, output, folder, true, CancellationToken.None));
         Assert.Equal("Missed", row.Direction);
         Assert.Equal("2026-11-07 12:00:00 phone time", row.PhoneTime);
         Assert.Equal("+1555", row.Number);
         var wire = output.ToArray();
-        Assert.True(wire.AsSpan().IndexOf(Encoding.BigEndianUnicode.GetBytes("telecom/cch.vcf\0")) >= 0);
+        Assert.True(wire.AsSpan().IndexOf(Encoding.BigEndianUnicode.GetBytes(path + "\0")) >= 0);
+        foreach (var other in CallPaths.Where(other => other != path))
+            Assert.Equal(-1, wire.AsSpan().IndexOf(Encoding.BigEndianUnicode.GetBytes(other + "\0")));
+        var get = (wire[1] << 8) + wire[2];
+        var disconnect = get + (wire[get + 1] << 8) + wire[get + 2];
+        Assert.Equal(0x81, wire[disconnect]);
+        Assert.Equal(wire.Length, disconnect + (wire[disconnect + 1] << 8) + wire[disconnect + 2]);
         Assert.True(wire.AsSpan().IndexOf(new byte[] { 0x4C, 0, 20, 0x04, 2, 0, 30, 0x06, 8, 0, 0, 0, 0, 0x10, 0, 0, 0x87, 0x07, 1, 1 }) >= 0);
+    }
+
+    [Fact]
+    public void UnsupportedCallFolderDoesNotOpenASession()
+    {
+        using var input = new MemoryStream();
+        using var output = new MemoryStream();
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        {
+            _ = PbapPhoneBookClient.ReadCallHistoryAsync(input, output, (BluetoothCallHistoryFolder)99, false, CancellationToken.None);
+        });
+        Assert.Equal(0, output.Length);
     }
 
     [Theory]
