@@ -5,6 +5,7 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -19,6 +20,7 @@ using PhoneLink.DeviceCommunication.Sessions;
 using PhoneLink.Domain.Devices;
 using PhoneLink.Protocol;
 using PhoneLink.Protocol.Attachments;
+using PhoneLink.Protocol.Commands;
 using PhoneLink.Protocol.Messages;
 using PhoneLink.Protocol.Pairing;
 using PhoneLink.Protocol.Serialization;
@@ -192,6 +194,21 @@ public sealed class LocalPairingServer : IAsyncDisposable
         if (envelope.SessionId != session.SessionId || envelope.OriginDeviceId != _serverDeviceId)
         {
             throw new InvalidOperationException("The outgoing envelope is not bound to this authenticated session.");
+        }
+
+        if (envelope.Kind == "command.request")
+        {
+            if (envelope.Payload.ValueKind != JsonValueKind.Object ||
+                !envelope.Payload.TryGetProperty("name", out var commandName) ||
+                commandName.ValueKind != JsonValueKind.String)
+            {
+                throw new InvalidOperationException("An outgoing command requires a canonical name.");
+            }
+            if (commandName.ValueEquals(CommandRequestPayload.ComposeMessage) &&
+                !session.SupportsMessageCompose)
+            {
+                throw new InvalidOperationException("The selected session did not negotiate iPhone message composition.");
+            }
         }
 
         await session.SendAsync(envelope, cancellationToken).ConfigureAwait(false);

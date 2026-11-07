@@ -254,7 +254,7 @@ public sealed class AppServices : IAsyncDisposable
         CompanionMessageDraft draft, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
-        return RequestCompanionCommandAsync(target, "message.compose",
+        return RequestCompanionCommandAsync(target, CommandRequestPayload.ComposeMessage,
             new Dictionary<string, string>(StringComparer.Ordinal) { ["recipient"] = draft.Recipient, ["body"] = draft.Body },
             true, cancellationToken);
     }

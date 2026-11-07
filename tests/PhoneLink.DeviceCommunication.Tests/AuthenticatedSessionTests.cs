@@ -24,6 +24,8 @@ namespace PhoneLink.DeviceCommunication.Tests;
 
 public sealed class AuthenticatedSessionTests
 {
+    private static readonly JsonSerializerOptions CommandJson = new(JsonSerializerDefaults.Web);
+
     [Theory]
     [InlineData("replay")]
     [InlineData("revoke")]
@@ -181,14 +183,31 @@ public sealed class AuthenticatedSessionTests
             Payload = JsonSerializer.SerializeToElement(new CommandRequestPayload
             {
                 CommandId = commandId,
-                Name = termination == "replay" ? "message.compose" : "call.start",
+                Name = termination == "replay" ? CommandRequestPayload.ComposeMessage : "call.start",
                 Arguments = termination == "replay"
                     ? new Dictionary<string, string> { ["recipient"] = "+13125550198", ["body"] = "Synthetic draft" }
                     : new Dictionary<string, string> { ["phoneNumber"] = "+13125550198" },
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(2),
                 RequiresUserConfirmation = true,
-            }),
+            }, CommandJson),
         };
+        if (termination != "replay")
+        {
+            var unsupportedDraft = command with
+            {
+                Payload = JsonSerializer.SerializeToElement(new CommandRequestPayload
+                {
+                    CommandId = Guid.NewGuid(),
+                    Name = CommandRequestPayload.ComposeMessage,
+                    Arguments = new Dictionary<string, string> { ["recipient"] = "123", ["body"] = "Synthetic draft" },
+                    ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(2),
+                    RequiresUserConfirmation = true,
+                }, CommandJson),
+            };
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                server.SendAsync(clientDeviceId, unsupportedDraft, timeout.Token).AsTask());
+            Assert.Contains("did not negotiate", refusal.Message);
+        }
         // A stale selection must fail closed rather than falling back to a live peer.
         await Assert.ThrowsAsync<InvalidOperationException>(() => server.SendAsync(
             DeviceId.New(), command, timeout.Token).AsTask());
@@ -200,13 +219,13 @@ public sealed class AuthenticatedSessionTests
         var receivedCommand = ProtocolEnvelopeSerializer.Parse(await ReceiveAsync(socket));
         Assert.Equal(command.MessageId, receivedCommand.MessageId);
         Assert.Equal(challenge.SessionId, receivedCommand.SessionId);
-        var dial = receivedCommand.Payload.Deserialize<CommandRequestPayload>();
+        var dial = receivedCommand.Payload.Deserialize<CommandRequestPayload>(CommandJson);
         Assert.NotNull(dial);
         Assert.True(dial.RequiresUserConfirmation);
         Assert.Equal("+13125550198", dial.Arguments[termination == "replay" ? "recipient" : "phoneNumber"]);
         if (termination == "replay")
         {
-            Assert.Equal("message.compose", dial.Name);
+            Assert.Equal(CommandRequestPayload.ComposeMessage, dial.Name);
             Assert.Equal("Synthetic draft", dial.Arguments["body"]);
         }
 

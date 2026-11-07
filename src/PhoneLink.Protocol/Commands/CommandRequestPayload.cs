@@ -5,6 +5,8 @@ namespace PhoneLink.Protocol.Commands;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CommandRequestPayload
 {
+    public const string ComposeMessage = "message.compose";
+
     public required Guid CommandId { get; init; }
 
     public required string Name { get; init; }
